@@ -1,0 +1,134 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libglfw3-dev libgl1-mesa-dev libgl1-mesa-dri xvfb ffmpeg
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja
+          cmake --build build
+      - name: Headless self-test (H.264 MP4 and MOV)
+        run: |
+          mkdir -p out
+          ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 3 -c:v libx264 -pix_fmt yuv420p test.mp4
+          ffmpeg -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=60 -t 3 -c:v libx264 -pix_fmt yuv420p test.mov
+          xvfb-run -a -s "-screen 0 1600x900x24" ./build/StrodanoVJ --selftest out "$PWD/test.mp4" | tee log.txt
+          grep -q "video ready: yes" log.txt
+          xvfb-run -a -s "-screen 0 1600x900x24" ./build/StrodanoVJ --selftest out "$PWD/test.mov" | tee log.txt
+          grep -q "video ready: yes" log.txt
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg-bincache
+          key: vcpkg-ffmpeg-x64-windows-v1
+      - name: Install FFmpeg
+        shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-bincache
+        run: |
+          New-Item -ItemType Directory -Force C:\vcpkg-bincache | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install ffmpeg:x64-windows
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Build installer
+        working-directory: build
+        run: cpack -C Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StrodanoVJ-windows-installer
+          path: build/StrodanoVJ-*-setup.exe
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      FFMPEG_VERSION: "7.1.1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache FFmpeg
+        id: ffcache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-prefix
+          key: ffmpeg-${{ matrix.arch }}-7.1.1-static-v1
+      - name: Build static FFmpeg (decoders only)
+        if: steps.ffcache.outputs.cache-hit != 'true'
+        run: |
+          brew install nasm pkgconf || true
+          curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" | tar xJ
+          cd "ffmpeg-${FFMPEG_VERSION}"
+          ./configure --prefix="$HOME/ffmpeg-prefix" --disable-shared --enable-static --enable-pic \
+            --disable-programs --disable-doc --disable-autodetect --disable-avdevice --disable-avfilter \
+            --disable-network --disable-encoders --disable-muxers --disable-debug
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+      - name: Configure
+        run: |
+          brew install pkgconf || true
+          PKG_CONFIG_PATH="$HOME/ffmpeg-prefix/lib/pkgconfig" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DSTRODANO_STATIC_FFMPEG=ON -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Build disk image
+        run: |
+          APP="build/Strodano VJ.app"
+          test -d "$APP"
+          codesign --force --deep --sign - "$APP"
+          mkdir stage
+          cp -R "$APP" stage/
+          ln -s /Applications stage/Applications
+          hdiutil create -volname "Strodano VJ" -srcfolder stage -ov -format UDZO "StrodanoVJ-0.1.0-macos-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StrodanoVJ-macos-${{ matrix.arch }}
+          path: StrodanoVJ-*.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
