@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Strodano VJ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#131418;--panel:#0f1013;--line:#2c2e36;--ctl:#23252d;--ctl2:#32343e;--txt:#d8d9de;--dim:#7d808c;--acc:#ff7a1a;--acc2:#964a14;--warn:#f0dc50;--bad:#e6503f}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:12px/1.35 system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden;user-select:none}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--ctl);border:1px solid var(--line);border-radius:3px;padding:3px 8px;cursor:pointer}
+button:hover{background:var(--ctl2)} button.on{background:var(--acc);color:#111;border-color:var(--acc)}
+button.on.red{background:var(--bad);border-color:var(--bad)} button.on.yel{background:var(--warn);border-color:var(--warn)}
+select,input[type=text],input[type=number],textarea{background:var(--ctl);border:1px solid var(--line);border-radius:3px;padding:3px 5px}
+input[type=range]{accent-color:var(--acc);height:14px;margin:0;vertical-align:middle}
+#app{display:grid;grid-template-rows:auto minmax(120px,auto) 1fr auto;height:100vh}
+#menubar{display:flex;gap:6px;align-items:center;padding:5px 8px;background:#191a1f;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#menubar b{color:var(--acc);letter-spacing:.08em;margin-right:8px} #status{margin-left:auto;color:var(--dim)}
+#grid{overflow:auto;padding:6px 8px;border-bottom:1px solid var(--line);max-height:56vh}
+.row{display:flex;gap:4px;margin-bottom:4px;align-items:stretch}
+.lctl{flex:0 0 250px;display:flex;flex-direction:column;gap:4px;justify-content:center;padding:3px 5px;border-radius:3px}
+.row.sel .lctl{background:#281e16} .lctl .r{display:flex;gap:3px;align-items:center}
+.lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px}
+.lctl button{padding:2px 6px;min-width:22px} .lctl input[type=range]{flex:1;min-width:60px} .lctl select{width:92px;padding:2px}
+.colbtn,.cell{flex:1 1 0;min-width:96px;max-width:170px}
+.cell{position:relative;aspect-ratio:16/11;background:#16171b;border:1px solid #30323a;border-radius:3px;overflow:hidden;cursor:pointer}
+.cell.has{background:#1e2026} .cell:hover{border-color:#6e707d} .cell.pending{border:2px solid var(--warn)} .cell.active{border:2px solid var(--acc)}
+.cell.selc{box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)} .cell.over{border-color:var(--acc);background:#2a211a}
+.cell img,.cell .ph{position:absolute;left:2px;top:2px;right:2px;bottom:17px;width:calc(100% - 4px);height:calc(100% - 19px);object-fit:cover;background:#2d303a}
+.cell span{position:absolute;left:4px;right:4px;bottom:1px;height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .prog{position:absolute;left:2px;right:2px;bottom:17px;height:3px} .cell .prog i{display:block;height:100%;width:0;background:var(--acc)}
+.cell .miss{position:absolute;left:4px;top:4px;background:var(--bad);color:#fff;padding:0 4px;border-radius:2px;font-size:10px}
+#bottom{display:grid;grid-template-columns:27% 1fr 27%;min-height:0}
+#bottom>div{border-right:1px solid var(--line);min-height:0;overflow:auto;padding:6px 8px;background:var(--panel)}
+.tabs{display:flex;gap:3px;margin-bottom:6px;border-bottom:1px solid var(--acc2)} .tabs button{border-bottom:none;border-radius:3px 3px 0 0}
+.fld{display:flex;align-items:center;gap:6px;margin:3px 0} .fld label{flex:0 0 96px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fld input[type=range]{flex:1;min-width:40px} .fld output{flex:0 0 40px;text-align:right;color:var(--dim)} .fld input[type=text],.fld select{flex:1;min-width:0}
+h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);padding-bottom:2px}
+.fx{border:1px solid var(--line);border-radius:3px;margin:4px 0;padding:4px 6px;background:#15161a}
+.fx .hd{display:flex;gap:4px;align-items:center} .fx .hd b{flex:1;font-weight:600} .fx .hd button{padding:0 6px}
+.dropz{border:1px dashed var(--line);border-radius:3px;padding:10px;text-align:center;color:var(--dim);margin-top:6px} .dropz.over{border-color:var(--acc);color:var(--acc)}
+#monitors{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+#monitors canvas{width:100%;background:#000;border:1px solid var(--line);display:block} #monitors .t{color:var(--dim);margin-bottom:3px} #monitors .t.o{color:var(--acc)}
+.list div{padding:3px 6px;border-radius:3px;cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .list div:hover{background:var(--ctl)}
+.list .miss{color:var(--bad)} .hint{color:var(--dim);margin:4px 0}
+#transport{display:flex;gap:8px;align-items:center;padding:5px 8px;background:#191a1f;border-top:1px solid var(--line)}
+#transport input[type=number]{width:64px} #xf{flex:1} .dots{display:flex;gap:4px} .dots i{width:11px;height:11px;border-radius:50%;background:#3c3e46} .dots i.on{background:var(--acc)}
+#fps{color:var(--dim);min-width:210px;text-align:right} #fps.bad{color:var(--bad)}
+.modal{position:fixed;inset:4vh 4vw;background:var(--bg);border:1px solid var(--acc2);border-radius:5px;box-shadow:0 10px 60px #000c;display:grid;grid-template-rows:auto 1fr;z-index:10}
+.modal[hidden]{display:none} .modal>.mh{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#191a1f;border-bottom:1px solid var(--line)} .modal>.mh b{flex:1}
+#outBody{display:grid;grid-template-columns:230px 1fr 290px;min-height:0} #outBody>div{padding:8px;overflow:auto;min-height:0;border-right:1px solid var(--line)}
+#outCanvasWrap{display:flex;flex-direction:column;gap:6px} #outCanvas{flex:1;width:100%;min-height:0;background:#08080a;cursor:crosshair}
+.sel-item{padding:3px 6px;border-radius:3px;cursor:pointer;display:flex;gap:6px;align-items:center} .sel-item.on{background:var(--acc2)}
+#shBody{display:grid;grid-template-columns:230px 1fr;min-height:0} #shBody>div{padding:8px;min-height:0;overflow:auto}
+#shCode{width:100%;height:calc(100% - 150px);min-height:200px;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre;resize:none;user-select:text}
+#shErr{white-space:pre-wrap;font:11px ui-monospace,Consolas,monospace;color:var(--bad);max-height:90px;overflow:auto;margin-top:4px} #shErr.ok{color:#6fd08c}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="menubar">
+    <b>STRODANO VJ</b>
+    <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button>
+    <button data-act="media">Add media</button><button data-act="addLayer">+ Layer</button><button data-act="addCol">+ Column</button><button data-act="delCol">- Column</button>
+    <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
+    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button>
+    <span id="status"></span>
+  </div>
+  <div id="grid"></div>
+  <div id="bottom">
+    <div id="props"></div>
+    <div id="monitors">
+      <div><div class="t o">OUTPUT</div><canvas id="monOut" width="480" height="270"></canvas></div>
+      <div><div class="t" id="monPrevT">PREVIEW</div><canvas id="monPrev" width="480" height="270"></canvas></div>
+    </div>
+    <div id="browser"></div>
+  </div>
+  <div id="transport">
+    BPM <input type="number" id="bpm" min="20" max="300" step="0.1"><button id="tap">TAP</button><button id="resync">Resync</button>
+    <span class="dots" id="dots"><i></i><i></i><i></i><i></i></span>
+    <span>A</span><input type="range" id="xf" min="0" max="1" step="0.001" title="Crossfader"><span>B</span>
+    <span id="fps"></span>
+  </div>
+</div>
+<div class="modal" id="outModal" hidden>
+  <div class="mh"><b>Advanced Output</b><button id="outTabIn">Input Selection</button><button id="outTabOut" class="on">Output Transformation</button>
+    <label><input type="checkbox" id="testPat"> Test pattern</label><button data-close="outModal">Close</button></div>
+  <div id="outBody"><div id="outLists"></div><div id="outCanvasWrap"><canvas id="outCanvas"></canvas></div><div id="outProps"></div></div>
+</div>
+<div class="modal" id="shModal" hidden>
+  <div class="mh"><b>Shader Editor</b><span class="hint">Edits compile as you type and show on the output immediately.</span><button data-close="shModal">Close</button></div>
+  <div id="shBody"><div id="shList"></div><div><div class="fld"><label>Name</label><input type="text" id="shName"></div>
+    <textarea id="shCode" spellcheck="false"></textarea><div id="shErr"></div>
+    <div class="hint">Effects define <code>vec4 fx()</code> and read <code>texture(tex, uv)</code>; generators define <code>vec4 gen()</code>. Available: <code>uv, res, time, beat, p.xyzw, q.xyzw</code>, <code>hsv2rgb()</code>, <code>luma()</code>, <code>hash()</code>. Declare sliders with <code>// @param Name 0.5</code> (first four map to p, next four to q).</div></div></div>
+</div>
+<input type="file" id="mediaInput" multiple accept="video/*,image/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
+<input type="file" id="compInput" accept=".svj,.json" hidden>
+<input type="file" id="shaderInput" accept=".fs,.frag,.glsl,.isf,.txt" multiple hidden>
+<script src="shaders.js"></script>
+<script src="engine.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

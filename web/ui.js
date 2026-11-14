@@ -1,0 +1,547 @@
+// Strodano VJ (web) - user interface and main loop. GPL-3.0.
+'use strict';
+const $ = id => document.getElementById(id);
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  if (props) for (const k in props) { if (k === 'style') Object.assign(e.style, props[k]); else if (k.startsWith('on')) e.addEventListener(k.slice(2), props[k]); else e[k] = props[k]; }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const sel = { l: 0, c: -1 };
+let drag = null;            // what is being dragged inside the page: {kind:'media'|'gen'|'fx'|'clip', ...}
+let propTab = 'layer', browserTab = 'files';
+let cellEls = [], posSlider = null;
+const fmt2 = v => v.toFixed(2);
+
+function fld(label, min, max, step, get, set, fmt = fmt2) {
+  const i = el('input', { type: 'range', min, max, step, value: get() }), o = el('output', { textContent: fmt(get()) });
+  i.addEventListener('input', () => { set(+i.value); o.textContent = fmt(+i.value); });
+  const r = el('div', { className: 'fld' }, el('label', { textContent: label, title: label }), i, o);
+  r.slider = i;
+  return r;
+}
+function tabs(names, cur, pick) {
+  return el('div', { className: 'tabs' }, ...names.map(([id, label]) => el('button', { textContent: label, className: id === cur ? 'on' : '', onclick: () => pick(id) })));
+}
+function dropTarget(node, accept, onDrop) {
+  node.addEventListener('dragover', e => { if (accept(e)) { e.preventDefault(); node.classList.add('over'); } });
+  node.addEventListener('dragleave', () => node.classList.remove('over'));
+  node.addEventListener('drop', e => { node.classList.remove('over'); if (accept(e)) { e.preventDefault(); e.stopPropagation(); onDrop(e); } });
+}
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+function draggable(node, payload) {
+  node.draggable = true;
+  node.addEventListener('dragstart', e => { drag = payload; e.dataTransfer.setData('text/plain', 'strodano'); e.dataTransfer.effectAllowed = 'copyMove'; });
+  node.addEventListener('dragend', () => { drag = null; });
+}
+
+// ---------- clip grid ----------
+function putMedia(list, li, ci, onlyFree) {
+  for (const m of list) {
+    if (onlyFree) while (ci < comp.columns && comp.layers[li].clips[ci]) ci++;
+    if (ci >= comp.columns) { setStatus('No free clip slot left on that layer'); break; }
+    setClip(li, ci++, mediaClip(m));
+  }
+}
+function dropOnCell(li, ci, e) {
+  if (hasFiles(e)) { putMedia(addMediaFiles(e.dataTransfer.files), li, ci, false); return; }
+  if (!drag) return;
+  if (drag.kind === 'media') setClip(li, ci, mediaClip(drag.m));
+  else if (drag.kind === 'gen') setClip(li, ci, genClip(drag.name));
+  else if (drag.kind === 'clip' && (drag.l !== li || drag.c !== ci)) {
+    const A = comp.layers[drag.l], B = comp.layers[li];
+    if (A.active === drag.c || A.pendingCol === drag.c) eject(drag.l);
+    if (B.active === ci || B.pendingCol === ci) eject(li);
+    [A.clips[drag.c], B.clips[ci]] = [B.clips[ci], A.clips[drag.c]];
+    ui.gridDirty = true;
+  }
+}
+function renderGrid() {
+  const g = $('grid');
+  g.textContent = '';
+  cellEls = [];
+  const head = el('div', { className: 'row' },
+    el('div', { className: 'lctl' }, el('div', { className: 'r' }, el('b', { textContent: 'COMPOSITION', style: { color: 'var(--acc)' } }),
+      el('button', { textContent: 'X', title: 'Eject all layers', onclick: () => comp.layers.forEach((_, i) => eject(i)) }),
+      el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: comp.master, title: 'Master', oninput: e => { comp.master = +e.target.value; } }))));
+  for (let c = 0; c < comp.columns; c++) head.append(el('button', { className: 'colbtn', textContent: 'Column ' + (c + 1), onclick: () => triggerColumn(c) }));
+  g.append(head);
+  for (let li = comp.layers.length - 1; li >= 0; li--) {
+    const L = comp.layers[li];
+    const tog = (label, title, on, cls, fn) => el('button', { textContent: label, title, className: (on ? 'on ' : '') + cls, onclick: () => { fn(); ui.gridDirty = true; } });
+    const ctl = el('div', { className: 'lctl' },
+      el('div', { className: 'r' },
+        el('button', { textContent: 'X', title: 'Eject clip', onclick: () => eject(li) }),
+        tog('B', 'Bypass layer', L.bypass, 'red', () => { L.bypass = !L.bypass; }),
+        tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }),
+        tog('A', 'Crossfader side A', L.xfade === 1, '', () => { L.xfade = L.xfade === 1 ? 0 : 1; }),
+        tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
+        el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } })),
+      el('div', { className: 'r' },
+        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', oninput: e => { L.opacity = +e.target.value; } }),
+        el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
+    dropTarget(ctl, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { L.fx.push(e); sel.l = li; ui.propsDirty = true; } });
+    const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') }, ctl);
+    cellEls[li] = [];
+    for (let ci = 0; ci < comp.columns; ci++) {
+      const c = L.clips[ci];
+      const cell = el('div', { className: 'cell' + (c ? ' has' : '') + (sel.l === li && sel.c === ci ? ' selc' : '') });
+      if (c) {
+        cell.append(c.thumb ? el('img', { src: c.thumb, draggable: false }) : el('div', { className: 'ph' }), el('div', { className: 'prog' }, el('i')), el('span', { textContent: c.name, title: c.fileName || c.name }));
+        if (c.missing) cell.append(el('div', { className: 'miss', textContent: 'missing file' }));
+        if (c.error) cell.append(el('div', { className: 'miss', textContent: 'cannot play' }));
+        draggable(cell, { kind: 'clip', l: li, c: ci });
+      }
+      cell.addEventListener('click', () => { sel.l = li; sel.c = ci; if (c) { trigger(li, ci); propTab = 'clip'; } ui.gridDirty = ui.propsDirty = true; });
+      cell.addEventListener('contextmenu', e => { e.preventDefault(); if (c) setClip(li, ci, null); });
+      dropTarget(cell, e => hasFiles(e) || (drag && drag.kind !== 'fx'), e => dropOnCell(li, ci, e));
+      cellEls[li][ci] = cell;
+      row.append(cell);
+    }
+    g.append(row);
+  }
+}
+
+// ---------- properties ----------
+function chainUI(chain) {
+  const box = el('div', null, el('h4', { textContent: 'Effects' }));
+  chain.forEach((e, i) => {
+    const d = DEFS.fx.get(e.def);
+    const move = dir => { const j = i + dir; if (j >= 0 && j < chain.length) { [chain[i], chain[j]] = [chain[j], chain[i]]; ui.propsDirty = true; } };
+    const fx = el('div', { className: 'fx' }, el('div', { className: 'hd' },
+      el('input', { type: 'checkbox', checked: !e.bypass, title: 'Enabled', onchange: ev => { e.bypass = !ev.target.checked; } }),
+      el('b', { textContent: e.def + (d ? (d.custom ? '  (custom)' : '') : '  (missing)') }),
+      el('button', { textContent: '↑', title: 'Move up', onclick: () => move(-1) }), el('button', { textContent: '↓', title: 'Move down', onclick: () => move(1) }),
+      el('button', { textContent: '×', title: 'Remove', onclick: () => { chain.splice(i, 1); ui.propsDirty = true; } })));
+    if (d) {
+      if (d.err) fx.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: 'Shader error - open the Shader Editor' }));
+      d.params.forEach((pd, k) => fx.append(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; })));
+      if (!d.isf) fx.append(fld('Mix', 0, 1, 0.001, () => e.mix, v => { e.mix = v; }));
+    }
+    box.append(fx);
+  });
+  const dz = el('div', { className: 'dropz', textContent: 'Drop effects here' });
+  dropTarget(dz, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { chain.push(e); ui.propsDirty = true; } });
+  box.append(dz);
+  return box;
+}
+function renderProps() {
+  const p = $('props');
+  p.textContent = '';
+  posSlider = null;
+  sel.l = Math.min(comp.layers.length - 1, Math.max(0, sel.l));
+  const L = comp.layers[sel.l];
+  p.append(tabs([['comp', 'Composition'], ['layer', 'Layer'], ['clip', 'Clip']], propTab, t => { propTab = t; ui.propsDirty = true; }));
+  if (propTab === 'comp') {
+    p.append(fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; ui.gridDirty = true; }),
+      fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; }),
+      el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx));
+  } else if (propTab === 'layer') {
+    p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: L.name, onchange: e => { L.name = e.target.value || L.name; ui.gridDirty = true; } })),
+      fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; ui.gridDirty = true; }),
+      el('div', { className: 'fld' }, el('label', { textContent: 'Scaling' }), el('select', { onchange: e => { L.fit = +e.target.value; } }, ...['Fill', 'Fit', 'Stretch'].map((n, i) => el('option', { value: i, textContent: n, selected: i === L.fit })))),
+      fld('Scale', 0.05, 4, 0.01, () => L.scale, v => { L.scale = v; }), fld('Position X', -1, 1, 0.001, () => L.x, v => { L.x = v; }), fld('Position Y', -1, 1, 0.001, () => L.y, v => { L.y = v; }),
+      el('div', { className: 'fld' }, el('button', { textContent: 'Reset transform', onclick: () => { L.scale = 1; L.x = L.y = 0; ui.propsDirty = true; } }),
+        el('button', { textContent: 'Remove layer', onclick: () => { removeLayer(sel.l); sel.l = Math.max(0, sel.l - 1); sel.c = -1; } })),
+      chainUI(L.fx));
+  } else {
+    const c = L.clips[sel.c];
+    if (!c) { p.append(el('div', { className: 'hint', textContent: 'Select a clip in the grid.' })); return; }
+    p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: c.name, onchange: e => { c.name = e.target.value || c.name; ui.gridDirty = true; } })));
+    if (c.missing) p.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: `"${c.fileName}" is not loaded. Add that file again (Add media, or drop it anywhere) to relink it.` }));
+    else if (c.type === 'video') {
+      const v = c.video;
+      p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}, ${(v.duration || 0).toFixed(2)} s` }),
+        fld('Speed', 0, 4, 0.01, () => c.speed, s => { c.speed = s; if (s <= 0) v.pause(); else { v.playbackRate = Math.max(0.0625, s); if (L.active === sel.c && v.paused) v.play().catch(() => {}); } }, s => s.toFixed(2) + 'x'));
+      const pos = fld('Position', 0, 1, 0.0005, () => (v.duration ? v.currentTime / v.duration : 0), f => { if (v.duration) v.currentTime = f * v.duration; }, f => (f * (v.duration || 0)).toFixed(1) + 's');
+      posSlider = { input: pos.slider, video: v };
+      p.append(pos, el('div', { className: 'fld' },
+        el('button', { textContent: 'Play / Pause', onclick: () => { if (v.paused) v.play().catch(() => {}); else v.pause(); } }),
+        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = 0; } }), el('button', { textContent: '1x', onclick: () => { c.speed = 1; v.playbackRate = 1; ui.propsDirty = true; } })));
+    } else if (c.type === 'image') p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}` }));
+    else if (c.type === 'gen') {
+      const d = DEFS.gen.get(c.gen);
+      if (!d) p.append(el('div', { className: 'hint', textContent: 'Generator "' + c.gen + '" is not available.' }));
+      else d.params.forEach((pd, k) => p.append(fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; })));
+    }
+  }
+}
+
+// ---------- browser ----------
+function firstFree(li) { const i = comp.layers[li].clips.findIndex(c => !c); return i; }
+function renderBrowser() {
+  const b = $('browser');
+  b.textContent = '';
+  b.append(tabs([['files', 'Files'], ['fx', 'Effects'], ['src', 'Sources']], browserTab, t => { browserTab = t; ui.browserDirty = true; }));
+  const list = el('div', { className: 'list' });
+  if (browserTab === 'files') {
+    b.append(el('button', { textContent: 'Add media...', onclick: () => $('mediaInput').click() }),
+      el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
+    const missing = new Set();
+    comp.layers.forEach(L => L.clips.forEach(c => { if (c && c.missing) missing.add(c.fileName); }));
+    missing.forEach(n => list.append(el('div', { className: 'miss', textContent: 'Missing: ' + n, title: 'Add this file again to relink it' })));
+    media.forEach(m => {
+      const d = el('div', { textContent: m.name, title: m.name, ondblclick: () => { const ci = sel.c >= 0 && !comp.layers[sel.l].clips[sel.c] ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, mediaClip(m)); else setStatus('No free clip slot on the selected layer'); } });
+      draggable(d, { kind: 'media', m });
+      list.append(d);
+    });
+    if (!media.length && !missing.size) list.append(el('div', { className: 'hint', textContent: 'No media loaded yet.' }));
+  } else if (browserTab === 'fx') {
+    b.append(el('div', { className: 'hint', textContent: 'Drag onto a layer or an effects list. Double-click adds to the selected layer.' }));
+    for (const d of DEFS.fx.values()) {
+      const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const e = mkEffect(d.name); if (e) { comp.layers[sel.l].fx.push(e); propTab = 'layer'; ui.propsDirty = true; } } });
+      draggable(n, { kind: 'fx', name: d.name });
+      list.append(n);
+    }
+  } else {
+    b.append(el('div', { className: 'hint', textContent: 'Drag onto a clip slot, or double-click to fill the selected slot.' }));
+    for (const d of DEFS.gen.values()) {
+      const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const ci = sel.c >= 0 ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, genClip(d.name)); } });
+      draggable(n, { kind: 'gen', name: d.name });
+      list.append(n);
+    }
+  }
+  b.append(list);
+}
+
+// ---------- advanced output ----------
+const outUI = { screen: 0, slice: 0, tab: 'out', drag: null, rect: null, prev: document.createElement('canvas') };
+outUI.prev.width = 640; outUI.prev.height = 360;
+function renderOutPanels() {
+  outUI.screen = Math.min(screens.length - 1, Math.max(0, outUI.screen));
+  const scr = screens[outUI.screen];
+  outUI.slice = Math.min(scr.slices.length - 1, Math.max(0, outUI.slice));
+  const redo = () => renderOutPanels();
+  const L = $('outLists');
+  L.textContent = '';
+  L.append(el('h4', { textContent: 'Screens' }));
+  screens.forEach((s, i) => L.append(el('div', { className: 'sel-item' + (i === outUI.screen ? ' on' : ''), textContent: s.name + (s.win && !s.win.closed ? '  [live]' : ''), onclick: () => { outUI.screen = i; outUI.slice = 0; redo(); } })));
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Screen', onclick: () => { screens.push({ name: 'Screen ' + (screens.length + 1), win: null, ctx: null, slices: [newSlice('Slice 1')] }); outUI.screen = screens.length - 1; redo(); } }),
+    el('button', { textContent: '- Screen', onclick: () => { if (screens.length > 1) { closeOutput(outUI.screen); screens.splice(outUI.screen, 1); redo(); } } })));
+  L.append(el('h4', { textContent: 'Slices and masks' }));
+  scr.slices.forEach((sl, i) => L.append(el('div', { className: 'sel-item' + (i === outUI.slice ? ' on' : ''), onclick: () => { outUI.slice = i; redo(); } },
+    el('input', { type: 'checkbox', checked: sl.enabled, onclick: e => e.stopPropagation(), onchange: e => { sl.enabled = e.target.checked; } }), sl.name + (sl.mask ? '  (mask)' : ''))));
+  const swap = d => { const i = outUI.slice, j = i + d; if (j >= 0 && j < scr.slices.length) { [scr.slices[i], scr.slices[j]] = [scr.slices[j], scr.slices[i]]; outUI.slice = j; redo(); } };
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Slice', onclick: () => { scr.slices.push(newSlice('Slice ' + (scr.slices.length + 1))); outUI.slice = scr.slices.length - 1; redo(); } }),
+    el('button', { textContent: '+ Mask', onclick: () => { scr.slices.push(newSlice('Mask ' + (scr.slices.length + 1), true)); outUI.slice = scr.slices.length - 1; redo(); } })),
+    el('div', { className: 'fld' }, el('button', { textContent: 'Remove', onclick: () => { scr.slices.splice(outUI.slice, 1); redo(); } }),
+      el('button', { textContent: 'To front', onclick: () => swap(1) }), el('button', { textContent: 'To back', onclick: () => swap(-1) })),
+    el('div', { className: 'hint', textContent: 'Later items draw on top.' }));
+
+  const P = $('outProps');
+  P.textContent = '';
+  const live = scr.win && !scr.win.closed;
+  P.append(el('h4', { textContent: 'Screen' }),
+    el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: scr.name, onchange: e => { scr.name = e.target.value || scr.name; redo(); } })),
+    el('button', { textContent: live ? 'Close output window' : 'Open output window', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOutput(outUI.screen); redo(); } }),
+    el('div', { className: 'hint', textContent: 'Drag the output window onto the projector or second display and double-click it for fullscreen.' }));
+  const sl = scr.slices[outUI.slice];
+  if (!sl) return;
+  P.append(el('h4', { textContent: sl.mask ? 'Mask' : 'Slice' }),
+    el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: sl.name, onchange: e => { sl.name = e.target.value || sl.name; redo(); } })),
+    el('div', { className: 'fld' }, el('label', { textContent: 'Mask (black)' }), el('input', { type: 'checkbox', checked: sl.mask, onchange: e => { sl.mask = e.target.checked; redo(); } })));
+  if (!sl.mask) P.append(
+    el('div', { className: 'fld' }, el('label', { textContent: 'Flip' }), el('label', null, el('input', { type: 'checkbox', checked: sl.flipH, onchange: e => { sl.flipH = e.target.checked; } }), ' H'),
+      el('label', null, el('input', { type: 'checkbox', checked: sl.flipV, onchange: e => { sl.flipV = e.target.checked; } }), ' V')),
+    fld('Brightness', 0, 1, 0.001, () => sl.bright, v => { sl.bright = v; }));
+  P.append(fld('Warp grid', 0, 6, 1, () => sl.grid, v => { setGrid(sl, v); }, v => (v ? v + ' x ' + v : 'Off')),
+    fld('Soft edge', 0, 0.5, 0.001, () => sl.feather, v => { sl.feather = v; }, v => v.toFixed(3)),
+    el('div', { className: 'fld' }, el('button', { textContent: 'Reset warp', onclick: () => { sl.c = sl.mask ? [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]] : [[0, 0], [1, 0], [1, 1], [0, 1]]; setGrid(sl, sl.grid); } }),
+      el('button', { textContent: 'Reset input', onclick: () => { sl.in = [0, 0, 1, 1]; } })),
+    el('div', { className: 'hint', textContent: 'Orange handles: corners. Blue: move. Green: warp points.' }));
+}
+function outHandles() {
+  const scr = screens[outUI.screen], sl = scr && scr.slices[outUI.slice], hs = [];
+  if (!sl) return hs;
+  if (outUI.tab === 'in') {
+    if (sl.mask) return hs;
+    const [x, y, w, h] = sl.in;
+    hs.push({ x: x + w / 2, y: y + h / 2, col: '#78c8ff', move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; } },
+      { x, y, col: '#ff7a1a', move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; sl.in[2] = Math.max(0.01, sl.in[2] - dx); sl.in[3] = Math.max(0.01, sl.in[3] - dy); } },
+      { x: x + w, y: y + h, col: '#ff7a1a', move: (dx, dy) => { sl.in[2] = Math.max(0.01, sl.in[2] + dx); sl.in[3] = Math.max(0.01, sl.in[3] + dy); } });
+    return hs;
+  }
+  hs.push({ x: (sl.c[0][0] + sl.c[1][0] + sl.c[2][0] + sl.c[3][0]) / 4, y: (sl.c[0][1] + sl.c[1][1] + sl.c[2][1] + sl.c[3][1]) / 4, col: '#78c8ff', move: (dx, dy) => sl.c.forEach(q => { q[0] += dx; q[1] += dy; }) });
+  const n = sl.grid;
+  for (let j = 0; j <= n && n > 0; j++) for (let i = 0; i <= n; i++) {
+    if ((i === 0 || i === n) && (j === 0 || j === n)) continue;
+    const [x, y] = slicePoint(sl, i / n, j / n), idx = (j * (n + 1) + i) * 2;
+    hs.push({ x, y, col: '#78ffa0', small: true, move: (dx, dy) => { sl.warp[idx] += dx; sl.warp[idx + 1] += dy; } });
+  }
+  sl.c.forEach(q => hs.push({ x: q[0], y: q[1], col: '#ff7a1a', move: (dx, dy) => { q[0] += dx; q[1] += dy; } }));
+  return hs;
+}
+function drawOutCanvas() {
+  const cv = $('outCanvas'), dpr = window.devicePixelRatio || 1;
+  const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
+  if (!W || !H) return;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const scr = screens[outUI.screen], x = cv.getContext('2d');
+  const live = scr.win && !scr.win.closed && scr.ctx;
+  const aspect = outUI.tab === 'in' ? comp.w / comp.h : live ? scr.ctx.canvas.width / scr.ctx.canvas.height : 16 / 9;
+  const pw = 640, ph = Math.max(16, Math.round(640 / aspect));
+  if (outUI.prev.width !== pw || outUI.prev.height !== ph) { outUI.prev.width = pw; outUI.prev.height = ph; }
+  if (outUI.tab === 'in') present(comp.outTex, pw, ph); else renderScreen(scr, pw, ph);
+  grab(outUI.prev.getContext('2d'), pw, ph);
+  const m = 26 * dpr;
+  let w = W - m * 2, h = w / aspect;
+  if (h > H - m * 2) { h = H - m * 2; w = h * aspect; }
+  const ox = (W - w) / 2, oy = (H - h) / 2;
+  outUI.rect = { ox: ox / dpr, oy: oy / dpr, w: w / dpr, h: h / dpr };
+  x.fillStyle = '#08080a'; x.fillRect(0, 0, W, H);
+  x.drawImage(outUI.prev, ox, oy, w, h);
+  x.strokeStyle = '#5a5c64'; x.lineWidth = 1; x.strokeRect(ox + 0.5, oy + 0.5, w, h);
+  const px = (u, v) => [ox + u * w, oy + v * h];
+  scr.slices.forEach((sl, i) => {
+    const on = i === outUI.slice;
+    x.strokeStyle = on ? '#ff7a1a' : 'rgba(170,170,180,.6)'; x.lineWidth = (on ? 2 : 1) * dpr; x.fillStyle = x.strokeStyle;
+    x.beginPath();
+    let lab;
+    if (outUI.tab === 'in') { if (sl.mask) return; const [a, b] = px(sl.in[0], sl.in[1]); x.rect(a, b, sl.in[2] * w, sl.in[3] * h); lab = [a, b]; }
+    else { sl.c.forEach((q, k) => { const [a, b] = px(q[0], q[1]); if (k) x.lineTo(a, b); else { x.moveTo(a, b); lab = [a, b]; } }); x.closePath(); }
+    x.stroke();
+    x.font = 11 * dpr + 'px system-ui'; x.fillText(sl.name, lab[0] + 5 * dpr, lab[1] + 13 * dpr);
+  });
+  for (const hd of outHandles()) {
+    const [a, b] = px(hd.x, hd.y);
+    x.beginPath(); x.arc(a, b, (hd.small ? 4.5 : 6) * dpr, 0, 6.2832); x.fillStyle = hd.col; x.fill(); x.strokeStyle = '#000'; x.lineWidth = dpr; x.stroke();
+  }
+}
+function initOutput() {
+  const cv = $('outCanvas');
+  const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener('pointerdown', e => {
+    const R = outUI.rect;
+    if (!R) return;
+    const [mx, my] = at(e);
+    let best = -1, bd = 14;
+    outHandles().forEach((hd, i) => { const d = Math.hypot(R.ox + hd.x * R.w - mx, R.oy + hd.y * R.h - my); if (d <= bd) { bd = d; best = i; } });
+    if (best >= 0) { outUI.drag = { i: best, x: mx, y: my }; cv.setPointerCapture(e.pointerId); }
+  });
+  cv.addEventListener('pointermove', e => {
+    const d = outUI.drag, R = outUI.rect;
+    if (!d || !R) return;
+    const [mx, my] = at(e), hd = outHandles()[d.i];
+    if (hd) hd.move((mx - d.x) / R.w, (my - d.y) / R.h);
+    d.x = mx; d.y = my;
+  });
+  const end = () => { outUI.drag = null; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  const setTab = t => { outUI.tab = t; $('outTabIn').classList.toggle('on', t === 'in'); $('outTabOut').classList.toggle('on', t === 'out'); renderOutPanels(); };
+  $('outTabIn').onclick = () => setTab('in'); $('outTabOut').onclick = () => setTab('out');
+  $('testPat').onchange = e => { out.testPattern = e.target.checked; };
+}
+
+// ---------- shader editor ----------
+const shUI = { cur: -1, timer: 0 };
+function refsTo(name, fn) {
+  comp.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); });
+  comp.layers.forEach(L => { L.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); }); L.clips.forEach(c => { if (c && c.type === 'gen' && c.gen === name) fn(c, 'gen'); }); });
+}
+function compileCustom(s) {
+  let d, err = '';
+  try { d = applyCustom(s); err = d.err || ''; } catch (e) { err = String(e.message || e); }
+  if (d) refsTo(s.name, r => { while (r.params.length < d.params.length) r.params.push(d.params[r.params.length].def); if (r.type === 'gen') r.needThumb = true; });
+  const box = $('shErr');
+  box.textContent = err ? err : 'Compiled OK' + (s.isf ? ' (ISF ' + (s.kind === 'fx' ? 'effect' : 'generator') + ')' : '');
+  box.className = err ? '' : 'ok';
+  ui.propsDirty = ui.browserDirty = true;
+  return !err;
+}
+function uniqueName(base) { let n = base, i = 2; while (DEFS.fx.has(n) || DEFS.gen.has(n)) n = base + ' ' + i++; return n; }
+function addCustom(kind, name, code) {
+  const s = { name: uniqueName(name), kind, code };
+  customShaders.push(s);
+  shUI.cur = customShaders.length - 1;
+  renderShaderEditor();
+  compileCustom(s);
+  renderShaderEditor();
+  return s;
+}
+function renderShaderEditor() {
+  const L = $('shList');
+  L.textContent = '';
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Effect', onclick: () => addCustom('fx', 'My Effect', TEMPLATE_FX) }), el('button', { textContent: '+ Generator', onclick: () => addCustom('gen', 'My Generator', TEMPLATE_GEN) })),
+    el('div', { className: 'fld' }, el('button', { textContent: 'Load shader file...', title: 'ISF (.fs) or GLSL snippet', onclick: () => $('shaderInput').click() })),
+    el('h4', { textContent: 'Custom shaders' }));
+  customShaders.forEach((s, i) => L.append(el('div', { className: 'sel-item' + (i === shUI.cur ? ' on' : ''), textContent: s.name + (s.kind === 'fx' ? '  - effect' : '  - generator'), onclick: () => { shUI.cur = i; renderShaderEditor(); compileCustom(customShaders[i]); } })));
+  if (!customShaders.length) L.append(el('div', { className: 'hint', textContent: 'None yet. Create one, or load an ISF file.' }));
+  const s = customShaders[shUI.cur];
+  $('shName').value = s ? s.name : ''; $('shName').disabled = !s;
+  $('shCode').value = s ? s.code : ''; $('shCode').disabled = !s;
+  if (!s) { $('shErr').textContent = ''; return; }
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: 'Delete selected', onclick: () => {
+    DEFS[s.kind].delete(s.name); customShaders.splice(shUI.cur, 1); shUI.cur = Math.min(shUI.cur, customShaders.length - 1);
+    ui.propsDirty = ui.browserDirty = true; renderShaderEditor();
+  } })));
+}
+function initShaderEditor() {
+  $('shCode').addEventListener('input', () => {
+    const s = customShaders[shUI.cur];
+    if (!s) return;
+    s.code = $('shCode').value;
+    clearTimeout(shUI.timer);
+    shUI.timer = setTimeout(() => compileCustom(s), 200);
+  });
+  $('shCode').addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } });
+  $('shName').addEventListener('change', () => {
+    const s = customShaders[shUI.cur], n = $('shName').value.trim();
+    if (!s || !n || n === s.name) return;
+    const nn = uniqueName(n), old = s.name;
+    DEFS[s.kind].delete(old);
+    refsTo(old, (r, t) => { if (t === 'fx') r.def = nn; else { r.gen = nn; if (r.name === old) r.name = nn; } });
+    s.name = nn;
+    compileCustom(s); renderShaderEditor(); ui.gridDirty = true;
+  });
+  $('shaderInput').addEventListener('change', async e => {
+    for (const f of e.target.files) {
+      const code = await f.text(), base = f.name.replace(/\.[^.]+$/, '');
+      addCustom(/\bvec4\s+gen\s*\(/.test(code) ? 'gen' : 'fx', base, code);
+    }
+    e.target.value = '';
+  });
+}
+
+// ---------- menu, transport, persistence ----------
+const AUTOSAVE = 'strodano-vj-autosave';
+let lastSaved = '';
+function autosave() {
+  try { const s = JSON.stringify(compToJSON()); if (s !== lastSaved) { localStorage.setItem(AUTOSAVE, s); lastSaved = s; } } catch (e) {}
+}
+function initMenu() {
+  const acts = {
+    new: () => { demoComp(); sel.l = 0; sel.c = -1; },
+    open: () => $('compInput').click(),
+    save: () => {
+      const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(compToJSON(), null, 1)], { type: 'application/json' })), download: 'composition.svj' });
+      document.body.append(a); a.click(); a.remove(); setStatus('Saved composition.svj to your downloads');
+    },
+    media: () => $('mediaInput').click(),
+    addLayer: () => { addLayer(); sel.l = comp.layers.length - 1; sel.c = -1; ui.propsDirty = true; },
+    addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
+    output: () => { $('outModal').hidden = false; renderOutPanels(); },
+    shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
+  };
+  $('menubar').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.act; if (a && acts[a]) acts[a](); });
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
+  $('resSel').addEventListener('change', e => { const [w, h] = e.target.value.split('x').map(Number); resizeComp(w, h); ui.propsDirty = true; });
+  $('mediaInput').addEventListener('change', e => {
+    const added = addMediaFiles(e.target.files);
+    const fresh = added.filter(m => !comp.layers.some(L => L.clips.some(c => c && c.fileName === m.name)));
+    if (fresh.length) putMedia(fresh, sel.l, 0, true);
+    browserTab = 'files'; ui.browserDirty = true; e.target.value = '';
+  });
+  $('compInput').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try { setStatus(loadComp(JSON.parse(await f.text())) ? 'Opened ' + f.name : 'That file is not a Strodano VJ composition'); } catch (err) { setStatus('Could not read that file'); }
+    syncTransport(); e.target.value = '';
+  });
+  // Files dropped anywhere outside a clip slot go to the media pool (and relink missing clips).
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', e => { if (hasFiles(e)) { e.preventDefault(); const a = addMediaFiles(e.dataTransfer.files); if (a.length) { browserTab = 'files'; setStatus(a.length + ' file(s) added to Files'); } } });
+}
+function syncTransport() {
+  $('bpm').value = comp.bpm.toFixed(1); $('xf').value = comp.crossfade;
+  const r = comp.w + 'x' + comp.h, s = $('resSel');
+  if (![...s.options].some(o => o.value === r)) s.append(el('option', { textContent: r }));
+  s.value = r;
+}
+function initTransport() {
+  const taps = [];
+  $('bpm').addEventListener('change', e => { comp.bpm = Math.min(300, Math.max(20, +e.target.value || 120)); syncTransport(); });
+  $('tap').addEventListener('click', () => {
+    const now = performance.now() / 1000;
+    if (taps.length && now - taps[taps.length - 1] > 2) taps.length = 0;
+    taps.push(now);
+    if (taps.length > 8) taps.shift();
+    if (taps.length >= 2) { const avg = (taps[taps.length - 1] - taps[0]) / (taps.length - 1); if (avg > 0.15) comp.bpm = Math.min(300, Math.max(20, 60 / avg)); }
+    comp.beats = Math.round(comp.beats); syncTransport();
+  });
+  $('resync').addEventListener('click', () => { comp.beats = 0; });
+  $('xf').addEventListener('input', e => { comp.crossfade = +e.target.value; });
+}
+
+// ---------- main loop ----------
+let lastT = performance.now(), lastFrameAt = 0, fpsN = 0, fpsT = lastT, costSum = 0, loopWin = null;
+const monOut = $('monOut').getContext('2d'), monPrev = $('monPrev').getContext('2d');
+function frame() {
+  const t0 = performance.now(), dt = Math.min((t0 - lastT) / 1000, 0.1);
+  lastT = t0; lastFrameAt = t0;
+  try {
+    update(dt);
+    renderComp();
+    for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
+    if (!document.hidden) {
+      const mw = 480, mh = Math.round(480 * comp.h / comp.w);
+      for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
+      present(comp.outTex, mw, mh); grab(monOut, mw, mh);
+      const L = comp.layers[Math.min(sel.l, comp.layers.length - 1)];
+      present(L.outTex, mw, mh); grab(monPrev, mw, mh);
+      if (!$('outModal').hidden) drawOutCanvas();
+      tickUI();
+    }
+  } catch (e) { console.error(e); setStatus('Error: ' + (e.message || e)); }
+  fpsN++; costSum += performance.now() - t0;
+  if (t0 - fpsT >= 500) {
+    const fps = fpsN * 1000 / (t0 - fpsT), el2 = $('fps');
+    el2.textContent = `${liveScreens().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
+    el2.className = fps < 29 ? 'bad' : '';
+    window.__fps = fps; fpsN = 0; costSum = 0; fpsT = t0;
+  }
+  schedule();
+}
+// Run the loop from an output window when one is open, so the show keeps its frame rate even if the control window is covered.
+function schedule() {
+  const live = liveScreens()[0];
+  loopWin = live ? live.win : window;
+  loopWin.requestAnimationFrame(frame);
+}
+setInterval(() => { if (performance.now() - lastFrameAt > 600) { lastT = performance.now(); schedule(); } }, 300);
+
+function genThumbFor(c) {
+  const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
+  c.needThumb = false;
+  if (!prog) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, 160, 90);
+  gl.useProgram(prog.p);
+  setDefUniforms(d, prog, c.params, { w: 160, h: 90, time: 1.3, beats: 0.1, frame: 1 });
+  tri();
+  const cv = document.createElement('canvas');
+  cv.width = 160; cv.height = 90;
+  grab(cv.getContext('2d'), 160, 90);
+  c.thumb = cv.toDataURL('image/jpeg', 0.7);
+  ui.gridDirty = true;
+}
+function tickUI() {
+  outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
+  if (ui.gridDirty) { ui.gridDirty = false; renderGrid(); }
+  if (ui.propsDirty) { ui.propsDirty = false; renderProps(); }
+  if (ui.browserDirty) { ui.browserDirty = false; renderBrowser(); }
+  comp.layers.forEach((L, li) => (cellEls[li] || []).forEach((cell, ci) => {
+    const a = L.active === ci, p = L.pendingCol === ci;
+    if (cell.classList.contains('active') !== a) cell.classList.toggle('active', a);
+    if (cell.classList.contains('pending') !== p) cell.classList.toggle('pending', p);
+    const c = L.clips[ci], bar = cell.querySelector('.prog i');
+    if (bar) bar.style.width = a && c && c.video && c.video.duration ? (100 * c.video.currentTime / c.video.duration).toFixed(1) + '%' : '0';
+  }));
+  const beat = Math.floor(comp.beats) % 4;
+  [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
+  if (posSlider && document.activeElement !== posSlider.input && posSlider.video.duration) posSlider.input.value = posSlider.video.currentTime / posSlider.video.duration;
+  $('monPrevT').textContent = 'PREVIEW: ' + comp.layers[Math.min(sel.l, comp.layers.length - 1)].name;
+}
+
+// ---------- start ----------
+(function start() {
+  if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
+  initMenu(); initTransport(); initOutput(); initShaderEditor();
+  let restored = false;
+  try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
+  if (!restored) demoComp();
+  else if (comp.layers.some(L => L.clips.some(c => c && c.missing))) setStatus('Session restored. Add your video files again to relink the clips marked "missing file".');
+  syncTransport();
+  setInterval(autosave, 2000);
+  schedule();
+})();
+// Small hook for automated checks: compile every shader and report failures.
+window.strodano = { comp, screens, DEFS, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };

@@ -4,6 +4,13 @@ Open-source, lightweight live-visuals (VJ) software: a layer/column clip grid, r
 
 Status: **0.1, early**. It builds and passes a headless self-test on Linux in CI; the Windows and macOS installers are produced by GitHub Actions.
 
+## Two editions
+
+- **`web/`** - the main edition for now. Open `web/index.html` in Chrome or Edge: no install, no build, edit and refresh. See `web/README.md`.
+- **Native (C++)** - the rest of this repository. Adds FFmpeg decoding and the FFGL plugin host; needs a build.
+
+The sections below describe the native edition.
+
 ## Features
 
 - **Clip grid**: layers (rows) and columns. Click a clip to trigger it, click a column header to trigger the whole column. Drag video files in from the OS or the built-in file browser.
