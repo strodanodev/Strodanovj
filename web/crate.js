@@ -18,7 +18,7 @@ function trackDB(op, key, value) {
     };
   });
 }
-const ANALYSIS_VERSION = 2;   // raise when analyseTrack changes what it returns, so old results are worked out again
+const ANALYSIS_VERSION = 4;   // raise when analyseTrack changes what it returns, so old results are worked out again
 async function cachedAnalysis(file) {
   try { const v = await trackDB('get', fileKey(file)); return v && v.v === ANALYSIS_VERSION ? v.info : null; } catch (e) { return null; }
 }

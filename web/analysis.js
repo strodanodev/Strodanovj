@@ -104,6 +104,7 @@ function analyseTrack(x, sr) {
   let grid0 = (f0 - 0.7) / fps + d * beatLen;
   while (grid0 < -0.05) grid0 += 4 * beatLen;   // a track that starts right on the beat may land a few ms below zero
   res.ok = f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0;
+  res.rms = eF;   // per-frame level, the same measure the live listener uses (track recognition, follow.js)
 
   // ---- loudness and energy ----
   // Loudness of the loud part (frames above -40 dB), used to bring every track to the same level.
@@ -141,6 +142,65 @@ function analyseTrack(x, sr) {
       res.mixIn = grid0 + first * barLen;
       res.mixOut = grid0 + out * barLen;
       res.beatEnd = grid0 + beatEnd * barLen;
+
+      // ---- sections ----
+      // Per bar: kick = the bass jump on each beat above the bar's own average (sustained bass does not count), and
+      // floor = the level between hits (bassline, pads). A drop has both, over a whole 4-bar block (counted from the
+      // first beat). Before the first drop is the intro, after the last one the outro, between drops a breakdown; the
+      // rising stretch that leads into a drop is the build.
+      const kick = new Float32Array(nb), floor = new Float32Array(nb);
+      for (let b = 0; b < nb; b++) {
+        const a = Math.max(0, Math.round((grid0 + b * barLen) * fps)), e = Math.min(n, Math.round((grid0 + (b + 1) * barLen) * fps));
+        if (e - a < 8) continue;
+        let mean = 0;
+        for (let i = a; i < e; i++) mean += onL[i];
+        mean /= e - a;
+        let k = 0;
+        for (let q = 0; q < 4; q++) {
+          const c = Math.round((grid0 + (4 * b + q) * beatLen) * fps) + 1;
+          let m = 0;
+          for (let i = Math.max(0, c - 2); i <= Math.min(n - 1, c + 3); i++) if (onL[i] > m) m = onL[i];
+          k += m;
+        }
+        kick[b] = Math.max(0, k / 4 - mean);
+        floor[b] = Array.from(eF.subarray(a, e)).sort((p, q) => p - q)[Math.floor((e - a) * 0.2)];
+      }
+      const kMed = med(kick.slice(first, last + 1)) || 1, fMed = med(floor.slice(first, last + 1)) || 1;
+      const lab = new Array(nb).fill('');
+      const blocks = [];
+      for (let b0 = first; b0 < beatEnd; b0 += 4) {
+        const e = Math.min(b0 + 4, beatEnd);
+        let k = 0, f = 0;
+        for (let b = b0; b < e; b++) { k += kick[b]; f += floor[b]; }
+        k /= (e - b0) * kMed; f /= (e - b0) * fMed;
+        blocks.push({ a: b0, e, drop: k >= 0.5 && f >= 0.6 });
+      }
+      const drops = blocks.filter(x => x.drop);
+      if (!drops.length) {   // no clear drop (ambient, live recording...): the body between the mix points is the main part
+        for (let b = 0; b < nb; b++) lab[b] = b < first ? 'intro' : b >= out ? 'outro' : 'drop';
+      } else {
+        const d0 = drops[0].a, d1 = drops[drops.length - 1].e;
+        for (let b = 0; b < nb; b++) lab[b] = b < d0 ? 'intro' : b >= d1 ? 'outro' : 'breakdown';
+        for (const x of drops) for (let b = x.a; b < x.e; b++) lab[b] = 'drop';
+        // build: before each drop, the bars with little kick whose level keeps rising into it (at most 16, else the last 4)
+        for (const x of drops) {
+          const j = x.a - 1;
+          if (j < 0 || lab[j] === 'drop' || kick[j] >= 0.5 * kMed) continue;
+          let s = j;
+          while (s > 0 && j - s < 15 && lab[s - 1] !== 'drop' && kick[s - 1] < 0.5 * kMed && bRms[s - 1] <= bRms[s] * 1.02) s--;
+          if (j - s < 1) s = Math.max(j - 3, 0);
+          while (s <= j && lab[s] === 'drop') s++;
+          for (let b = s; b <= j; b++) lab[b] = 'build';
+        }
+      }
+      res.barLen = barLen;
+      res.sections = [];
+      for (let b = 0; b < nb; b++) {
+        const cur = res.sections[res.sections.length - 1];
+        if (cur && cur.type === lab[b]) { cur.bars++; continue; }
+        res.sections.push({ type: lab[b], bar: b, bars: 1 });
+      }
+      for (const s of res.sections) { s.t = grid0 + s.bar * barLen; s.end = s.t + s.bars * barLen; }
     }
   }
   if (res.mixIn === undefined) { res.mixIn = res.ok ? Math.max(0, grid0) : 0; res.mixOut = Math.max(0, res.duration - 20); res.beatEnd = res.duration; }
@@ -195,6 +255,7 @@ function analyseTrack(x, sr) {
       const c = corr(minor ? MIN : MAJ, r);
       if (c > best) { second = best; best = c; bk = r; bm = minor; } else if (c > second) second = c;
     }
+    { const mx = Math.max(...chroma) || 1; res.chroma = Array.from(chroma, v => +(v / mx).toFixed(4)); }   // harmonic fingerprint (follow.js)
     if (best > 0.5) {
       const NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
       res.key = NAMES[bk] + (bm ? 'm' : '');
@@ -213,7 +274,7 @@ function analyseAsync(mono, sr) {
     const done = () => { try { w.terminate(); } catch (e) {} URL.revokeObjectURL(url); };
     try {
       url = URL.createObjectURL(new Blob([analyseTrack.toString(),
-        '\nonmessage = e => { const r = analyseTrack(e.data.x, e.data.sr); postMessage(r, [r.peaks.buffer, r.lows.buffer]); };'], { type: 'text/javascript' }));
+        '\nonmessage = e => { const r = analyseTrack(e.data.x, e.data.sr); postMessage(r, [r.peaks.buffer, r.lows.buffer].concat(r.rms ? [r.rms.buffer] : [])); };'], { type: 'text/javascript' }));
       w = new Worker(url);
     } catch (e) { local(); return; }
     w.onmessage = e => { done(); resolve(e.data); };

@@ -48,9 +48,14 @@ function startMix(opts = {}) {
   mixer.m = m; mixer.glide = null;
   setStatus('Mix ' + out.id + ' -> ' + inn.id + ': ' + (MIX_STYLES[style] || 'Fade') + note);
 }
+// Transition score: mix progress for modulation (musicFeat, score.js), and the Mix look at the start.
+function mixProgress(p) { if (typeof musicFeat === 'undefined') return; musicFeat.mix = p; musicFeat.midmix = Math.sin(Math.PI * Math.min(1, Math.max(0, p))); }
+function mixBegun() { if (typeof scoreMixStart === 'function') scoreMixStart(); }
+function mixDone() { mixProgress(0); if (typeof scoreMixEnd === 'function') scoreMixEnd(); }
 function cancelMix() {
   const m = mixer.m;
   if (!m) return;
+  if (m.started) mixDone();
   if (m.scheduled && !m.started && m.inn.playing && m.inn.t0 > audio.ctx.currentTime - 0.01) { stopSrc(m.inn); m.inn.playing = false; }
   m.inn.bass = 0.5; m.out.echo = 0;
   mixer.m = null;
@@ -60,6 +65,7 @@ function finishMix() {
   const m = mixer.m;
   if (!m) return;
   mixer.m = null;
+  mixDone();
   if (!m.inn.playing) deckPlay(m.inn);
   setXf(m.xfTo);
   deckPause(m.out);
@@ -74,12 +80,14 @@ function tickMix() {
   if (m && m.started && mixer.lastXf !== null && Math.abs(comp.crossfade - mixer.lastXf) > 0.003) {
     m.out.echo = 0; m.inn.bass = 0.5; m.out.bass = 0.5; mixer.m = null; mixer.lastXf = null;
     if (!m.inn.playing) { m.inn.offset = m.inn.info && m.inn.info.ok ? m.inn.info.mixIn : 0; deckPlay(m.inn); }   // an echo out hands over before its new deck has started
+    mixDone();
     setStatus('Crossfader moved by hand: the mix is yours');
   } else if (m) {
     if (!m.out.playing && !m.started) { cancelMix(); return; }
     if (m.style === 'fade') {
-      if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; if (!m.inn.playing) deckPlay(m.inn); }
+      if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; if (!m.inn.playing) deckPlay(m.inn); mixBegun(); }
       const p = Math.min(1, (c.currentTime - m.t0) / m.len);
+      mixProgress(p);
       setXf(m.xfFrom + (m.xfTo - m.xfFrom) * p);
       if (p >= 1) finishMix();
     } else {
@@ -94,8 +102,9 @@ function tickMix() {
       }
       if (m.style === 'echo' && b >= m.startBeat) m.out.echo = b < m.inBeat ? 0.6 : 0;
       if (b >= m.startBeat) {
-        if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; }
+        if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; mixBegun(); }
         const p = m.lenBeats ? Math.min(1, (b - m.startBeat) / m.lenBeats) : 1;
+        mixProgress(p);
         if (m.style === 'blend' || m.style === 'bass') setXf(m.xfFrom + (m.xfTo - m.xfFrom) * p);
         if (m.style === 'bass' && p >= 0.5) { m.inn.bass = 0.5; m.out.bass = 0; }
         if (m.style === 'echo' && b >= m.inBeat) setXf(m.xfTo);
@@ -143,6 +152,7 @@ function setAuto(on) {
   else if (on) setStatus('Autopilot on: it picks the next track and mixes it in at the outro');
 }
 function tickAuto() {
+  crateMarkPlayed();   // here too, not only in the UI tick: autopilot must know what was played while this window is hidden
   if (!mixer.auto || mixer.m) return;
   const now = performance.now();
   if (now < mixer.autoWait) return;
@@ -150,9 +160,14 @@ function tickAuto() {
   const busy = d => d.state === 'loading' || d.state === 'analysing';
   const playing = audio.decks.filter(d => d.playing);
   if (!playing.length) {
-    const d = audio.decks.find(x => x.state === 'ready' && x.buffer) || null;
+    // start a loaded track that has not been played yet; never replay one (that would loop a finished list forever)
+    const fresh = x => { const t = x.file && crate.tracks.find(k => k.key === fileKey(x.file)); return x.state === 'ready' && x.buffer && !(t && t.played); };
+    const d = audio.decks.find(fresh) || null;
     if (d) { deckCue(d); deckPlay(d); setXf(sideXf(d)); }
-    else if (!audio.decks.some(busy)) crateLoadNext(audio.decks[0]);
+    else if (!audio.decks.some(busy)) {
+      if (crate.tracks.some(t => t.state === 'ready' && !t.played)) crateLoadNext(audio.decks[0]);
+      else { setAuto(false); setStatus('Autopilot: the track list is finished'); }
+    }
     return;
   }
   const out = refDeck() || playing[0], inn = otherDeck(out);

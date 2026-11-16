@@ -18,7 +18,7 @@ function findFx(uid) {
   return null;
 }
 function findGenClip(uid) {
-  for (const L of comp.layers) for (const c of L.clips) if (c && c.type === 'gen' && c.uid === uid) return { c, owner: L.name };
+  for (const L of comp.layers) for (const c of L.clips) if (c && c.params && c.uid === uid) return { c, owner: L.name };   // generator, text and 3D clips
   return null;
 }
 // What a target id does right now: {set(v)} for faders, {fire()} for buttons. null if it points at nothing (layer removed...).
@@ -38,6 +38,7 @@ function midiTarget(id) {
   if (a === 'column') return +b < comp.columns ? { fire: () => triggerColumn(+b) } : null;
   if (a === 'clip') return L && +c < comp.columns ? { fire: () => trigger(+b, +c) } : null;
   if (a === 'deck') return djMidiTarget(b, c);
+  if (a === 'agent') return typeof agentMidiTarget === 'function' ? agentMidiTarget(b) : null;
   if (a !== 'layer' || !L) return null;
   if (c === 'opacity') return { set: v => { L.opacity = v; } };
   if (c === 'bypass') return { fire: () => { L.bypass = !L.bypass; ui.gridDirty = true; } };
@@ -61,6 +62,7 @@ function midiLabel(id) {
   if (a === 'column') return 'Column ' + (+b + 1);
   if (a === 'clip') return ln(b) + ', clip ' + (+c + 1);
   if (a === 'deck') return 'Deck ' + b + ' ' + c;
+  if (a === 'agent') return { on: 'Agent on/off', next: 'Agent next look', hold: 'Agent hold', drop: 'Agent drop', rec: 'Record' }[b] || 'Agent ' + b;
   if (a === 'layer') return ln(b) + ' ' + c;
   return id;
 }
@@ -106,14 +108,16 @@ function onMidiMessage(data) {
   if (t.set) {
     const x = type === 'note' ? (val > 0 ? 1 : 0) : val;
     t.set(x); reflectMidi(id, x);
-  } else if (type === 'note' ? val > 0 : val >= 0.5 && prev < 0.5) t.fire();   // buttons fire on press only
+    if (typeof cueRecord === 'function') cueRecord(id, x);   // track score recording (cues.js)
+  } else if (type === 'note' ? val > 0 : val >= 0.5 && prev < 0.5) { t.fire(); if (typeof cueRecord === 'function') cueRecord(id, null); }   // buttons fire on press only
 }
 
 async function connectMidi() {
   if (midi.access) return true;
   if (!navigator.requestMIDIAccess) { setStatus('This browser has no Web MIDI. Use Chrome or Edge.'); return false; }
   try { midi.access = await navigator.requestMIDIAccess(); } catch (e) { setStatus('MIDI access was refused'); return false; }
-  const hook = () => { midi.access.inputs.forEach(i => { i.onmidimessage = ev => onMidiMessage(ev.data); }); ui.propsDirty = true; };
+  // MIDI clock (0xF8 ticks, start / continue / stop, song position) goes to follow.js; everything else is a control
+  const hook = () => { midi.access.inputs.forEach(i => { i.onmidimessage = ev => { if (typeof midiClockMsg === 'function' && midiClockMsg(ev.data, ev.timeStamp)) return; onMidiMessage(ev.data); }; }); ui.propsDirty = true; };
   hook();
   midi.access.onstatechange = hook;   // devices plugged in later
   return true;

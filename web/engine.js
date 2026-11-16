@@ -57,7 +57,7 @@ function tri() { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
 function bindTex(unit, tex) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
 
 // ---------- shader registry (built-in, custom and ISF) ----------
-const FX_PRE = HEAD + `uniform sampler2D tex; uniform vec4 p; uniform vec4 q; uniform float time; uniform float beat; uniform float bar; uniform float phrase; uniform vec4 audio; uniform float kick; uniform vec2 res; uniform float mixAmt;
+const FX_PRE = HEAD + `uniform sampler2D tex; uniform vec4 p; uniform vec4 q; uniform float time; uniform float beat; uniform float bar; uniform float phrase; uniform vec4 audio; uniform float kick; uniform vec4 cam; uniform sampler2D camTex; uniform vec2 res; uniform float mixAmt;
 in vec2 uv; out vec4 o;
 vec3 hsv2rgb(vec3 c){ vec3 k = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(k - 1.0, 0.0, 1.0), c.y); }
 float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -196,6 +196,9 @@ function setDefUniforms(d, prog, params, c) {
   gl.uniform1f(P('phrase'), b / 32);
   gl.uniform4f(P('audio'), audioFeat.bass, audioFeat.mid, audioFeat.high, audioFeat.level);
   gl.uniform1f(P('kick'), audioFeat.kick);
+  // camera input (camera.js): cam = (motion, motion x, motion y, brightness), camTex = the tracked camera picture
+  gl.uniform4f(P('cam'), camFeat.motion, camFeat.x, camFeat.y, camFeat.bright);
+  if (P('camTex')) { bindTex(3, camState.tex); gl.uniform1i(P('camTex'), 3); }
   gl.uniform2f(P('res'), c.w, c.h);
 }
 
@@ -212,9 +215,28 @@ void main(){ vec4 b = texture(base, uv); vec4 t = texture(top, uv); float a = t.
  o = vec4(clamp(mix(b.rgb, r, a), 0.0, 1.0), b.a + a * (1.0 - b.a)); }`);
 const copyProg = mkProg(HEAD + `uniform sampler2D tex; uniform float gain; in vec2 uv; out vec4 o;
 void main(){ vec4 c = texture(tex, uv); o = vec4(c.rgb * gain, 1.0); }`);
+// Clip transitions: the new clip (A) replaces the old one (B) as t goes 0 -> 1.
+const TRANSITION_TYPES = ['Fade', 'Wipe right', 'Wipe left', 'Wipe up', 'Wipe down', 'Dissolve', 'Luma', 'Through black', 'Zoom', 'Iris'];
+const transProg = mkProg(HEAD + `uniform sampler2D A; uniform sampler2D B; uniform float t; uniform int mode; uniform vec2 res; in vec2 uv; out vec4 o;
+float h(vec2 v){ return fract(sin(dot(v, vec2(127.1, 311.7))) * 43758.5453); }
+float edge(float r, float t){ const float s = 0.06; return 1.0 - smoothstep(t * (1.0 + s) - s, t * (1.0 + s), r); }
+void main(){
+ vec4 n = texture(A, uv), b = texture(B, uv); float k = t;
+ if (mode == 1) k = edge(uv.x, t); else if (mode == 2) k = edge(1.0 - uv.x, t);
+ else if (mode == 3) k = edge(uv.y, t); else if (mode == 4) k = edge(1.0 - uv.y, t);
+ else if (mode == 5) k = edge(h(floor(uv * res / 6.0)), t);
+ else if (mode == 6) k = edge(1.0 - dot(n.rgb, vec3(0.299, 0.587, 0.114)), t);
+ else if (mode == 7) { o = t < 0.5 ? mix(b, vec4(0.0, 0.0, 0.0, b.a), t * 2.0) : mix(vec4(0.0, 0.0, 0.0, n.a), n, t * 2.0 - 1.0); return; }
+ else if (mode == 8) { b = texture(B, (uv - 0.5) / (1.0 + t * 0.8) + 0.5); n = texture(A, (uv - 0.5) * (1.0 + (1.0 - t) * 0.5) + 0.5); }
+ else if (mode == 9) k = edge(length((uv - 0.5) * vec2(res.x / res.y, 1.0)) / 1.05, t);
+ o = mix(b, n, k); }`);
 const BLENDS = ['Alpha', 'Add', 'Subtract', 'Multiply', 'Screen', 'Lighten', 'Darken', 'Difference'];
 
 // ---------- media pool and clips ----------
+// Extra clip types (camera.js, text.js, smart3d.js) register here instead of editing the engine:
+//   CLIP_TYPES[type] = { toJSON(c), fromJSON(j), free(c), props(c, panel, layer) }; such clips draw themselves through c.draw(fbo, layer).
+// SOURCE_PANELS holds functions that return extra elements for the Sources tab.
+const CLIP_TYPES = {}, SOURCE_PANELS = [];
 const media = [];   // {id, name, url, kind}
 let mediaSeq = 1;
 const isVideoName = n => /\.(mp4|mov|m4v|webm|mkv|avi|ogv)$/i.test(n);
@@ -268,6 +290,7 @@ function genClip(name) {
 }
 function freeClip(c) {
   if (!c) return;
+  if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].free) CLIP_TYPES[c.type].free(c);
   if (c.video) { c.video.pause(); c.video.removeAttribute('src'); c.video.load(); }
   if (c.tex) gl.deleteTexture(c.tex);
 }
@@ -286,7 +309,7 @@ const comp = { w: 1920, h: 1080, columns: 8, layers: [], fx: [], master: 1, cros
 function newLayer() {
   return { name: 'Layer ' + (comp.layers.length + 1), clips: new Array(comp.columns).fill(null), active: -1, pendingCol: -1, opacity: 1, blend: 0, bypass: false, solo: false,
     xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null,
-    trans: 0, from: -1, transT0: 0, transDur: 0, tf: null };   // trans: clip transition length in beats (0 = cut); from: clip fading out
+    trans: 0, transType: 0, from: -1, transT0: 0, transDur: 0, tf: null };   // trans: transition length in beats (0 = cut), transType: TRANSITION_TYPES index; from: clip going out
 }
 function addLayer() { comp.layers.push(newLayer()); ui.gridDirty = true; }
 function removeLayer(i) {
@@ -394,6 +417,7 @@ function update(dt, beatDt = dt) {
 }
 // Draw clip c (generator, video or image, with the layer's fit / scale / position) into framebuffer f. False if it has no picture yet.
 function drawSource(L, c, f) {
+  if (c.draw) return c.draw(f, L);   // camera / text / 3D clips (CLIP_TYPES)
   if (c.type === 'gen') {
     const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
     if (!prog) return false;
@@ -423,12 +447,12 @@ function applyTransition(L) {
   if (t >= 1) { endTransition(L); return; }
   if (!L.tf) L.tf = mkFbo(comp.w, comp.h);
   if (!drawSource(L, fc, L.tf)) return;
-  const k = t * t * (3 - 2 * t);
   bindFbo(rtDst(L.rt));
-  gl.useProgram(blendProg.p);
+  gl.useProgram(transProg.p);
   bindTex(0, rtSrc(L.rt).tex); bindTex(1, L.tf.tex);
-  gl.uniform1i(blendProg.loc('base'), 0); gl.uniform1i(blendProg.loc('top'), 1);
-  gl.uniform1f(blendProg.loc('opacity'), 1 - k); gl.uniform1i(blendProg.loc('mode'), 0);
+  gl.uniform1i(transProg.loc('A'), 0); gl.uniform1i(transProg.loc('B'), 1);
+  gl.uniform1f(transProg.loc('t'), t * t * (3 - 2 * t)); gl.uniform1i(transProg.loc('mode'), L.transType | 0);
+  gl.uniform2f(transProg.loc('res'), comp.w, comp.h);
   tri(); rtSwap(L.rt);
 }
 function renderComp() {
@@ -601,9 +625,11 @@ function compToJSON() {
     app: 'Strodano VJ', version: 2, w: comp.w, h: comp.h, columns: comp.columns, master: comp.master, crossfade: comp.crossfade, bpm: comp.bpm,
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),
     fx: fxJ(comp.fx),
-    layers: comp.layers.map(L => ({
-      name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && (c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
+    agentTags: comp.agentTags || {},   // the Agent's column tags (agent.js)
+    score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
+    layers: comp.layers.filter(L => !L.agent).map(L => ({   // the Agent's own layers are rebuilt, never saved
+      name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
+      clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
@@ -618,15 +644,18 @@ function loadComp(j) {
   customShaders.forEach(s => { try { applyCustom(s); } catch (e) {} });
   resetComp(0, Math.min(32, Math.max(1, num(j.columns, 8) | 0)));
   comp.master = num(j.master, 1); comp.crossfade = num(j.crossfade, 0.5); comp.bpm = num(j.bpm, 120);
+  comp.agentTags = {};
+  if (j.agentTags && typeof j.agentTags === 'object') for (const k in j.agentTags) if (+k >= 0 && +k < 32 && ['Calm', 'Groove', 'Peak', 'Drop'].includes(j.agentTags[k])) comp.agentTags[+k] = j.agentTags[k];
   comp.fx = fxL(j.fx);
   for (const l of j.layers) {
     addLayer();
     const L = comp.layers[comp.layers.length - 1];
     Object.assign(L, { name: String(l.name || L.name), opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
-      xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)), trans: Math.min(16, Math.max(0, num(l.trans, 0))) });
+      xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)), trans: Math.min(16, Math.max(0, num(l.trans, 0))), transType: Math.min(TRANSITION_TYPES.length - 1, Math.max(0, num(l.transType, 0) | 0)) });
     L.fx = fxL(l.fx);
     (l.clips || []).slice(0, comp.columns).forEach((c, ci) => {
       if (!c) return;
+      if (CLIP_TYPES[c.type]) { const x = CLIP_TYPES[c.type].fromJSON(c); if (x) { keepUid(x, c.uid); x.mod = loadMod(c.mod); L.clips[ci] = x; } return; }
       if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; keepUid(g, c.uid); g.mod = loadMod(c.mod); (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
       else if (c.fileName) {
         const m = media.find(x => x.name === c.fileName);
@@ -651,11 +680,13 @@ function loadComp(j) {
       }) });
     }
   }
+  if (typeof scoreFromJSON === 'function') scoreFromJSON(j.score);   // after the layers and effects exist: looks refer to them
   ui.gridDirty = ui.propsDirty = ui.browserDirty = true;
   return true;
 }
 function demoComp() {
   resetComp(3, 8);
+  if (typeof scoreFromJSON === 'function') scoreFromJSON(null);   // a new composition starts with no section looks
   [['Plasma', 'Tunnel', 'Gradient'], ['Lines', 'Checkerboard'], ['Beat Flash']].forEach((row, li) => row.forEach((g, ci) => { comp.layers[li].clips[ci] = genClip(g); }));
   comp.layers[1].blend = 1; comp.layers[2].blend = 1;
   trigger(0, 0);

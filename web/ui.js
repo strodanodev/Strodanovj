@@ -48,6 +48,7 @@ function dropOnCell(li, ci, e) {
   if (!drag) return;
   if (drag.kind === 'media') setClip(li, ci, mediaClip(drag.m));
   else if (drag.kind === 'gen') setClip(li, ci, genClip(drag.name));
+  else if (drag.kind === 'make') setClip(li, ci, drag.make());   // camera / text / 3D sources
   else if (drag.kind === 'clip' && (drag.l !== li || drag.c !== ci)) {
     const A = comp.layers[drag.l], B = comp.layers[li];
     if (A.active === drag.c || A.pendingCol === drag.c) eject(drag.l);
@@ -174,6 +175,7 @@ function renderProps() {
     if (!c) { p.append(el('div', { className: 'hint', textContent: 'Select a clip in the grid.' })); return; }
     p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: c.name, onchange: e => { c.name = e.target.value || c.name; ui.gridDirty = true; } })));
     if (c.missing) p.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: `"${c.fileName}" is not loaded. Add that file again (Add media, or drop it anywhere) to relink it.` }));
+    else if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].props) CLIP_TYPES[c.type].props(c, p, L);
     else if (c.type === 'video') {
       const v = c.video;
       p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}, ${(v.duration || 0).toFixed(2)} s` }),
@@ -227,6 +229,8 @@ function renderBrowser() {
     }
   } else {
     b.append(el('div', { className: 'hint', textContent: 'Drag onto a clip slot, or double-click to fill the selected slot.' }));
+    for (const panel of SOURCE_PANELS) b.append(...panel());
+    b.append(el('h4', { textContent: 'Generators' }));
     for (const d of DEFS.gen.values()) {
       const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const ci = sel.c >= 0 ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, genClip(d.name)); } });
       draggable(n, { kind: 'gen', name: d.name });
@@ -458,6 +462,7 @@ function initMenu() {
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),
     dj: () => toggleDJ(!djUI.open),
+    agent: () => toggleAgentPanel(!agUI.open),
     keys: () => toggleKeysHelp(),
     // header Output button: open every screen's output window, or close them all when any is live
     outWin: () => { if (liveScreens().length) screens.forEach((s, i) => closeOutput(i)); else screens.forEach((s, i) => openOutput(i)); syncOutBtn(); ui.propsDirty = true; },
@@ -511,6 +516,7 @@ function frame() {
   lastT = t0; lastFrameAt = t0;
   try {
     audioTick();
+    camTick();
     update(dt, realDt);
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
@@ -571,7 +577,7 @@ function tickUI() {
   outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
   if (ui.gridDirty && !holding('grid')) { ui.gridDirty = false; renderGrid(); }
   if (ui.propsDirty && !holding('props')) { ui.propsDirty = false; renderProps(); }
-  tickLfoMeters();
+  tickLfoMeters(); tickCamMeters();
   if (ui.browserDirty) { ui.browserDirty = false; renderBrowser(); }
   if (midi.learn) markMidi();
   comp.layers.forEach((L, li) => (cellEls[li] || []).forEach((cell, ci) => {
@@ -583,6 +589,7 @@ function tickUI() {
   }));
   const beat = ((Math.floor(comp.beats) % 4) + 4) % 4;
   tickDJ();
+  tickAgentUI();
   [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
   if (posSlider && document.activeElement !== posSlider.input && posSlider.video.duration) posSlider.input.value = posSlider.video.currentTime / posSlider.video.duration;
   $('monPrevT').textContent = 'PREVIEW: ' + comp.layers[Math.min(sel.l, comp.layers.length - 1)].name;
@@ -591,7 +598,7 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi(); initDJ(); initKeys();
+  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi(); initDJ(); buildAgentPanel(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) demoComp();

@@ -52,6 +52,7 @@ function onShortcut(e) {
     case 'KeyX': if (!e.repeat) { if (e.shiftKey) comp.layers.forEach((_, i) => eject(i)); else eject(sel.l); } return true;
     case 'Space': if (!e.repeat) $('tap').click(); return true;
     case 'KeyR': if (!e.repeat) $('resync').click(); return true;
+    case 'KeyN': if (!e.repeat && L) textNextLine(L.clips[L.active], e.shiftKey ? -1 : 1); return true;
   }
   return false;
 }

@@ -24,6 +24,7 @@ function audioCtx() {
     const lim = c.createDynamicsCompressor();   // two full-level tracks overlap in the middle of the crossfader
     lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
     audio.master.connect(lim); lim.connect(c.destination);
+    audio.out = lim;   // the final mix, also what a recording hears (record.js)
     const an = audio.analyser = c.createAnalyser();
     an.fftSize = 2048; an.smoothingTimeConstant = 0.4; an.minDecibels = -75; an.maxDecibels = -15;
     audio.master.connect(an);
@@ -55,7 +56,9 @@ function deckPos(d) {
 // Position of what is coming out of the speakers, which is what the visuals and the waveform should show.
 function deckHeard(d) {
   if (!d.playing) return d.offset;
-  return deckPos(d) - ((audio.ctx.outputLatency || audio.ctx.baseLatency || 0) + audio.offsetMs / 1000) * d.rate;
+  // While recording, the picture is lined up with the recorded sound, which is taken before the sound card's delay.
+  const lat = audio.recording ? 0 : audio.ctx.outputLatency || audio.ctx.baseLatency || 0;
+  return deckPos(d) - (lat + audio.offsetMs / 1000) * d.rate;
 }
 const deckBeats = (d, pos) => (pos - d.info.grid0) / d.info.beatLen;   // beat 0, 4, 8... are first beats of a bar
 function startSrc(d, when) {
@@ -191,7 +194,10 @@ function pickClockDeck() {
 musicClock = function () {
   if (!audio.ctx) return null;
   const d = pickClockDeck();
-  return d ? { beats: deckBeats(d, deckHeard(d)), bpm: d.info.bpm * d.rate } : null;
+  if (d) return { beats: deckBeats(d, deckHeard(d)), bpm: d.info.bpm * d.rate };
+  const mc = typeof midiClock === 'function' ? midiClock() : null;   // MIDI clock from external gear (follow.js)
+  if (mc) return mc;
+  return typeof liveClock === 'function' ? liveClock() : null;   // microphone or music file (live.js)
 };
 
 // ---------- per-frame: gains, sync, levels ----------
@@ -224,6 +230,12 @@ function audioTick() {
   else audioFeat.kick *= Math.exp(-dt * 9);
   audio.bassPrev = raw.bass;
   tickMix();   // here rather than in the UI tick, so mixes keep running while the control window is hidden
+  if (typeof tickFollow === 'function') tickFollow();   // track recognition, before the sections follow it
+  if (typeof tickScore === 'function') tickScore();   // before liveTick / agentTick, so they see this frame's deck sections
+  if (typeof tickCues === 'function') tickCues();     // track score playback
+  if (typeof liveTick === 'function') liveTick(dt);
+  if (typeof agentTick === 'function') agentTick();
+  if (typeof recTick === 'function') recTick();
 }
 // When no window is giving animation frames (control window hidden, no output window), keep mixes and autopilot
 // going from a timer. Browsers slow background timers to about once a second, which the mix scheduling allows for.
@@ -231,6 +243,7 @@ setInterval(() => { if (audio.ctx && performance.now() - audio.lastT > 250) audi
 // MIDI targets "deck:<A|B>:play | cue | sync | volume | tempo | bass | load" (see midi.js).
 function djMidiTarget(id, what) {
   if (id === 'mix') return mixMidiTarget(what);
+  if (id === 'look') return typeof lookMidiTarget === 'function' ? lookMidiTarget(what) : null;
   const d = audio.decks.find(x => x.id === id);
   if (!d) return null;
   if (what === 'play') return { fire: () => deckToggle(d) };
