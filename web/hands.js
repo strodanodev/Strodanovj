@@ -13,7 +13,20 @@
 'use strict';
 const handFeat = { present: 0, x: 0.5, y: 0.5, pinch: 0, open: 0, size: 0, spread: 0, hands: 0, gesture: 'None', score: 0 };
 const HAND_GESTURES = { Open_Palm: 'Open palm', Closed_Fist: 'Fist', Pointing_Up: 'Point up', Victory: 'V sign', Thumb_Up: 'Thumbs up', Thumb_Down: 'Thumbs down', ILoveYou: 'Rock on' };
-const handState = { worker: null, ready: false, loading: false, on: false, busy: false, err: '', last: 0, res: null, cand: 'None', candN: 0, cost: 0, preview: null, delegate: '', loadMs: 0 };
+const handState = { worker: null, ready: false, loading: false, on: false, busy: false, err: '', last: 0, lastVideoT: -1, res: null, cand: 'None', candN: 0, lostN: 0,
+  cost: 0, preview: null, delegate: '', loadMs: 0, sens: 0.6, done: [], sure: 0, stat: null };
+try { const s = parseFloat(localStorage.getItem('strodano-vj-hand-sens')); if (s >= 0 && s <= 1) handState.sens = s; } catch (e) {}
+// Sensitivity 0..1 -> MediaPipe's confidence thresholds. Higher = finds hands sooner and keeps them longer, at the cost of
+// the odd false hand. 0.6 (the default) gives ~0.36, against MediaPipe's own 0.5 which was slow to find and quick to lose.
+function handConf() {
+  const s = handState.sens;
+  return { minHandDetectionConfidence: 0.6 - 0.4 * s, minHandPresenceConfidence: 0.6 - 0.4 * s, minTrackingConfidence: 0.55 - 0.35 * s };
+}
+function setHandSens(s) {
+  handState.sens = s;
+  try { localStorage.setItem('strodano-vj-hand-sens', String(s)); } catch (e) {}
+  if (handState.worker && handState.ready) handState.worker.postMessage({ type: 'conf', conf: handConf() });
+}
 // The worker: MediaPipe's bundle is prepended to this source, so `Vision` exists in the worker's global scope.
 const HAND_WORKER = `
 let rec = null;
@@ -22,19 +35,22 @@ onmessage = async (e) => {
   if (d.type === 'init') {
     try {
       const fileset = { wasmLoaderPath: d.loaderUrl, wasmBinaryPath: d.wasmUrl };
-      const opt = del => ({ baseOptions: { modelAssetBuffer: new Uint8Array(d.model.slice(0)), delegate: del }, runningMode: 'VIDEO', numHands: 2,
-        minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 });
+      const opt = del => ({ baseOptions: { modelAssetBuffer: new Uint8Array(d.model.slice(0)), delegate: del }, runningMode: 'VIDEO', numHands: 2, ...d.conf });
       let used = d.delegate;
       try { rec = await Vision.GestureRecognizer.createFromOptions(fileset, opt(used)); }
       catch (err) { if (used === 'CPU') throw err; used = 'CPU'; rec = await Vision.GestureRecognizer.createFromOptions(fileset, opt('CPU')); }
       postMessage({ type: 'ready', delegate: used });
     } catch (err) { postMessage({ type: 'error', msg: String((err && err.message) || err) }); }
+  } else if (d.type === 'conf') {
+    if (rec) try { await rec.setOptions(d.conf); } catch (err) {}
   } else if (d.type === 'frame') {
     const t = performance.now(); let r = null;
     if (rec) try { r = rec.recognizeForVideo(d.bitmap, d.ts); } catch (err) {}
     d.bitmap.close();
+    const hd = r && (r.handedness || r.handednesses) || [];
     postMessage({ type: 'result', ms: performance.now() - t,
       landmarks: r ? r.landmarks.map(h => h.map(p => ({ x: p.x, y: p.y }))) : [],
+      sure: hd.map(h => (h[0] ? h[0].score : 0)),
       gestures: r ? r.gestures.map(g => g.slice(0, 1).map(c => ({ categoryName: c.categoryName, score: c.score }))) : [] });
   }
 };`;
@@ -76,7 +92,7 @@ async function handsStart(delegate = 'GPU') {
     await new Promise((res, rej) => {
       w.onmessage = e => { if (e.data.type === 'ready') { handState.delegate = e.data.delegate; res(); } else if (e.data.type === 'error') rej(new Error(e.data.msg)); };
       w.onerror = e => rej(new Error(e.message || 'the background worker failed'));
-      w.postMessage({ type: 'init', delegate, loaderUrl: blobUrl([loader], 'text/javascript'), wasmUrl: blobUrl([wasm], 'application/wasm'), model: model.buffer }, [model.buffer]);
+      w.postMessage({ type: 'init', delegate, conf: handConf(), loaderUrl: blobUrl([loader], 'text/javascript'), wasmUrl: blobUrl([wasm], 'application/wasm'), model: model.buffer }, [model.buffer]);
     });
     w.onmessage = e => handsResult(e.data);
     w.onerror = () => { handState.err = 'Hand tracking stopped (the background worker failed).'; handState.ready = handState.on = false; ui.browserDirty = true; };
@@ -99,7 +115,7 @@ function handsStop() {
 
 const handDist = (a, b, asp) => Math.hypot((a.x - b.x) * asp, a.y - b.y);
 const handEase = (o, k, v, f) => { o[k] += (v - o[k]) * f; };
-// A gesture counts once it has been seen in 3 analyses in a row; a change fires the old one's release and the new one's press.
+// A gesture counts once it has been seen in 2 analyses in a row; a change fires the old one's release and the new one's press.
 function handGesture(name) {
   if (name === handFeat.gesture) return;
   const old = handFeat.gesture;
@@ -109,16 +125,21 @@ function handGesture(name) {
     if (name !== 'None') onInputEvent('gest', 0, name, 1);
   }
 }
-// Called every frame from the main loop (after camTick): hands the next picture to the worker when it is free.
+// Called every frame from the main loop (after camTick): as soon as the worker is free, it gets the newest camera frame.
+// MediaPipe follows a hand from one analysis to the next, so the more analyses per second, the less often it loses the hand
+// and has to find it again from scratch; there is no fixed rate cap. Frames are 640 wide (a hand at arm's length is still
+// big enough to find) with medium-quality scaling.
 function handsTick() {
   const v = camState.track && camState.track.video;
   if (!handState.on || !handState.ready || !v || v.readyState < 2) return;
   drawHandPreview();
   const now = performance.now();
-  if (handState.busy || now - handState.last < 66) return;
-  handState.last = now; handState.busy = true;
+  if (handState.busy && now - handState.last < 1500) return;   // one frame in flight (a lost reply frees it after 1.5 s)
+  if (v.currentTime === handState.lastVideoT) return;          // no new camera frame yet
+  handState.last = now; handState.lastVideoT = v.currentTime; handState.busy = true;
   handState.asp = (v.videoWidth || 16) / (v.videoHeight || 9);
-  createImageBitmap(v, { resizeWidth: 320, resizeHeight: Math.max(1, Math.round(320 / handState.asp)) })
+  const w = Math.min(640, v.videoWidth || 640);
+  createImageBitmap(v, { resizeWidth: w, resizeHeight: Math.max(1, Math.round(w / handState.asp)), resizeQuality: 'medium' })
     .then(b => handState.worker.postMessage({ type: 'frame', bitmap: b, ts: now }, [b]))
     .catch(() => { handState.busy = false; });
 }
@@ -126,11 +147,21 @@ function handsResult(res) {
   if (res.type !== 'result') return;
   handState.busy = false;
   handState.cost += (res.ms - handState.cost) * 0.2;
+  const now = performance.now();
+  handState.done.push(now);
+  while (handState.done.length && now - handState.done[0] > 1000) handState.done.shift();   // analyses in the last second
+  handState.sure = (res.sure && res.sure.length) ? Math.max(...res.sure) : 0;
   if (!handState.on) return;
-  handState.res = res;
   const hands = res.landmarks || [], asp = handState.asp || 16 / 9;
-  handFeat.hands = hands.length;
-  if (!hands.length) { handEase(handFeat, 'present', 0, 0.3); handEase(handFeat, 'pinch', 0, 0.3); handEase(handFeat, 'open', 0, 0.3); handEase(handFeat, 'spread', 0, 0.3); handState.cand = 'None'; handState.candN = 0; handGesture('None'); return; }
+  if (!hands.length) {
+    // a single missed analysis keeps the last hand (and gesture); only a second miss in a row lets it go
+    if (++handState.lostN < 2 && handState.res && handState.res.landmarks.length) return;
+    handState.res = res; handFeat.hands = 0;
+    handEase(handFeat, 'present', 0, 0.3); handEase(handFeat, 'pinch', 0, 0.3); handEase(handFeat, 'open', 0, 0.3); handEase(handFeat, 'spread', 0, 0.3);
+    handState.cand = 'None'; handState.candN = 0; handGesture('None');
+    return;
+  }
+  handState.lostN = 0; handState.res = res; handFeat.hands = hands.length;
   const palm = h => { const p = [0, 5, 9, 13, 17].map(i => h[i]); return { x: p.reduce((s, q) => s + q.x, 0) / 5, y: p.reduce((s, q) => s + q.y, 0) / 5 }; };
   const h = hands[0], pc = palm(h), size = handDist(h[0], h[9], asp);
   let x = pc.x;
@@ -141,10 +172,10 @@ function handsResult(res) {
   handEase(handFeat, 'pinch', pinch, 0.5); handEase(handFeat, 'open', open, 0.4);
   handEase(handFeat, 'size', Math.min(1, Math.max(0, (size - 0.08) / 0.35)), 0.4);
   handEase(handFeat, 'spread', hands.length > 1 ? Math.min(1, handDist(pc, palm(hands[1]), asp) / 1.2) : 0, 0.4);
-  const g = res.gestures && res.gestures[0] && res.gestures[0][0], name = g && g.score > 0.55 && HAND_GESTURES[g.categoryName] ? g.categoryName : 'None';
+  const g = res.gestures && res.gestures[0] && res.gestures[0][0], name = g && g.score > 0.5 && HAND_GESTURES[g.categoryName] ? g.categoryName : 'None';
   handFeat.score = g ? g.score : 0;
   if (name === handState.cand) handState.candN++; else { handState.cand = name; handState.candN = 1; }
-  if (handState.candN >= 3) handGesture(name);
+  if (handState.candN >= 2) handGesture(name);
 }
 // The live preview in the Sources tab: the camera picture with the tracked points and the recognised gesture.
 const HAND_BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
@@ -171,7 +202,16 @@ function drawHandPreview() {
 
 // ---------- Sources tab ----------
 const handMeters = [];
-function tickHandMeters() { for (const m of handMeters) m.i.style.width = (m.get() * 100).toFixed(0) + '%'; }
+function tickHandMeters() {
+  for (const m of handMeters) m.i.style.width = (m.get() * 100).toFixed(0) + '%';
+  const st = handState.stat;
+  if (st && st.isConnected) {
+    const rate = handState.done.length, txt = `${rate} looks / s · ${Math.round(handState.cost)} ms each · ${handState.delegate}`
+      + (handFeat.hands ? ` · sure ${Math.round(handState.sure * 100)}%` : ' · no hand');
+    if (st.textContent !== txt) st.textContent = txt;
+    st.classList.toggle('bad', rate > 0 && rate < 6);
+  }
+}
 SOURCE_PANELS.push(() => {
   handMeters.length = 0;
   const box = el('div', { className: 'cam-box' }, el('h4', { textContent: 'Hands' }));
@@ -186,7 +226,10 @@ SOURCE_PANELS.push(() => {
     const cv = el('canvas', { className: 'hand-preview', width: 320, height: 180 });
     handState.preview = cv;
     const bar = (label, get) => { const i = el('i'); handMeters.push({ i, get }); return el('div', { className: 'fld' }, el('label', { textContent: label }), el('span', { className: 'cam-meter' }, i)); };
-    box.append(cv, bar('Hand X', () => handFeat.x), bar('Hand Y', () => handFeat.y), bar('Pinch', () => handFeat.pinch), bar('Open hand', () => handFeat.open),
+    handState.stat = el('div', { className: 'hint hand-stat', title: 'How many times a second the hands are analysed (more = follows faster and loses the hand less often), how long one analysis takes, and how sure it is that it sees a hand' });
+    const sens = fld('Sensitivity', 0, 1, 0.01, () => handState.sens, setHandSens);
+    sens.title = 'Higher finds hands sooner and keeps them longer (may see the odd false hand); lower is stricter';
+    box.append(cv, handState.stat, sens, bar('Hand X', () => handFeat.x), bar('Hand Y', () => handFeat.y), bar('Pinch', () => handFeat.pinch), bar('Open hand', () => handFeat.open),
       bar('Closeness', () => handFeat.size), bar('Two hands apart', () => handFeat.spread),
       el('div', { className: 'hint', textContent: 'Sliders: click ~ next to a slider and pick a Hand source, or press Detect and move. Gestures (fist, open palm, V sign, thumbs up / down, point up, rock on) work like pads: turn on Map, click a clip or button, then make the gesture.' }));
   }

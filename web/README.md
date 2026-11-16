@@ -36,7 +36,7 @@ Inside the app, **Shader Editor** compiles custom effects and generators as you 
 
 **Camera on a layer:** in the Sources tab, **Show on a layer** adds a top layer called Camera, playing the camera, ready for effects, transitions and blend modes.
 
-**Hands** (Sources tab): **Track hands** follows your hands and fingers on the camera (a few seconds to load the first time; it runs in the background so the show keeps its frame rate). The preview shows the tracked points and the recognised gesture.
+**Hands** (Sources tab): **Track hands** follows your hands and fingers on the camera (a few seconds to load the first time; it runs in the background so the show keeps its frame rate). The preview shows the tracked points and the recognised gesture; the line under it shows how many times a second the hands are analysed (aim for 15 or more) and how sure the tracker is. If hands are slow to be found or get lost, raise **Sensitivity**; if it sees hands that are not there, lower it. Good, even light on your hands helps more than anything else.
 - Sliders: hand X / Y, pinch, open hand, closeness and two hands apart.
 - Gestures work like pads: open palm, fist, point up, V sign, thumbs up, thumbs down, rock on. Turn on **Map** (the MIDI button), click a clip or button, then make the gesture.
 
