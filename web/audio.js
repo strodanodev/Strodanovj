@@ -223,9 +223,14 @@ function audioTick() {
   if (raw.bass > audio.bassAvg + 0.08 && raw.bass > audio.bassPrev + 0.02) audioFeat.kick = 1;
   else audioFeat.kick *= Math.exp(-dt * 9);
   audio.bassPrev = raw.bass;
+  tickMix();   // here rather than in the UI tick, so mixes keep running while the control window is hidden
 }
+// When no window is giving animation frames (control window hidden, no output window), keep mixes and autopilot
+// going from a timer. Browsers slow background timers to about once a second, which the mix scheduling allows for.
+setInterval(() => { if (audio.ctx && performance.now() - audio.lastT > 250) audioTick(); }, 100);
 // MIDI targets "deck:<A|B>:play | cue | sync | volume | tempo | bass | load" (see midi.js).
 function djMidiTarget(id, what) {
+  if (id === 'mix') return mixMidiTarget(what);
   const d = audio.decks.find(x => x.id === id);
   if (!d) return null;
   if (what === 'play') return { fire: () => deckToggle(d) };

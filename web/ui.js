@@ -56,9 +56,27 @@ function dropOnCell(li, ci, e) {
     ui.gridDirty = true;
   }
 }
+// Delete a layer (its clips and effects go with it). The selection follows the layer it was on.
+function deleteLayer(li) {
+  if (comp.layers.length <= 1) { setStatus('A composition needs at least one layer'); return; }
+  const name = comp.layers[li].name;
+  removeLayer(li);
+  if (sel.l > li || sel.l >= comp.layers.length) sel.l = Math.max(0, sel.l - 1);
+  sel.c = -1; ui.gridDirty = ui.propsDirty = true;
+  setStatus('Deleted ' + name);
+}
+// Destructive buttons take two clicks: the first arms it (red, "click again"), the second within 2.5 s acts.
+// A stray click during a show then costs nothing.
+function armThen(btn, what, fn) {
+  if (btn.classList.contains('armed')) { clearTimeout(btn.armT); btn.classList.remove('armed'); fn(); return; }
+  btn.classList.add('armed'); setStatus('Click again to ' + what);
+  btn.armT = setTimeout(() => btn.classList.remove('armed'), 2500);
+}
+const TRASH_SVG = '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
 function renderGrid() {
   const g = $('grid');
   g.textContent = '';
+  g.style.setProperty('--cols', comp.columns);   // every row shares one column template (index.html .row)
   cellEls = [];
   const head = el('div', { className: 'row' },
     el('div', { className: 'lctl' }, el('div', { className: 'r' }, el('b', { textContent: 'COMPOSITION', style: { color: 'var(--acc)' } }),
@@ -77,7 +95,8 @@ function renderGrid() {
         tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }, 'layer:' + li + ':solo'),
         tog('A', 'Crossfader side A', L.xfade === 1, '', () => { L.xfade = L.xfade === 1 ? 0 : 1; }),
         tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
-        el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } })),
+        el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } }),
+        el('button', { className: 'del', title: 'Delete layer (click twice)', ariaLabel: 'Delete ' + L.name, innerHTML: TRASH_SVG, onclick: e => armThen(e.currentTarget, 'delete ' + L.name, () => deleteLayer(li)) })),
       el('div', { className: 'r' },
         el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; reflectMidi('layer:' + li + ':opacity', L.opacity); } }),
         el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
@@ -148,7 +167,7 @@ function renderProps() {
       el('div', { className: 'fld' }, el('label', { textContent: 'Scaling' }), el('select', { onchange: e => { L.fit = +e.target.value; } }, ...['Fill', 'Fit', 'Stretch'].map((n, i) => el('option', { value: i, textContent: n, selected: i === L.fit })))),
       fld('Scale', 0.05, 4, 0.01, () => L.scale, v => { L.scale = v; }), fld('Position X', -1, 1, 0.001, () => L.x, v => { L.x = v; }), fld('Position Y', -1, 1, 0.001, () => L.y, v => { L.y = v; }),
       el('div', { className: 'fld' }, el('button', { textContent: 'Reset transform', onclick: () => { L.scale = 1; L.x = L.y = 0; ui.propsDirty = true; } }),
-        el('button', { textContent: 'Remove layer', onclick: () => { removeLayer(sel.l); sel.l = Math.max(0, sel.l - 1); sel.c = -1; } })),
+        el('button', { textContent: 'Delete layer', title: 'Click twice', onclick: e => armThen(e.currentTarget, 'delete ' + L.name, () => deleteLayer(sel.l)) })),
       chainUI(L.fx));
   } else {
     const c = L.clips[sel.c];
@@ -434,6 +453,7 @@ function initMenu() {
     media: () => $('mediaInput').click(),
     addLayer: () => { addLayer(); sel.l = comp.layers.length - 1; sel.c = -1; ui.propsDirty = true; },
     addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
+    delLayer: () => { const L = comp.layers[sel.l]; if (L) armThen($('delLayerBtn'), 'delete ' + L.name + ' (the selected layer)', () => deleteLayer(sel.l)); },
     output: () => { $('outModal').hidden = false; renderOutPanels(); },
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),

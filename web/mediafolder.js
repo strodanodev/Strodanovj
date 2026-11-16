@@ -18,12 +18,12 @@ function folderStore(op, value) {
     };
   });
 }
-// Media files in the folder and its subfolders (4 levels, hidden folders skipped), sorted by name.
+// Media files (video, images, audio tracks) in the folder and its subfolders (4 levels, hidden folders skipped), sorted by name.
 async function scanFolder(dir, depth = 0, out = []) {
   for await (const h of dir.values()) {
     if (out.length >= 5000) break;
     if (h.kind === 'directory') { if (depth < 4 && !h.name.startsWith('.')) await scanFolder(h, depth + 1, out); }
-    else if (isVideoName(h.name) || isImageName(h.name)) out.push(await h.getFile());
+    else if (isVideoName(h.name) || isImageName(h.name) || isAudioFile({ name: h.name, type: '' })) out.push(await h.getFile());
   }
   return depth ? out : out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -33,6 +33,7 @@ async function loadMediaFolder() {
   try {
     const before = missingClips(), files = await scanFolder(mediaFolder.handle);
     addMediaFiles(files);
+    crateAdd(files);   // audio files go to the DJ track list
     mediaFolder.count = files.length; mediaFolder.state = 'ready';
     const relinked = before - missingClips();
     setStatus(`Media folder "${mediaFolder.handle.name}": ${files.length} file(s)` + (relinked ? `, ${relinked} clip(s) relinked` : '') + (missingClips() ? `, ${missingClips()} still missing` : ''));

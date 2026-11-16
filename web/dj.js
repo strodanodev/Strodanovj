@@ -17,14 +17,17 @@ function buildDeck(d) {
   u.tempo = el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: 0.5, title: 'Tempo, -8 % to +8 % (double-click to reset). Moving it turns Sync off.',
     dataset: { midi: 'deck:' + d.id + ':tempo' }, oninput: e => deckTempo(d, +e.target.value), ondblclick: () => deckTempo(d, 0.5) });
   u.vol = el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: d.volume, title: 'Deck volume', dataset: { midi: 'deck:' + d.id + ':volume' }, oninput: e => { d.volume = +e.target.value; } });
+  u.bass = el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: d.bass, title: 'Bass: left kills it, middle leaves it alone (double-click to reset)', dataset: { midi: 'deck:' + d.id + ':bass' },
+    oninput: e => { d.bass = +e.target.value; }, ondblclick: () => { d.bass = 0.5; } });
+  u.cue = el('span', { className: 'dq' });
   u.root = el('div', { className: 'deck' },
-    el('div', { className: 'dh' }, el('b', { className: 'did', textContent: d.id }), u.name, el('i', { className: 'dk', textContent: 'DRIVING VISUALS' }), u.bpm, u.time),
+    el('div', { className: 'dh' }, el('b', { className: 'did', textContent: d.id }), u.name, el('i', { className: 'dk', textContent: 'DRIVING VISUALS' }), u.cue, u.bpm, u.time),
     u.wave,
     el('div', { className: 'dc' },
       el('button', { textContent: 'Load...', title: 'Load a track (or drop an audio file on this deck)', onclick: () => { djUI.loadFor = d; $('trackInput').click(); } }),
       u.play, btn('Cue', 'Stop and go back to the first bar', 'cue', () => deckCue(d)), u.sync,
       el('button', { textContent: 'Bar 1', title: 'If the bright bar lines sit on the wrong beat: press this on the first beat of a bar', onclick: () => deckSetDownbeat(d) }),
-      el('span', { textContent: 'Tempo' }), u.tempo, u.rate, el('span', { textContent: 'Vol' }), u.vol));
+      el('span', { textContent: 'Tempo' }), u.tempo, u.rate, el('span', { textContent: 'Bass' }), u.bass, el('span', { textContent: 'Vol' }), u.vol));
   dropTarget(u.root, hasFiles, e => {
     const f = [...e.dataTransfer.files].find(isAudioFile);
     if (f) deckLoad(d, f); else setStatus('Drop an audio file (MP3, WAV, FLAC, M4A...) on a deck');
@@ -42,10 +45,11 @@ function initDJ() {
   djUI.decks = audio.decks.map(buildDeck);
   const off = el('input', { type: 'number', min: -500, max: 500, step: 5, value: audio.offsetMs, title: 'Raise it if the visuals hit before the sound, lower it if they hit late',
     onchange: e => { audio.offsetMs = Math.min(500, Math.max(-500, +e.target.value || 0)); e.target.value = audio.offsetMs; try { localStorage.setItem(OFFSET_KEY, audio.offsetMs); } catch (err) {} } });
-  root.append(...djUI.decks.map(u => u.root), el('div', { className: 'df' },
+  root.append(...djUI.decks.map(u => u.root), buildMixer(), buildCrate(), el('div', { className: 'df' },
     el('span', { textContent: 'The A/B crossfader below blends the two decks together with the layers set to A and B.' }),
     el('span', { style: { marginLeft: 'auto' }, textContent: 'Visual delay (ms)' }), off));
   $('trackInput').addEventListener('change', e => { const f = e.target.files[0]; if (f && djUI.loadFor) deckLoad(djUI.loadFor, f); e.target.value = ''; });
+  initCrate();
   try { if (localStorage.getItem(DJ_KEY) === '1') toggleDJ(true); } catch (e) {}
 }
 function toggleDJ(on) {
@@ -107,22 +111,38 @@ function drawDeck(u) {
       x.fillRect(px, bar ? 0 : zh * 0.2, Math.max(1, Math.round((bar ? 1.5 : 1) * dpr)), bar ? zh : zh * 0.6);
     }
   }
+  // mix-in and outro markers: a flag at the top of the waveform
+  const flag = (t, label) => {
+    if (t === undefined || t < t0 || t > t0 + span) return;
+    const px = Math.round((t - t0) / span * W);
+    x.fillStyle = THEME.acc; x.fillRect(px, 0, Math.max(1, Math.round(2 * dpr)), zh);
+    x.font = '600 ' + 10 * dpr + 'px Inter, system-ui, sans-serif'; x.textAlign = 'left';
+    const w = x.measureText(label).width + 8 * dpr;
+    x.fillRect(px, 0, w, 14 * dpr); x.fillStyle = '#000'; x.fillText(label, px + 4 * dpr, 10.5 * dpr);
+  };
+  if (i.ok) { flag(i.mixIn, 'MIX IN'); flag(i.mixOut, 'OUTRO'); }
   x.fillStyle = THEME.acc; x.fillRect(Math.round(W / 2) - dpr, 0, 2 * dpr, zh);
   // overview strip with the played part dimmed
   const f = Math.min(1, Math.max(0, pos / i.duration));
   x.drawImage(u.ov, 0, oy, W, oh);
   x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, oy, f * W, oh);
   x.fillStyle = THEME.acc; x.fillRect(Math.round(f * W) - dpr, oy, 2 * dpr, oh);
+  if (i.ok) for (const t of [i.mixIn, i.mixOut]) { x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(Math.round(t / i.duration * W), oy, Math.max(1, dpr), oh); }
 }
 // Called from tickUI every frame the control window is visible.
 function tickDJ() {
   const clock = audio.clockDeck;
   if (clock && document.activeElement !== $('bpm')) { const s = comp.bpm.toFixed(1); if ($('bpm').value !== s) $('bpm').value = s; }
   if (!djUI.open) return;
+  tickMixUI(); tickCrate();
   for (const u of djUI.decks) {
     const d = u.d, i = d.info;
     setText(u.name, d.name || 'Empty');
-    setText(u.bpm, i ? (i.ok ? (i.bpm * d.rate).toFixed(1) + ' BPM' : 'no beat') : '');
+    const t = i && d.file && crate.tracks.find(x => x.key === fileKey(d.file));
+    setText(u.bpm, i ? (i.ok ? (i.bpm * d.rate).toFixed(1) + ' BPM' : 'no beat') + (i.camelot ? '  ' + i.camelot : '') + (t ? '  E' + t.energy : '') : '');
+    let q = '';
+    if (d.playing && i && i.ok && i.mixOut) { const bars = Math.floor((deckBeats(d, i.mixOut) - deckBeats(d, deckHeard(d))) / 4); q = bars > 0 && bars <= 32 ? 'outro in ' + bars : bars <= 0 && deckHeard(d) < i.beatEnd ? 'outro' : ''; }
+    setText(u.cue, q);
     setText(u.time, d.buffer ? mmss(Math.max(0, deckHeard(d))) + ' / ' + mmss(d.buffer.duration) : '');
     setText(u.rate, (d.rate >= 1 ? '+' : '') + ((d.rate - 1) * 100).toFixed(1) + '%');
     setText(u.play, d.playing ? 'Pause' : 'Play');
@@ -131,6 +151,7 @@ function tickDJ() {
     u.root.classList.toggle('clock', clock === d);
     if (document.activeElement !== u.tempo) u.tempo.value = 0.5 + (d.rate - 1) / 0.16;
     if (document.activeElement !== u.vol) u.vol.value = d.volume;
+    if (document.activeElement !== u.bass) u.bass.value = d.bass;
     drawDeck(u);
   }
 }

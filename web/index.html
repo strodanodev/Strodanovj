@@ -73,12 +73,21 @@ input[type=checkbox]{accent-color:var(--acc)}
 
 /* clip grid */
 #grid{flex:0 0 auto;min-height:120px;overflow:auto;padding:var(--s) var(--m);border-bottom:1px solid var(--line);max-height:56vh} #app.djopen #grid{max-height:38vh}
-.row{display:flex;gap:6px;margin-bottom:6px;align-items:stretch}
-.lctl{flex:0 0 260px;display:flex;flex-direction:column;gap:6px;justify-content:center;padding:6px 8px;border-radius:var(--r-card);background:var(--card);border:1px solid var(--card-line)}
+/* Every row (the Column header and each layer) uses the same column template, so headers sit exactly over their
+   slots: layer controls | layer preview | one track per column. ui.js sets --cols on #grid. */
+.row{display:grid;grid-template-columns:260px 112px repeat(var(--cols,8),minmax(96px,170px));gap:6px;margin-bottom:6px;align-items:stretch}
+.lctl{min-width:0;display:flex;flex-direction:column;gap:6px;justify-content:center;padding:6px 8px;border-radius:var(--r-card);background:var(--card);border:1px solid var(--card-line)}
 .row.sel .lctl{background:var(--acc-soft);border-color:var(--acc-muted)} .lctl .r{display:flex;gap:4px;align-items:center}
 .lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;font-weight:500}
 .lctl button{padding:2px 6px;min-width:24px;font-size:12px} .lctl input[type=range]{flex:1;min-width:60px} .lctl select{width:92px;padding:2px 6px;font-size:12px}
-.colbtn,.cell{flex:1 1 0;min-width:96px;max-width:170px}
+.colbtn,.cell{min-width:0}
+.lctl input[type=range]{width:0}   /* a range's built-in 129px width must not widen the box */
+.lctl .r>.nm,.lctl .r>b{min-width:0} .lctl .r>b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lctl button{flex-shrink:0}
+.lctl button.del{display:grid;place-items:center;padding:0;width:24px;height:22px;background:transparent;border-color:transparent;color:var(--dim)}
+.lctl button.del:hover{color:var(--txt);background:var(--surface-hover);border-color:var(--ctl-line)}
+.lctl button.del svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+button.armed,.lctl button.del.armed,#sidebar button.armed{background:rgba(203,36,49,.3);border-color:var(--bad);color:#fff}
 .colbtn{font-size:12px;color:var(--dim)} .colbtn:hover{color:var(--txt)}
 .cell{position:relative;aspect-ratio:16/11;background:var(--card);border:1px solid var(--card-line);border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .12s}
 .cell.has{background:var(--surface)} .cell:hover{border-color:var(--ctl-line)} .cell.pending{border:2px solid var(--warn)} .cell.active{border:2px solid var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
@@ -89,7 +98,7 @@ input[type=checkbox]{accent-color:var(--acc)}
 .cell .miss{position:absolute;left:6px;top:6px;background:var(--bad);color:#fff;padding:1px 6px;border-radius:var(--r-ctl);font-size:11px}
 
 /* live layer previews (preview.js) */
-.lmon{flex:0 0 112px;display:grid;place-items:center;background:#000;border:1px solid var(--card-line);border-radius:6px;overflow:hidden;position:relative}
+.lmon{min-width:0;display:grid;place-items:center;background:#000;border:1px solid var(--card-line);border-radius:6px;overflow:hidden;position:relative}
 .lmon canvas{width:100%;height:auto;display:block}
 .lmon.live{border-color:var(--acc-muted)}
 .lmon:not(.live)::after{content:"OFF";position:absolute;font:11px var(--mono);letter-spacing:.08em;color:#444}
@@ -157,6 +166,21 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .deck canvas{width:100%;height:84px;display:block;background:#000;border-radius:var(--r-ctl);cursor:pointer;touch-action:none}
 .deck .dc{display:flex;gap:6px;align-items:center;margin-top:var(--s);flex-wrap:wrap} .deck .dc input[type=range]{flex:1;min-width:50px} .deck .dc .dt{min-width:46px;text-align:right}
 #dj .df{grid-column:1/-1;display:flex;gap:var(--s);align-items:center;color:var(--dim)} #dj .df input{width:64px}
+.deck .dq{color:var(--acc);font:11px var(--mono);white-space:nowrap}
+/* DJ mixer row and track list (mix.js, crate.js) */
+.dmix{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--card-line);border-radius:var(--r-card);background:var(--card)}
+.dmix .mixgo{min-width:84px;font-weight:600} .dmix .mixtxt{flex:1 1 200px;min-width:0;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dmix .mixprog{flex:0 0 70px;height:4px;border-radius:2px;background:var(--ctl);overflow:hidden} .dmix .mixprog i{display:block;height:100%;width:0;background:var(--acc)}
+.dmix label{color:var(--dim);white-space:nowrap} .dmix select{padding:2px 4px}
+.crate{grid-column:1/-1;border:1px solid var(--card-line);border-radius:var(--r-card);background:var(--card);padding:6px 12px;min-width:0} .crate.over{border-color:var(--acc)}
+.crate .ch{display:flex;gap:var(--s);align-items:center} .crate .ch .hint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crate .cl{max-height:132px;overflow:auto;margin-top:4px}
+.crate .ct{display:flex;gap:8px;align-items:center;padding:2px 4px;border-radius:var(--r-ctl);cursor:default} .crate .ct:hover{background:var(--surface-hover)} .crate .ct.on{background:var(--acc-soft)}
+.crate .ct.played{opacity:.45} .crate .cn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crate .cv{flex:0 0 46px;text-align:right;color:var(--dim);font:12px var(--mono)} .crate .ct button{padding:0 7px}
+.crate .fit{flex:0 0 46px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;text-align:center;border-radius:10px}
+.crate .fit.great{background:var(--acc);color:#000} .crate .fit.good{background:var(--acc-muted);color:var(--acc)} .crate .fit.ok{color:var(--dim)} .crate .fit.hard{color:var(--bad)}
+.cell.queued{border:2px dashed var(--acc)}
 /* beat LFO on a parameter (motion.js) */
 .fld .lfo-btn{flex:0 0 auto;padding:0 6px;min-width:22px;font:12px var(--mono)}
 .fld.lfo{margin:0 0 6px 102px;gap:4px} .fld.lfo select{flex:0 1 auto;min-width:0;padding:2px 4px} .fld.lfo input[type=range]{flex:1;min-width:30px}
@@ -169,6 +193,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <div class="logo"><i>S</i></div>
     <button data-act="media" title="Add media" aria-label="Add media"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg></button>
     <button data-act="addLayer" title="Add layer" aria-label="Add layer"><svg viewBox="0 0 24 24"><path d="M12 4 3 8.5l9 4.5 9-4.5z"/><path d="M3 13l9 4.5 4-2"/><path d="M19 14v6M16 17h6"/></svg></button>
+    <button id="delLayerBtn" data-act="delLayer" title="Delete the selected layer (click twice)" aria-label="Delete selected layer"><svg viewBox="0 0 24 24"><path d="M12 4 3 8.5l9 4.5 9-4.5z"/><path d="M3 13l9 4.5 4-2"/><path d="M16 17h6"/></svg></button>
     <button data-act="addCol" title="Add column" aria-label="Add column"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><path d="M19.5 9v6M16.5 12h6"/></svg></button>
     <button data-act="delCol" title="Remove column" aria-label="Remove column"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><path d="M16.5 12h6"/></svg></button>
     <hr>
@@ -223,6 +248,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
   <div id="keysBody"></div>
 </div>
 <input type="file" id="mediaInput" multiple accept="video/*,image/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
+<input type="file" id="crateInput" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff" multiple hidden>
 <input type="file" id="trackInput" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff" hidden>
 <input type="file" id="compInput" accept=".svj,.json" hidden>
 <input type="file" id="shaderInput" accept=".fs,.frag,.glsl,.isf,.txt" multiple hidden>
@@ -232,6 +258,8 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="midi.js"></script>
 <script src="analysis.js"></script>
 <script src="audio.js"></script>
+<script src="crate.js"></script>
+<script src="mix.js"></script>
 <script src="dj.js"></script>
 <script src="keys.js"></script>
 <script src="motion.js"></script>

@@ -345,6 +345,7 @@ function endTransition(L) { if (L.from >= 0 && L.from !== L.active) pauseClip(L.
 function trigger(li, ci) {
   const L = comp.layers[li], c = L && L.clips[ci];
   if (!c || c.missing || c.error) return;
+  if (typeof quantHold === 'function' && quantHold(li, ci)) return;   // mix.js: wait for the next beat or bar while music plays
   if (c.video) {
     try { c.video.currentTime = 0; } catch (e) {}
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
