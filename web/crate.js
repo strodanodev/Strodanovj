@@ -34,7 +34,11 @@ async function crateInfo(file, buf) {
   t.info = info; t.state = 'ready'; rankEnergy(); crateDirty();
   return info;
 }
-function newTrack(file) { return { key: fileKey(file), file, name: file.name.replace(/\.[^.]+$/, ''), info: null, state: 'queued', played: false, energy: 0 }; }
+function newTrack(file) {
+  const t = { key: fileKey(file), file, name: file.name.replace(/\.[^.]+$/, ''), info: null, state: 'queued', played: false, energy: 0 };
+  if (typeof plRestore === 'function') plRestore(t);   // its playlist place and transition points (playlist.js)
+  return t;
+}
 
 function crateAdd(files) {
   let n = 0;
@@ -42,7 +46,7 @@ function crateAdd(files) {
     if (!isAudioFile(f) || crate.tracks.some(t => t.key === fileKey(f))) continue;
     crate.tracks.push(newTrack(f)); n++;
   }
-  if (n) { crateDirty(); analyseQueue(); }
+  if (n) { if (typeof plSortSaved === 'function') plSortSaved(); crateDirty(); analyseQueue(); }
   return n;
 }
 // One track at a time: a decoded six-minute track is over 100 MB, so they are never all held at once.
@@ -115,9 +119,24 @@ function crateLoad(t, d) {
   if (!t || t.state === 'error' || d.playing) { if (d.playing) setStatus('Deck ' + d.id + ' is playing: pause it or load the other deck'); return; }
   deckLoad(d, t.file);
 }
+// The list entry for the track on deck d.
+const trackOf = d => (d && d.file ? crate.tracks.find(t => t.key === fileKey(d.file)) || null : null);
+// Transition points: where a song starts when it is mixed in, and where the mix to the next song begins. The playlist
+// (playlist.js) can move them (t.inAt / t.outAt, seconds); otherwise they are the analysed ones.
+function inPoint(d) { const t = trackOf(d); return t && typeof t.inAt === 'number' ? t.inAt : d.info.mixIn; }
+function outPoint(d) { const t = trackOf(d); return t && typeof t.outAt === 'number' ? t.outAt : d.info.mixOut; }
+// Playlist order (mixer.order, set by the Agent's Start): the first unplayed, analysed song after the one on deck ref
+// (or the first unplayed one in the list).
+function crateNextTrack(ref) {
+  const ok = t => t.state === 'ready' && !t.played && !audio.decks.some(d => d.playing && d.file && fileKey(d.file) === t.key);
+  const cur = trackOf(ref), at = cur ? crate.tracks.indexOf(cur) : -1;
+  return crate.tracks.slice(at + 1).find(ok) || crate.tracks.find(ok) || null;
+}
 // Load the best next track into deck d (the MIDI "load" button, and autopilot).
 function crateLoadNext(d) {
-  const o = otherDeck(d), best = suggestions(o.playing ? o : refDeck())[0] || (!refDeck() && crate.tracks.find(t => t.state === 'ready' && !t.played));
+  const o = otherDeck(d);
+  if (mixer.order) { const n = crateNextTrack(o.playing ? o : refDeck()); if (n) crateLoad(n, d); else setStatus('The playlist is finished'); return; }
+  const best = suggestions(o.playing ? o : refDeck())[0] || (!refDeck() && crate.tracks.find(t => t.state === 'ready' && !t.played));
   if (best) crateLoad(best.t || best, d); else setStatus('No more analysed tracks in the list to load');
 }
 // A track counts as played once it has been the deck driving the visuals for a while.
@@ -130,7 +149,7 @@ function crateMarkPlayed() {
 
 // ---------- list UI ----------
 let crateEl = null, crateRebuild = true;
-function crateDirty() { crateRebuild = true; }
+function crateDirty() { crateRebuild = true; if (typeof plDirty === 'function') plDirty(); }
 function buildCrate() {
   crateEl = el('div', { className: 'crate' });
   dropTarget(crateEl, hasFiles, e => { const n = crateAdd(e.dataTransfer.files); setStatus(n ? n + ' track(s) added to the list' : 'Drop audio files (MP3, WAV, FLAC, M4A...) here'); });

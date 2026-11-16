@@ -74,6 +74,7 @@ function armThen(btn, what, fn) {
   btn.armT = setTimeout(() => btn.classList.remove('armed'), 2500);
 }
 const TRASH_SVG = '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+const LOCK_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 function renderGrid() {
   const g = $('grid');
   g.textContent = '';
@@ -96,13 +97,16 @@ function renderGrid() {
         tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }, 'layer:' + li + ':solo'),
         tog('A', 'Crossfader side A', L.xfade === 1, '', () => { L.xfade = L.xfade === 1 ? 0 : 1; }),
         tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
+        el('button', { className: 'lockbtn' + ((L.agent ? agent.hold : L.locked) ? ' on' : ''), innerHTML: LOCK_SVG, ariaLabel: 'Lock ' + L.name,
+          title: L.agent ? 'Freeze the Agent\'s look (Hold)' : L.locked ? 'Locked: the Agent, auto-score and track scores leave this layer alone. Click to unlock.' : 'Lock this layer: the Agent, auto-score and track scores leave it alone',
+          onclick: () => toggleLayerLock(li) }),
         el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } }),
         el('button', { className: 'del', title: 'Delete layer (click twice)', ariaLabel: 'Delete ' + L.name, innerHTML: TRASH_SVG, onclick: e => armThen(e.currentTarget, 'delete ' + L.name, () => deleteLayer(li)) })),
       el('div', { className: 'r' },
         el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; reflectMidi('layer:' + li + ':opacity', L.opacity); } }),
         el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
     dropTarget(ctl, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { L.fx.push(e); sel.l = li; ui.propsDirty = true; } });
-    const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') }, ctl, layerMon(li));
+    const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') + (L.locked ? ' locked' : '') }, ctl, layerMon(li));
     cellEls[li] = [];
     for (let ci = 0; ci < comp.columns; ci++) {
       const c = L.clips[ci];
@@ -516,7 +520,7 @@ function frame() {
   lastT = t0; lastFrameAt = t0;
   try {
     audioTick();
-    camTick();
+    camTick(); handsTick();
     update(dt, realDt);
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
@@ -577,7 +581,7 @@ function tickUI() {
   outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
   if (ui.gridDirty && !holding('grid')) { ui.gridDirty = false; renderGrid(); }
   if (ui.propsDirty && !holding('props')) { ui.propsDirty = false; renderProps(); }
-  tickLfoMeters(); tickCamMeters();
+  tickLfoMeters(); tickCamMeters(); tickHandMeters();
   if (ui.browserDirty) { ui.browserDirty = false; renderBrowser(); }
   if (midi.learn) markMidi();
   comp.layers.forEach((L, li) => (cellEls[li] || []).forEach((cell, ci) => {

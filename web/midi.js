@@ -66,7 +66,11 @@ function midiLabel(id) {
   if (a === 'layer') return ln(b) + ' ' + c;
   return id;
 }
-const midiKeyLabel = k => { const [t, ch, n] = k.split(':'); return (t === 'cc' ? 'CC ' : 'Note ') + n + ' / ch ' + (+ch + 1); };
+const midiKeyLabel = k => {
+  const [t, ch, n] = k.split(':');
+  if (t === 'gest') return 'Hand: ' + ((typeof HAND_GESTURES !== 'undefined' && HAND_GESTURES[n]) || n);
+  return (t === 'cc' ? 'CC ' : 'Note ') + n + ' / ch ' + (+ch + 1);
+};
 
 // Move every on-screen fader bound to this target (grid, properties, transport).
 function reflectMidi(id, v) {
@@ -100,16 +104,21 @@ function onMidiMessage(data) {
   if (st === 0xb0) { type = 'cc'; val = v / 127; }
   else if (st === 0x90 || st === 0x80) { type = 'note'; val = st === 0x90 ? v / 127 : 0; }   // note-on with velocity 0 is a note-off
   else return;
+  onInputEvent(type, ch, n, val);
+}
+// One path for every button-like or knob-like input: MIDI notes and CCs, and hand gestures (hands.js, type 'gest').
+// In Map mode the first input that arrives is bound to the picked control; otherwise it drives what it is mapped to.
+function onInputEvent(type, ch, n, val) {
   const key = type + ':' + ch + ':' + n, prev = midiLast[key] || 0;
   midiLast[key] = val;
   if (midi.learn && midi.target) { if (val > 0) bindMidi(key, midi.target); return; }
   const id = midi.map[key], t = id && midiTarget(id);
   if (!t) return;
   if (t.set) {
-    const x = type === 'note' ? (val > 0 ? 1 : 0) : val;
+    const x = type === 'cc' ? val : (val > 0 ? 1 : 0);
     t.set(x); reflectMidi(id, x);
     if (typeof cueRecord === 'function') cueRecord(id, x);   // track score recording (cues.js)
-  } else if (type === 'note' ? val > 0 : val >= 0.5 && prev < 0.5) { t.fire(); if (typeof cueRecord === 'function') cueRecord(id, null); }   // buttons fire on press only
+  } else if (type === 'cc' ? val >= 0.5 && prev < 0.5 : val > 0) { t.fire(); if (typeof cueRecord === 'function') cueRecord(id, null); }   // buttons fire on press only
 }
 
 async function connectMidi() {
@@ -123,14 +132,15 @@ async function connectMidi() {
   return true;
 }
 async function setMidiLearn(on) {
-  if (on && !(await connectMidi())) return;
+  if (on) await connectMidi();   // Map mode works without MIDI too: hand gestures can be mapped as well
   midi.learn = on; midi.target = null;
   document.body.classList.toggle('midi-learn', on);
   $('midiBtn').classList.toggle('on', on);
   markMidi();
   const devs = midi.access ? midi.access.inputs.size : 0;
-  setStatus(!on ? 'MIDI learn off' : devs ? 'MIDI learn: click a fader, clip or button, then move a knob or press a pad. Esc to finish.'
-    : 'MIDI learn is on, but no MIDI device is connected. Plug one in (no reload needed).');
+  const gest = typeof handState !== 'undefined' && handState.on;
+  setStatus(!on ? 'Map mode off' : 'Map: click a fader, clip or button, then ' + [devs ? 'move a knob or press a pad' : '', gest ? 'make a hand gesture' : ''].filter(Boolean).join(', or ')
+    + (devs || gest ? '. Esc to finish.' : 'connect a MIDI device or turn on Track hands (Sources tab). Esc to finish.'));
 }
 function initMidi() {
   // In learn mode a click on a mappable control picks it as the target instead of using it.

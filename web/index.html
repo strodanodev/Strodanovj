@@ -206,6 +206,44 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .acard .agentgo{min-width:96px;font-weight:600} .acard .anow{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acard .recbtn.on{background:var(--bad);border-color:var(--bad);color:#fff} .acard .mixprog{flex:1 1 80px;height:4px;border-radius:2px;background:var(--ctl);overflow:hidden} .acard .mixprog i{display:block;height:100%;width:0;background:var(--acc)} .acard .mixprog[hidden]{display:none}
 .atags{display:flex;flex-wrap:wrap;gap:4px 10px} .atags label.empty{opacity:.45} .atags select{padding:1px 3px}
+#agent:not([hidden]){display:flex;flex-direction:column}
+.ashow .amain{gap:8px} .ashow .agentgo{min-width:110px;padding:6px 14px;font-size:14px} .ashow .agentgo:not(.on){background:var(--acc);border-color:var(--acc);color:#000}
+.ashow .albl{color:var(--dim);margin-left:6px} .ashow .amain .recbtn{margin-left:auto} .acard button[hidden]{display:none}
+.amore{border:1px solid var(--card-line);border-radius:var(--r-card);background:var(--card);padding:4px 12px} .amore summary{cursor:pointer;color:var(--dim);padding:2px 0} .amore[open] summary{margin-bottom:4px}
+.amore .amgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 24px} .amore h4{margin:6px 0 2px}
+.amore .seg{display:inline-flex} .amore .seg button{border-radius:0} .amore .seg button:first-child{border-radius:var(--r-ctl) 0 0 var(--r-ctl)} .amore .seg button:last-child{border-radius:0 var(--r-ctl) var(--r-ctl) 0}
+.amore .ar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0} .amore label{color:var(--dim);white-space:nowrap} .amore .mixprog{flex:1 1 80px;height:4px;border-radius:2px;background:var(--ctl);overflow:hidden} .amore .mixprog i{display:block;height:100%;width:0;background:var(--acc)} .amore .mixprog[hidden]{display:none}
+/* Agent playlist (playlist.js): shown instead of the clip grid while the Agent panel is open */
+#playlist{flex:1 1 auto;min-height:140px;overflow:auto;padding:var(--s) var(--m);border-bottom:1px solid var(--line)} #playlist[hidden]{display:none}
+#playlist.over,#playlist .plr.dropb{box-shadow:inset 0 2px 0 var(--acc)} #playlist .plr.dropa{box-shadow:inset 0 -2px 0 var(--acc)}
+.plh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;position:sticky;top:calc(-1 * var(--s));background:var(--bg);z-index:2;padding:2px 0}
+.plh .seg{display:inline-flex;margin-left:auto} .plh .seg button{border-radius:0} .plh .seg button:first-child{border-radius:var(--r-ctl) 0 0 var(--r-ctl)} .plh .seg button:last-child{border-radius:0 var(--r-ctl) var(--r-ctl) 0}
+.plleg{display:inline-flex;gap:8px;font-size:11px;color:var(--dim)} .plleg i{font-style:normal;border-left:3px solid;padding-left:4px}
+.plleg .sec-intro{border-color:#5a5a5a} .plleg .sec-build{border-color:#d9a531} .plleg .sec-drop{border-color:var(--acc)} .plleg .sec-breakdown{border-color:#4f86d9}
+.pllocks{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap} .pllocks .hint{margin:0} .lockchip{padding:1px 8px;font-size:11px;border-radius:10px} .lockchip.on{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+.plr{display:grid;grid-template-columns:16px 22px minmax(140px,220px) 1fr 26px;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--card-line);border-radius:var(--r-card);background:var(--card)}
+.plr.now{border-color:var(--acc)} .plr.next{border-color:var(--acc-muted)} .plr.played{opacity:.5} .plr.err{opacity:.6}
+.plgrip{cursor:grab;color:var(--dim);font-size:16px;line-height:1;user-select:none;text-align:center} .pln{color:var(--dim);font:12px var(--mono);text-align:right}
+.pli{display:flex;flex-direction:column;min-width:0;gap:1px} .pli b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500} .pli .dt{color:var(--dim);font:11px var(--mono)}
+.plst{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--acc);min-height:12px}
+.plw{min-width:0} .plwave{position:relative;height:46px;border-radius:var(--r-ctl);overflow:hidden;background:#000} .plwave canvas{width:100%;height:100%;display:block}
+.pldone{position:absolute;left:0;top:0;bottom:0;background:rgba(0,0,0,.55);pointer-events:none} .plhead{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--acc);pointer-events:none}
+.pldone[hidden],.plhead[hidden]{display:none}
+.plm{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#fff;cursor:ew-resize;touch-action:none} .plm::before{content:'';position:absolute;left:-7px;right:-7px;top:0;bottom:0}
+.plm span{position:absolute;top:0;font:600 9px/1 var(--mono);background:#fff;color:#000;padding:2px 3px;border-radius:0 0 3px 0;pointer-events:none} .plm.in span{left:0} .plm.out span{right:0;border-radius:0 0 0 3px}
+.plm.moved{background:var(--acc)} .plm.moved span{background:var(--acc)}
+.plchips{position:relative;height:20px;margin-top:3px}
+.plchip{position:absolute;top:0;height:20px;padding:0 5px;font-size:10px;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-left:3px solid #5a5a5a;border-radius:var(--r-ctl);color:var(--dim)}
+.plchip.sec-build{border-left-color:#d9a531} .plchip.sec-drop{border-left-color:var(--acc)} .plchip.sec-breakdown{border-left-color:#4f86d9} .plchip.band-peak{color:var(--txt)}
+.plchip.on{background:var(--acc-soft);color:var(--acc);border-color:var(--acc)}
+.plr button.del{display:grid;place-items:center;padding:0;width:24px;height:22px;background:transparent;border-color:transparent;color:var(--dim)} .plr button.del:hover{color:var(--txt);border-color:var(--ctl-line)}
+.plr button.del svg,.lockbtn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.plj{display:flex;gap:6px;align-items:center;padding:3px 0 3px 46px;color:var(--dim);font-size:12px} .plj select{padding:1px 4px;font-size:12px} .plj .hint{margin:0} .plarrow{color:var(--acc)}
+.plempty{display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center;padding:28px 16px;border:2px dashed var(--ctl-line);border-radius:var(--r-card);color:var(--dim)} .plempty b{color:var(--txt);font-size:15px} .plempty span{max-width:560px}
+.plnote{padding:6px 10px;margin-bottom:6px;border:1px solid var(--acc-muted);border-radius:var(--r-card);color:var(--dim)}
+/* layer lock (grid and playlist) */
+.lctl .lockbtn{display:grid;place-items:center;padding:0;width:24px;height:22px;color:var(--dim)} .lctl .lockbtn.on{color:var(--acc);border-color:var(--acc);background:var(--acc-soft)}
+.row.locked .lctl{border-color:var(--acc-muted)} .row.locked .cell{opacity:.8}
 /* beat LFO on a parameter (motion.js) */
 .fld .lfo-btn{flex:0 0 auto;padding:0 6px;min-width:22px;font:12px var(--mono)}
 .fld.lfo{margin:0 0 6px 102px;gap:4px} .fld.lfo select{flex:0 1 auto;min-width:0;padding:2px 4px} .fld.lfo input[type=range]{flex:1;min-width:30px}
@@ -215,6 +253,19 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .src-item{padding:3px 6px;border-radius:var(--r-ctl,3px);cursor:grab} .src-item:hover{background:var(--surface-hover,#222)}
 .text-edit{width:100%;min-height:72px;resize:vertical;font:13px var(--mono,monospace);user-select:text;margin:4px 0}
 .fld label.chk{flex:0 0 auto;color:var(--txt)}
+/* input chips and the input picker (inputs.js), hand preview (hands.js) */
+.fld .in-chip{flex:0 0 auto;max-width:120px;padding:0 6px;min-width:24px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:linear-gradient(90deg,var(--acc-soft,rgba(255,122,26,.18)) calc(var(--v,0)*100%),var(--ctl) 0)}
+.fld .in-chip.on{border-color:var(--acc);color:var(--acc)}
+.in-pop{position:fixed;z-index:50;max-height:80vh;overflow:auto;background:var(--surface,#181818);border:1px solid var(--acc);border-radius:var(--r-card,6px);padding:8px 10px;box-shadow:0 12px 40px #000c}
+.in-hd{display:flex;gap:8px;align-items:center;margin-bottom:6px} .in-hd b{flex:0 1 auto} .in-hd .hint{flex:1;margin:0}
+.in-grp,.in-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:5px 0} .in-row.end{justify-content:flex-end}
+.in-gl{flex:0 0 74px;color:var(--dim);font-size:11px} .in-row input[type=range]{flex:1;min-width:80px}
+.in-src{position:relative;padding:3px 8px 6px} .in-src.on,.in-opt.on{background:var(--acc-btn,rgba(255,122,26,.2));color:var(--acc);border-color:var(--acc)}
+.in-lvl{position:absolute;left:4px;right:4px;bottom:2px;height:2px;background:var(--line);overflow:hidden} .in-lvl i{display:block;height:100%;width:0;background:var(--acc)}
+.in-opt{padding:2px 7px;font-size:11px} .in-detect.on{background:var(--acc);color:#111}
+.in-out{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden} .in-out i{display:block;height:100%;width:0;background:var(--acc)}
+.hand-preview{width:100%;display:block;background:#000;border:1px solid var(--line);border-radius:3px;margin:4px 0}
 </style>
 </head>
 <body>
@@ -301,12 +352,15 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="agent.js"></script>
 <script src="record.js"></script>
 <script src="agentui.js"></script>
+<script src="playlist.js"></script>
 <script src="keys.js"></script>
 <script src="motion.js"></script>
 <script src="camera.js"></script>
 <script src="text.js"></script>
 <script src="vendor/three.min.js"></script>
 <script src="smart3d.js"></script>
+<script src="hands.js"></script>
+<script src="inputs.js"></script>
 <script src="preview.js"></script>
 <script src="ui.js"></script>
 </body>

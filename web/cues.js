@@ -80,7 +80,21 @@ function clearCues() {
 }
 
 // ---------- playback ----------
+// A cue aimed at a locked layer (its clips, faders or effects) is skipped: locked layers keep what you set.
+function cueLocked(id) {
+  const [a, b] = id.split(':');
+  if (a === 'clip' || a === 'layer') return !!(comp.layers[+b] && comp.layers[+b].locked);
+  if (a === 'fx') return comp.layers.some(L => L.locked && L.fx.some(e => e.uid === b));
+  if (a === 'gen') return comp.layers.some(L => L.locked && L.clips.some(c => c && c.uid === b));
+  return false;
+}
 function applyCue(e) {
+  if (cueLocked(e.id)) return;
+  if (e.id.startsWith('column:') && e.v === undefined) {   // column launch: only on unlocked layers
+    const ci = +e.id.split(':')[1];
+    comp.layers.forEach((L, li) => { if (!L.locked && !L.agent && L.clips[ci]) trigger(li, ci); });
+    return;
+  }
   const t = midiTarget(e.id);
   if (!t) return;
   if (e.v !== undefined && t.set) { t.set(e.v); if (typeof reflectMidi === 'function') reflectMidi(e.id, e.v); }

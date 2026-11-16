@@ -628,7 +628,7 @@ function compToJSON() {
     agentTags: comp.agentTags || {},   // the Agent's column tags (agent.js)
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
     layers: comp.layers.filter(L => !L.agent).map(L => ({   // the Agent's own layers are rebuilt, never saved
-      name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
+      name: L.name, locked: L.locked || undefined, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
@@ -650,7 +650,7 @@ function loadComp(j) {
   for (const l of j.layers) {
     addLayer();
     const L = comp.layers[comp.layers.length - 1];
-    Object.assign(L, { name: String(l.name || L.name), opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
+    Object.assign(L, { name: String(l.name || L.name), locked: !!l.locked, opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
       xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)), trans: Math.min(16, Math.max(0, num(l.trans, 0))), transType: Math.min(TRANSITION_TYPES.length - 1, Math.max(0, num(l.transType, 0) | 0)) });
     L.fx = fxL(l.fx);
     (l.clips || []).slice(0, comp.columns).forEach((c, ci) => {
@@ -689,5 +689,12 @@ function demoComp() {
   if (typeof scoreFromJSON === 'function') scoreFromJSON(null);   // a new composition starts with no section looks
   [['Plasma', 'Tunnel', 'Gradient'], ['Lines', 'Checkerboard'], ['Beat Flash']].forEach((row, li) => row.forEach((g, ci) => { comp.layers[li].clips[ci] = genClip(g); }));
   comp.layers[1].blend = 1; comp.layers[2].blend = 1;
+  // 4 different random 3D visuals (smart3d.js) in the first free slots: one per layer, the 4th on layer 1. Layer 2's starts playing.
+  if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined') {
+    const keys = Object.keys(SCENES3D).sort(() => Math.random() - 0.5).slice(0, 4);
+    keys.forEach((k, i) => { const L = comp.layers[i % 3], ci = L.clips.findIndex(c => !c); if (ci >= 0) L.clips[ci] = clip3d(k); });
+    const L2 = comp.layers[1], c3d = L2.clips.findIndex(c => c && c.type === '3d');
+    if (c3d >= 0) trigger(1, c3d);
+  }
   trigger(0, 0);
 }

@@ -7,6 +7,7 @@ export {
   WebGLRenderer, WebGLRenderTarget, Scene, PerspectiveCamera, Color, Fog, FogExp2, Group, Object3D,
   Mesh, InstancedMesh, Points, LineSegments, BufferGeometry, BufferAttribute, Float32BufferAttribute, InstancedBufferAttribute,
   IcosahedronGeometry, TorusKnotGeometry, BoxGeometry, SphereGeometry, PlaneGeometry, EdgesGeometry, WireframeGeometry,
+  OctahedronGeometry, TorusGeometry, TetrahedronGeometry, Vector2,
   MeshBasicMaterial, MeshStandardMaterial, PointsMaterial, LineBasicMaterial, ShaderMaterial,
   AmbientLight, DirectionalLight, PointLight, Matrix4, Vector3, Euler, Quaternion, MathUtils,
   AdditiveBlending, NormalBlending, DoubleSide, LinearSRGBColorSpace, ColorManagement, REVISION,

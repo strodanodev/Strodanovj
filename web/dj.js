@@ -123,7 +123,7 @@ function drawDeck(u) {
     const w = x.measureText(label).width + 8 * dpr;
     x.fillRect(px, 0, w, 14 * dpr); x.fillStyle = '#000'; x.fillText(label, px + 4 * dpr, 10.5 * dpr);
   };
-  if (i.ok) { flag(i.mixIn, 'MIX IN'); flag(i.mixOut, 'OUTRO'); }
+  if (i.ok) { flag(inPoint(d), 'MIX IN'); flag(outPoint(d), 'OUTRO'); }
   // track score cues: short ticks along the top, taller for buttons than for fader moves
   const cl = i.ok && cuesFor(d);
   if (cl) { x.fillStyle = 'rgba(255,255,255,.75)'; for (const e of cl) { const t = i.grid0 + e.b * i.beatLen; if (t >= t0 && t <= t0 + span) x.fillRect(Math.round((t - t0) / span * W), 0, Math.max(1, dpr), (e.v === undefined ? 10 : 4) * dpr); } }
@@ -140,7 +140,7 @@ function drawDeck(u) {
   x.drawImage(u.ov, 0, oy, W, oh);
   x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, oy, f * W, oh);
   x.fillStyle = THEME.acc; x.fillRect(Math.round(f * W) - dpr, oy, 2 * dpr, oh);
-  if (i.ok) for (const t of [i.mixIn, i.mixOut]) { x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(Math.round(t / i.duration * W), oy, Math.max(1, dpr), oh); }
+  if (i.ok) for (const t of [inPoint(d), outPoint(d)]) { x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(Math.round(t / i.duration * W), oy, Math.max(1, dpr), oh); }
 }
 // Called from tickUI every frame the control window is visible.
 function tickDJ() {
@@ -154,7 +154,7 @@ function tickDJ() {
     const t = i && d.file && crate.tracks.find(x => x.key === fileKey(d.file));
     setText(u.bpm, i ? (i.ok ? (i.bpm * d.rate).toFixed(1) + ' BPM' : 'no beat') + (i.camelot ? '  ' + i.camelot : '') + (t ? '  E' + t.energy : '') : '');
     let q = '';
-    if (d.playing && i && i.ok && i.mixOut) { const bars = Math.floor((deckBeats(d, i.mixOut) - deckBeats(d, deckHeard(d))) / 4); q = bars > 0 && bars <= 32 ? 'outro in ' + bars : bars <= 0 && deckHeard(d) < i.beatEnd ? 'outro' : ''; }
+    if (d.playing && i && i.ok && outPoint(d)) { const bars = Math.floor((deckBeats(d, outPoint(d)) - deckBeats(d, deckHeard(d))) / 4); q = bars > 0 && bars <= 32 ? 'outro in ' + bars : bars <= 0 && deckHeard(d) < i.beatEnd ? 'outro' : ''; }
     // a drop coming up beats the outro countdown: that is what the visuals should get ready for
     if (d.playing) { const da = dropAhead(d); if (da !== null && da > 0 && da <= 16) q = 'drop in ' + Math.ceil(da); else if (da === 0) q = 'drop'; }
     setText(u.cue, q);

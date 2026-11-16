@@ -7,12 +7,33 @@
 'use strict';
 const AGENT_KEY = 'strodano-vj-agent';
 const agent = {
-  on: false, visuals: 'gen', onSong: true, vary: 16, strobe: false, hold: false, useMedia: true,
+  on: false, visuals: 'gen', onSong: true, vary: 16, strobe: false, hold: false, useMedia: true, vibe: 'club',
   slots: [null, null], accent: null, op: [0, 0], build: 0, dim: 1, cur: 0, fade: null, look: null, lookBeat: 0, history: [], pending: null,
-  holdUntil: -1, snap: '', hueShift: Math.random(), boost: 0, lastBand: 'groove', showingClips: false, col: -1,
+  holdUntil: -1, snap: '', hueShift: Math.random(), boost: 0, lastBand: 'groove', showingClips: false, col: -1, mixLookBeat: -1e9,
 };
-try { const s = JSON.parse(localStorage.getItem(AGENT_KEY) || '{}'); for (const k of ['visuals', 'onSong', 'vary', 'strobe', 'useMedia']) if (k in s) agent[k] = s[k]; } catch (e) {}
-function saveAgent() { try { localStorage.setItem(AGENT_KEY, JSON.stringify({ visuals: agent.visuals, onSong: agent.onSong, vary: agent.vary, strobe: agent.strobe, useMedia: agent.useMedia })); } catch (e) {} }
+// Vibes: one choice that sets everything a newcomer should not have to think about. shift moves every look one energy
+// band down (-1) or up (+1); mix / bars are the auto-mix's style and length (mix.js).
+const AGENT_VIBES = {
+  chill: { label: 'Chill', title: 'Slow, soft looks that change rarely; long smooth blends between songs', vary: 32, shift: -1, mix: 'blend', bars: 16 },
+  club: { label: 'Club', title: 'Balanced: looks follow the energy of the music; bass-swap mixes', vary: 16, shift: 0, mix: 'bass', bars: 8 },
+  festival: { label: 'Festival', title: 'High energy: busier looks that change often; quicker mixes', vary: 8, shift: 1, mix: 'bass', bars: 4 },
+};
+try { const s = JSON.parse(localStorage.getItem(AGENT_KEY) || '{}'); for (const k of ['visuals', 'onSong', 'vary', 'strobe', 'useMedia', 'vibe']) if (k in s) agent[k] = s[k]; } catch (e) {}
+if (!AGENT_VIBES[agent.vibe]) agent.vibe = 'club';
+function saveAgent() { try { localStorage.setItem(AGENT_KEY, JSON.stringify({ visuals: agent.visuals, onSong: agent.onSong, vary: agent.vary, strobe: agent.strobe, useMedia: agent.useMedia, vibe: agent.vibe })); } catch (e) {} }
+function setVibe(v) {
+  const p = AGENT_VIBES[v];
+  if (!p) return;
+  agent.vibe = v; agent.vary = p.vary;
+  if (typeof mixer !== 'undefined') { mixer.style = p.mix; mixer.bars = p.bars; if (typeof saveMixer === 'function') saveMixer(); }
+  saveAgent();
+  if (typeof plReplanAll === 'function') plReplanAll();   // planned looks follow the vibe (playlist.js)
+  if (typeof agentUIDirty === 'function') agentUIDirty();
+}
+const BANDS = ['calm', 'groove', 'peak'];
+const vibeBand = band => BANDS[Math.min(2, Math.max(0, BANDS.indexOf(band) + (AGENT_VIBES[agent.vibe] || AGENT_VIBES.club).shift))] || band;
+// Locked layers (L.locked) are left alone by the Agent, section looks (score.js) and track scores (cues.js).
+const layerLocked = li => !!(comp.layers[li] && comp.layers[li].locked);
 const COL_TAGS = ['', 'Calm', 'Groove', 'Peak', 'Drop'];
 const colTag = ci => (comp.agentTags && comp.agentTags[ci]) || '';
 
@@ -121,8 +142,9 @@ function makeFx(r, d) {
   return e;
 }
 // A look: a source (generator, or one of your video clips) and a short effect chain, chosen for the energy band.
-function makeLook(band, drop) {
-  const recent = agent.history.slice(-3).map(l => l.src);
+// hue: colour to use (default: from the key playing now); recent: sources to avoid (default: the last three shown).
+function makeLook(band, drop, hue, recent) {
+  recent = recent || agent.history.slice(-3).map(l => l.src);
   const gens = (GEN_POOL[band] || GEN_POOL.groove).filter(g => DEFS.gen.has(g));
   const customs = [...DEFS.gen.values()].filter(d => d.custom).map(d => d.name);
   const videos = agent.useMedia ? media.filter(m => m.kind === 'video') : [];
@@ -132,7 +154,7 @@ function makeLook(band, drop) {
     const pool = gens.concat(customs).filter(g => !recent.includes(g));
     src = pick(pool.length ? pool : gens.concat(customs));
   }
-  const hue = lookHue();
+  if (hue === undefined) hue = lookHue();
   const rec = FX_POOL[band].filter(r => DEFS.fx.has(r.def));
   const [lo, hi] = FX_COUNT[band], n = lo + Math.floor(Math.random() * (hi - lo + 1)), fx = [];
   const bag = rec.slice();
@@ -195,7 +217,7 @@ function showLook(look, beats) {
 // Your clips: trigger a tagged column (your layer transitions apply), and fade the Agent's look away.
 function bestColumn(band, drop) {
   const want = drop ? ['Drop', 'Peak'] : { calm: ['Calm'], groove: ['Groove'], peak: ['Peak'] }[band];
-  const has = ci => comp.layers.some(L => !L.agent && L.clips[ci]);
+  const has = ci => comp.layers.some(L => !L.agent && !L.locked && L.clips[ci]);
   const cols = [...Array(comp.columns).keys()].filter(has);
   if (!cols.length) return -1;
   let c = cols.filter(ci => want.includes(colTag(ci)));
@@ -205,34 +227,57 @@ function bestColumn(band, drop) {
   return pick(other.length ? other : c);
 }
 function showColumn(ci, beats) {
-  comp.layers.forEach((L, li) => { if (!L.agent && L.clips[ci]) agentTrigger(li, ci); });
+  comp.layers.forEach((L, li) => { if (!L.agent && !L.locked && L.clips[ci]) agentTrigger(li, ci); });
   agent.col = ci; agent.showingClips = true;
   agent.fade = { to: -1, b0: comp.beats, len: Math.max(beats, 2) };   // both look slots fade out
   agent.lookBeat = comp.beats;
   if (typeof agentUIDirty === 'function') agentUIDirty();
 }
-// One decision: a look or one of your columns, for this band. reason: song | drop | breakdown | band | vary | next
+// One decision: a look or one of your columns, for this band. reason: song | drop | breakdown | section | band | vary | next
+// A playlist track's planned look for the section playing now (playlist.js) wins over a freshly made one, except for
+// variations and the Next look button, which always bring something new.
 function change(reason) {
-  const drop = reason === 'drop', band = drop ? 'peak' : reason === 'breakdown' ? 'calm' : live.band;
+  const drop = reason === 'drop', band = vibeBand(drop ? 'peak' : reason === 'breakdown' ? 'calm' : live.band);
   const beats = drop ? 0 : reason === 'song' ? 8 : reason === 'breakdown' ? 16 : 4;
   let useClips = agent.visuals === 'clips' || (agent.visuals === 'both' && Math.random() < 0.5);
   const col = useClips ? bestColumn(band, drop) : -1;
   if (useClips && col >= 0) { showColumn(col, beats); return; }
-  if (reason === 'vary' && agent.look && agent.look.band === band && !agent.showingClips) showLook(varyLook(agent.look), beats);
+  const planned = reason !== 'vary' && reason !== 'next' && typeof plannedLook === 'function' ? plannedLook() : null;
+  if (planned) showLook(planned, planned.band === 'peak' && drop ? 0 : beats);
+  else if (reason === 'vary' && agent.look && agent.look.band === band && !agent.showingClips) showLook(varyLook(agent.look), beats);
   else showLook(makeLook(band, drop), beats);
   if (drop) agent.boost = 1;
+}
+// An auto-mix has started (mix.js): bring in the incoming track's first planned look, timed by the playlist's visual
+// transition for this junction: 'mix' fades over the whole mix, 'quick' over a bar, 'cut' cuts with a flash.
+function agentMixStart(m) {
+  if (!agent.on || agent.hold || agent.scored || comp.beats < agent.holdUntil) return;
+  const look = typeof plannedLookAt === 'function' ? plannedLookAt(m.inn, typeof inPoint === 'function' ? inPoint(m.inn) : m.inn.info.mixIn) : null;
+  if (!look || agent.visuals === 'clips') return;
+  const vis = (typeof plJunction === 'function' && plJunction(m.out).vis) || 'mix';
+  const beats = vis === 'cut' ? 0 : vis === 'quick' ? 4 : Math.max(4, m.lenBeats || 8);
+  agent.pending = null;
+  showLook(look, beats);
+  if (vis === 'cut') agent.boost = 1;
+  agent.mixLookBeat = comp.beats;
 }
 // Changes wait for the next bar (drops do not), so the visuals turn over on the downbeat.
 function agentSchedule(reason) {   // (not 'schedule': ui.js owns that name)
   if (agent.hold || comp.beats < agent.holdUntil) return;
   if (reason === 'drop') { agent.pending = null; change('drop'); return; }
   const at = 4 * Math.ceil((comp.beats + 0.05) / 4);
-  const rank = { song: 4, breakdown: 3, band: 2, vary: 1, next: 5 };
+  const rank = { song: 4, breakdown: 3, section: 3, band: 2, vary: 1, next: 5 };
   if (agent.pending && rank[agent.pending.reason] >= rank[reason]) return;
   agent.pending = { at, reason };
 }
 onMusic((type, d) => {
   if (!agent.on) return;
+  // A playlist track with planned looks: every section change brings its own look (a mix that just brought in the
+  // new track's look is left to finish first).
+  if (d.source === 'deck' && typeof plannedLook === 'function' && (type === 'section' || type === 'breakdown') && plannedLook()) {
+    if (comp.beats - agent.mixLookBeat > 32) agentSchedule('section');
+    return;
+  }
   if (type === 'song') { agent.hueShift = Math.random(); if (agent.onSong) agentSchedule('song'); }
   else if (type === 'drop') agentSchedule('drop');
   else if (type === 'breakdown') agentSchedule('breakdown');
@@ -242,7 +287,8 @@ onMusic((type, d) => {
 });
 
 // What clip each of your layers is showing (or about to): a change the Agent did not make is you playing live.
-const userSnap = () => comp.layers.filter(L => !L.agent).map(L => (L.pendingCol >= 0 ? L.pendingCol : L.active)).join(',');
+// Locked layers are yours to play without the Agent stepping aside, so they are not counted.
+const userSnap = () => comp.layers.filter(L => !L.agent).map(L => (L.locked ? 'L' : L.pendingCol >= 0 ? L.pendingCol : L.active)).join(',');
 
 function agentTick() {
   if (!agent.on) return;
@@ -315,7 +361,7 @@ function agentDrop() { if (!agent.on) return; agent.hold = false; agent.holdUnti
 function agentHold(v) { agent.hold = v === undefined ? !agent.hold : v; agent.pending = null; if (typeof agentUIDirty === 'function') agentUIDirty(); }
 // MIDI: agent:on | next | hold | drop | rec
 function agentMidiTarget(what) {
-  if (what === 'on') return { fire: () => setAgent(!agent.on) };
+  if (what === 'on') return { fire: () => (typeof startShow === 'function' ? startShow() : setAgent(!agent.on)) };   // the panel's Start / Stop
   if (what === 'next') return { fire: agentNext };
   if (what === 'hold') return { fire: () => agentHold() };
   if (what === 'drop') return { fire: agentDrop };

@@ -14,6 +14,7 @@ function three() {
 }
 const beatFrac = () => ((comp.beats % 1) + 1) % 1;
 const camOn = () => typeof camState !== 'undefined' && !!camState.track;
+const handOn = () => typeof handFeat !== 'undefined' && handFeat.present > 0.5;
 
 const SCENES3D = {
   wire: { name: 'Wire Sphere', params: [P('Speed', 0.3), P('Hue', 0.55), P('Kick pulse', 0.6), P('Size', 0.5), P('Camera spin', 0.5)],
@@ -106,6 +107,118 @@ const SCENES3D = {
         knot.rotation.x += dt * (0.1 + p[0] * 1.5); knot.rotation.y += dt * (0.15 + p[0] * 2) + (camOn() ? camFeat.motion * p[4] * dt * 6 : 0);
         mat.color.setHSL(p[1], 0.8, 0.5); mat.emissive.setHSL(p[1], 0.9, Math.min(0.6, p[2] * (0.15 + audioFeat.level * 0.5)));
         knot.scale.setScalar(1 + p[3] * (0.25 * audioFeat.kick + 0.1 * Math.pow(1 - beatFrac(), 4)));
+      } };
+    } },
+  stars: { name: 'Star Warp', params: [P('Speed', 0.4), P('Hue', 0.6), P('Star size', 0.4), P('Bass boost', 0.6), P('Steer (hand / camera)', 0.6)],
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
+      const n = 6000, pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 60; pos[i * 3 + 1] = (Math.random() - 0.5) * 40; pos[i * 3 + 2] = -Math.random() * 120; }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.15, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      scene.add(pts);
+      return { scene, camera, update(p, dt) {
+        const v = dt * (comp.bpm / 60) * (4 + p[0] * 40) * (1 + audioFeat.bass * p[3] * 2), a = geo.attributes.position.array;
+        for (let i = 2; i < a.length; i += 3) { a[i] += v; if (a[i] > 2) a[i] -= 122; }
+        geo.attributes.position.needsUpdate = true;
+        pts.material.size = 0.05 + p[2] * 0.4; pts.material.color.setHSL(p[1], 0.6, 0.75);
+        const sx = handOn() ? handFeat.x - 0.5 : camOn() ? camFeat.x - 0.5 : 0, sy = handOn() ? handFeat.y - 0.5 : camOn() ? camFeat.y - 0.5 : 0;
+        camera.rotation.y += (-sx * 0.8 * p[4] - camera.rotation.y) * 0.08; camera.rotation.x += (sy * 0.5 * p[4] - camera.rotation.x) * 0.08;
+      } };
+    } },
+  crystals: { name: 'Crystal Field', params: [P('Speed', 0.3), P('Hue', 0.75), P('Spin', 0.4), P('Kick pulse', 0.6), P('Hand zoom (pinch)', 0.6)],
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 100);
+      scene.fog = new THREE.FogExp2(0x000000, 0.06);
+      const n = 160, mesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ metalness: 0.6, roughness: 0.25, flatShading: true }), n);
+      const seeds = Array.from({ length: n }, () => ({ p: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 9, -Math.random() * 16), r: Math.random() * 6.28, s: 0.5 + Math.random() }));
+      scene.add(mesh, new THREE.AmbientLight(0xffffff, 0.35));
+      const key = new THREE.PointLight(0xffffff, 80); key.position.set(0, 3, 4); scene.add(key);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
+      let t = 0, z = 6;
+      return { scene, camera, update(p, dt) {
+        t += dt * (0.2 + p[0] * 2);
+        const pulse = 1 + p[3] * (0.5 * audioFeat.kick + 0.2 * Math.pow(1 - beatFrac(), 5));
+        seeds.forEach((s, i) => { e.set(t * p[2] * 2 + s.r, t * 0.7 + s.r, 0); q.setFromEuler(e); sc.setScalar(s.s * pulse); m.compose(s.p, q, sc); mesh.setMatrixAt(i, m); });
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.material.color.setHSL(p[1], 0.7, 0.55); mesh.material.emissive.setHSL(p[1], 0.9, 0.08 + audioFeat.level * 0.25);
+        const target = handOn() ? 7 - handFeat.pinch * 6 * p[4] : 6;
+        z += (target - z) * 0.1; camera.position.set(Math.sin(t * 0.2) * 1.5, 0, z); camera.lookAt(0, 0, -6);
+      } };
+    } },
+  rings: { name: 'Orbit Rings', params: [P('Speed', 0.3), P('Hue', 0.1), P('Tilt', 0.5), P('Kick pulse', 0.6), P('Camera spin', 0.5)],
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100); camera.position.z = 9;
+      const rings = [];
+      for (let i = 0; i < 7; i++) {
+        const r = new THREE.Mesh(new THREE.TorusGeometry(1 + i * 0.55, 0.035 + i * 0.006, 8, 160), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+        rings.push(r); scene.add(r);
+      }
+      let t = 0;
+      return { scene, camera, update(p, dt) {
+        t += dt * (0.2 + p[0] * 2.5) + (camOn() ? camFeat.motion * p[4] * dt * 5 : 0);
+        rings.forEach((r, i) => {
+          r.rotation.set(t * (0.3 + i * 0.13) + p[2] * i * 0.4, t * (0.5 - i * 0.07), 0);
+          const hit = Math.pow(1 - (((comp.beats - i * 0.125) % 1) + 1) % 1, 6);   // a pulse rolls outwards on every beat
+          r.scale.setScalar(1 + p[3] * (0.12 * hit + 0.2 * audioFeat.kick));
+          r.material.color.setHSL((p[1] + i * 0.04) % 1, 0.9, 0.35 + 0.35 * hit * p[3]);
+        });
+      } };
+    } },
+  blob: { name: 'Audio Blob', params: [P('Speed', 0.3), P('Hue', 0.45), P('Spikes', 0.4), P('Music react', 0.7), P('Hand shape (open hand)', 0.6)],
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 100); camera.position.z = 5;
+      const mat = new THREE.ShaderMaterial({ transparent: true,
+        uniforms: { t: { value: 0 }, amp: { value: 0.2 }, freq: { value: 2 }, col: { value: new THREE.Color() }, glow: { value: 0 } },
+        vertexShader: `uniform float t; uniform float amp; uniform float freq; varying vec3 vn; varying float vd;
+          void main(){ vec3 p = position; float d = sin(p.x * freq + t) * sin(p.y * freq * 1.3 + t * 1.1) * sin(p.z * freq * 0.9 - t * 0.8);
+            p += normal * d * amp; vd = d; vn = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`,
+        fragmentShader: `uniform vec3 col; uniform float glow; varying vec3 vn; varying float vd;
+          void main(){ float rim = pow(1.0 - abs(vn.z), 2.0); gl_FragColor = vec4(col * (0.35 + rim * 1.2 + vd * 0.6 + glow), 0.95); }` });
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4, 24), mat);
+      scene.add(blob);
+      let t = 0;
+      return { scene, camera, update(p, dt) {
+        t += dt * (0.4 + p[0] * 3);
+        const music = p[3] * (audioFeat.bass * 0.6 + audioFeat.mid * 0.3 + audioFeat.kick * 0.5);
+        const hand = handOn() ? handFeat.open * p[4] : 0;
+        const U = mat.uniforms; U.t.value = t; U.amp.value = 0.08 + p[2] * 0.3 + music * 0.4 + hand * 0.5; U.freq.value = 1.5 + p[2] * 5 + hand * 4;
+        U.col.value.setHSL(p[1] + audioFeat.high * 0.08, 0.8, 0.5); U.glow.value = audioFeat.kick * p[3] * 0.4;
+        blob.rotation.y += dt * (0.1 + p[0]); blob.rotation.x += dt * 0.05;
+      } };
+    } },
+  comet: { name: 'Hand Comet', params: [P('Tail length', 0.5), P('Hue', 0.95), P('Size', 0.5), P('Sparkle', 0.5), P('Follow hand', 1)],
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100); camera.position.z = 8;
+      const n = 2400, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), vel = new Float32Array(n * 3), life = new Float32Array(n);
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.12, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      scene.add(pts);
+      const head = new THREE.Vector3(), c = new THREE.Color();
+      let next = 0, t = 0;
+      return { scene, camera, update(p, dt) {
+        t += dt;
+        // the head follows the hand (or drifts in a figure eight when no hand is seen); the camera picture is 10 x 5.6 units at z = 0
+        const hx = handOn() && p[4] > 0 ? (handFeat.x - 0.5) * 10 : Math.sin(t * 0.7) * 3.5, hy = handOn() && p[4] > 0 ? (handFeat.y - 0.5) * 5.6 : Math.sin(t * 1.4) * 1.6;
+        head.x += (hx - head.x) * 0.25; head.y += (hy - head.y) * 0.25;
+        const spawn = Math.ceil(dt * 60 * (20 + audioFeat.level * 40));
+        for (let s = 0; s < spawn; s++) {
+          const i = next; next = (next + 1) % n;
+          pos[i * 3] = head.x; pos[i * 3 + 1] = head.y; pos[i * 3 + 2] = 0;
+          const sp = 0.3 + p[3] * 2 * (0.3 + audioFeat.kick);
+          vel[i * 3] = (Math.random() - 0.5) * sp; vel[i * 3 + 1] = (Math.random() - 0.5) * sp; vel[i * 3 + 2] = (Math.random() - 0.5) * sp;
+          life[i] = 1;
+        }
+        const fade = dt / (0.3 + p[0] * 2.5);
+        c.setHSL(p[1], 0.85, 0.6);
+        for (let i = 0; i < n; i++) {
+          if (life[i] <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
+          life[i] -= fade; const l = Math.max(0, life[i]);
+          pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
+          col[i * 3] = c.r * l; col[i * 3 + 1] = c.g * l; col[i * 3 + 2] = c.b * l;
+        }
+        geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+        pts.material.size = 0.04 + p[2] * 0.3;
       } };
     } },
 };

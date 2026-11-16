@@ -10,11 +10,14 @@ const BEAT_LENGTHS = [[0.25, '1/4 beat'], [0.5, '1/2 beat'], [1, '1 beat'], [2, 
 const TRANSITIONS = [[0, 'Cut'], ...BEAT_LENGTHS];
 const MOD_SOURCES = [['lfo', 'Beat LFO'], ['kick', 'Kick'], ['bass', 'Bass'], ['mid', 'Mids'], ['high', 'Highs'], ['level', 'Loudness'], ['build', 'Build-up'], ['drop', 'In drop'],
   ['cmotion', 'Camera motion'], ['camx', 'Camera X'], ['camy', 'Camera Y'], ['clight', 'Camera light'],   // camera input, camera.js
-  ['mix', 'Mix progress'], ['midmix', 'Mid-mix']];   // during an auto-mix (mix.js, score.js)
+  ['mix', 'Mix progress'], ['midmix', 'Mid-mix'],   // during an auto-mix (mix.js, score.js)
+  ['hx', 'Hand X'], ['hy', 'Hand Y'], ['pinch', 'Pinch'], ['hopen', 'Open hand'], ['hsize', 'Hand closeness'], ['hspread', 'Two hands apart'], ['hseen', 'Hand seen']];   // hands.js
 const CAM_SOURCES = { cmotion: 'motion', camx: 'x', camy: 'y', clight: 'bright' };
-// 0..1 from the music (or the camera input) right now.
+const HAND_SOURCES = { hx: 'x', hy: 'y', pinch: 'pinch', hopen: 'open', hsize: 'size', hspread: 'spread', hseen: 'present' };
+// 0..1 from the music, the camera input or the hands right now.
 function sourceValue(src) {
   if (CAM_SOURCES[src]) return typeof camFeat !== 'undefined' ? camFeat[CAM_SOURCES[src]] : 0;
+  if (HAND_SOURCES[src]) return typeof handFeat !== 'undefined' ? handFeat[HAND_SOURCES[src]] : 0;
   if (typeof musicFeat !== 'undefined' && src in musicFeat) return musicFeat[src];   // song structure and mixing (score.js)
   return audioFeat[src] || 0;
 }
@@ -32,11 +35,17 @@ function lfoWave(m, k) {
     default: return 0.5 - 0.5 * Math.cos(ph * 6.2831853);
   }
 }
+// m.inv flips the input (1 - v). m.follow: the value moves from the slider towards the input by depth (full depth = exactly
+// the input), which suits positions (hand / camera X and Y); otherwise the input pushes the value up from the slider.
 function modValue(params, mod, k) {
   const base = params[k] ?? 0, m = mod && mod[k];
   if (!m || !m.depth) return base;
-  if (m.src && m.src !== 'lfo') return Math.min(1, Math.max(0, base + sourceValue(m.src) * m.depth));
-  return Math.min(1, Math.max(0, base + (lfoWave(m, +k) * 2 - 1) * m.depth * 0.5));
+  const lfo = !m.src || m.src === 'lfo';
+  let v = lfo ? lfoWave(m, +k) : sourceValue(m.src);
+  if (m.inv) v = 1 - v;
+  if (m.follow) return base + (v - base) * m.depth;
+  if (!lfo) return Math.min(1, Math.max(0, base + v * m.depth));
+  return Math.min(1, Math.max(0, base + (v * 2 - 1) * m.depth * 0.5));
 }
 // The values a shader should get this frame. Returns the same array when nothing is modulated (no allocation).
 function modParams(params, mod) {
@@ -54,37 +63,16 @@ function loadMod(j) {
     const rate = BEAT_LENGTHS.some(b => b[0] === m.rate) ? m.rate : 4;
     out[i] = { shape: Math.min(LFO_SHAPES.length - 1, Math.max(0, m.shape | 0)), rate, depth: Math.min(1, Math.max(0, +m.depth || 0)) };
     if (MOD_SOURCES.some(s => s[0] === m.src) && m.src !== 'lfo') out[i].src = m.src;
+    if (m.inv) out[i].inv = true;
+    if (m.follow) out[i].follow = true;
   }
   return Object.keys(out).length ? out : undefined;
 }
 
-// ---------- UI: the ~ button on a parameter row, and the LFO row under it ----------
-const lfoMeters = [];   // rebuilt with the properties panel; moved every frame by tickLfoMeters()
-function lfoControls(owner, k, row) {
-  const m = owner.mod && owner.mod[k];
-  row.append(el('button', { className: 'lfo-btn' + (m ? ' on' : ''), textContent: '~', title: m ? 'Stop moving this parameter' : 'Move this parameter with the beat or the music (kick, bass, build-up, drop...)',
-    onclick: () => {
-      if (m) { delete owner.mod[k]; if (!Object.keys(owner.mod).length) owner.mod = undefined; }
-      else { owner.mod = owner.mod || {}; owner.mod[k] = { shape: 0, rate: 4, depth: 0.5 }; }   // a beat LFO to start with; the first list switches to a music source
-      ui.propsDirty = true;
-    } }));
-  if (!m) return [row];
-  const bar = el('i');
-  lfoMeters.push({ bar, owner, k });
-  const isLfo = !m.src || m.src === 'lfo';
-  const sub = el('div', { className: 'fld lfo' },
-    el('select', { title: 'What moves this parameter: a beat LFO, or the music itself (Build-up and In drop follow the song sections)',
-      onchange: e => { if (e.target.value === 'lfo') delete m.src; else m.src = e.target.value; ui.propsDirty = true; } },
-      ...MOD_SOURCES.map(([v, n]) => el('option', { value: v, textContent: n, selected: v === (m.src || 'lfo') }))),
-    isLfo ? el('select', { title: 'Shape', onchange: e => { m.shape = +e.target.value; } }, ...LFO_SHAPES.map((n, i) => el('option', { value: i, textContent: n, selected: i === m.shape }))) : null,
-    isLfo ? el('select', { title: 'One cycle lasts', onchange: e => { m.rate = +e.target.value; } }, ...BEAT_LENGTHS.map(([v, n]) => el('option', { value: v, textContent: n, selected: v === m.rate }))) : null,
-    el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: m.depth, title: isLfo ? 'Depth' : 'How far the music pushes the value up', oninput: e => { m.depth = +e.target.value; } }),
-    el('span', { className: 'lfo-meter', title: 'Value now' }, bar));
-  return [row, sub];
-}
-function tickLfoMeters() {
-  for (const t of lfoMeters) if (t.owner.mod) t.bar.style.width = (modValue(t.owner.params, t.owner.mod, t.k) * 100).toFixed(1) + '%';
-}
+// ---------- UI: every modulatable slider gets an input chip (inputs.js draws it and its picker) ----------
+const lfoMeters = [];   // the chips on screen; rebuilt with the properties panel, refreshed every frame by tickLfoMeters()
+function lfoControls(owner, k, row) { return [inputChip(owner, k, row)]; }
+function tickLfoMeters() { tickInputs(); }
 // Layer tab: how long a newly triggered clip takes to fade in over the old one.
 function transitionField(L) {
   return el('div', { className: 'fld' }, el('label', { textContent: 'Transition', title: 'How a newly triggered clip replaces the old one on this layer, and how long it takes in beats' }),

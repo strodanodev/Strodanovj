@@ -4,7 +4,7 @@
 'use strict';
 const MIXER_KEY = 'strodano-vj-mixer';
 const MIX_STYLES = { blend: 'Smooth blend', bass: 'Bass swap', echo: 'Echo out', cut: 'Cut' };
-const mixer = { style: 'bass', bars: 8, start: 'phrase', quant: 4, auto: false, ownTempo: true, m: null, glide: null, lastXf: null, autoWait: 0 };
+const mixer = { style: 'bass', bars: 8, start: 'phrase', quant: 4, auto: false, order: false, ownTempo: true, m: null, glide: null, lastXf: null, autoWait: 0 };
 try { Object.assign(mixer, JSON.parse(localStorage.getItem(MIXER_KEY) || '{}'), { auto: false, m: null, glide: null }); } catch (e) {}
 function saveMixer() {
   try { localStorage.setItem(MIXER_KEY, JSON.stringify({ style: mixer.style, bars: mixer.bars, start: mixer.start, quant: mixer.quant, ownTempo: mixer.ownTempo, autoGain: audio.autoGain })); } catch (e) {}
@@ -36,7 +36,7 @@ function startMix(opts = {}) {
   else {
     m.lenBeats = style === 'echo' ? 8 : style === 'cut' ? 0 : 4 * (opts.bars || mixer.bars);
     const b = beatNow(out), lead = 2.2 * out.info.bpm * out.rate / 60;   // time to get the incoming deck ready
-    const grid = mixer.start === 'bar' && opts.atBeat === undefined ? 4 : 32, base = deckBeats(out, out.info.mixIn);
+    const grid = mixer.start === 'bar' && opts.atBeat === undefined ? 4 : 32, base = deckBeats(out, outPoint(out));
     m.startBeat = opts.atBeat !== undefined && opts.atBeat >= b + lead ? opts.atBeat : base + grid * Math.ceil((b + lead - base) / grid);
     m.inBeat = style === 'echo' ? m.startBeat + 4 : m.startBeat;
     if (!inn.playing) {
@@ -50,7 +50,7 @@ function startMix(opts = {}) {
 }
 // Transition score: mix progress for modulation (musicFeat, score.js), and the Mix look at the start.
 function mixProgress(p) { if (typeof musicFeat === 'undefined') return; musicFeat.mix = p; musicFeat.midmix = Math.sin(Math.PI * Math.min(1, Math.max(0, p))); }
-function mixBegun() { if (typeof scoreMixStart === 'function') scoreMixStart(); }
+function mixBegun(m) { if (typeof scoreMixStart === 'function') scoreMixStart(); if (m && typeof agentMixStart === 'function') agentMixStart(m); }
 function mixDone() { mixProgress(0); if (typeof scoreMixEnd === 'function') scoreMixEnd(); }
 function cancelMix() {
   const m = mixer.m;
@@ -79,13 +79,13 @@ function tickMix() {
   // the user grabbed the crossfader: the mix is theirs from here
   if (m && m.started && mixer.lastXf !== null && Math.abs(comp.crossfade - mixer.lastXf) > 0.003) {
     m.out.echo = 0; m.inn.bass = 0.5; m.out.bass = 0.5; mixer.m = null; mixer.lastXf = null;
-    if (!m.inn.playing) { m.inn.offset = m.inn.info && m.inn.info.ok ? m.inn.info.mixIn : 0; deckPlay(m.inn); }   // an echo out hands over before its new deck has started
+    if (!m.inn.playing) { m.inn.offset = m.inn.info && m.inn.info.ok ? inPoint(m.inn) : 0; deckPlay(m.inn); }   // an echo out hands over before its new deck has started
     mixDone();
     setStatus('Crossfader moved by hand: the mix is yours');
   } else if (m) {
     if (!m.out.playing && !m.started) { cancelMix(); return; }
     if (m.style === 'fade') {
-      if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; if (!m.inn.playing) deckPlay(m.inn); mixBegun(); }
+      if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; if (!m.inn.playing) deckPlay(m.inn); mixBegun(m); }
       const p = Math.min(1, (c.currentTime - m.t0) / m.len);
       mixProgress(p);
       setXf(m.xfFrom + (m.xfTo - m.xfFrom) * p);
@@ -97,12 +97,12 @@ function tickMix() {
       if (!m.scheduled && b >= m.inBeat - 2 * bps) {
         applySyncRate(m.inn);
         const when = c.currentTime + (posAtBeat(m.out, m.inBeat) - deckPos(m.out)) / m.out.rate;
-        deckStartAt(m.inn, when, m.inn.info.ok ? m.inn.info.mixIn : 0);
+        deckStartAt(m.inn, when, m.inn.info.ok ? inPoint(m.inn) : 0);
         m.scheduled = true;
       }
       if (m.style === 'echo' && b >= m.startBeat) m.out.echo = b < m.inBeat ? 0.6 : 0;
       if (b >= m.startBeat) {
-        if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; mixBegun(); }
+        if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; mixBegun(m); }
         const p = m.lenBeats ? Math.min(1, (b - m.startBeat) / m.lenBeats) : 1;
         mixProgress(p);
         if (m.style === 'blend' || m.style === 'bass') setXf(m.xfFrom + (m.xfTo - m.xfFrom) * p);
@@ -137,8 +137,8 @@ function mixStatus() {
   const out = refDeck(), inn = out && otherDeck(out);
   if (!out) return 'Play a track on a deck';
   if (!inn.buffer) return 'Load the next track into deck ' + inn.id;
-  if (beatOK(out) && out.info.mixOut) {
-    const bars = Math.floor((deckBeats(out, out.info.mixOut) - deckBeats(out, deckHeard(out))) / 4);
+  if (beatOK(out) && outPoint(out)) {
+    const bars = Math.floor((deckBeats(out, outPoint(out)) - deckBeats(out, deckHeard(out))) / 4);
     if (bars > 0) return 'Deck ' + out.id + ' outro in ' + bars + (bars === 1 ? ' bar' : ' bars') + ': a good time to mix';
     return 'Deck ' + out.id + ' is in its outro: mix now';
   }
@@ -173,19 +173,23 @@ function tickAuto() {
   const out = refDeck() || playing[0], inn = otherDeck(out);
   if (playing.length > 1 || busy(inn)) return;
   const t = inn.file && crate.tracks.find(x => x.key === fileKey(inn.file));
-  if (!inn.buffer || !t || t.played || inn.state === 'error') {
-    if (suggestions(out).length) crateLoadNext(inn);
+  // in playlist order, the other deck must hold the playlist's next song (it may have been reordered since it was loaded)
+  const want = mixer.order ? crateNextTrack(out) : null;
+  if (!inn.buffer || !t || t.played || inn.state === 'error' || (want && want !== t)) {
+    if (want || (!mixer.order && suggestions(out).length)) crateLoadNext(inn);
     return;
   }
   if (!beatOK(out) || !beatOK(inn)) {   // no grid: fade 10 s before the end
     if (out.buffer.duration - deckPos(out) < 10) startMix({ style: 'fade' });
     return;
   }
-  const i = out.info, at = deckBeats(out, i.mixOut), b = beatNow(out);
+  const i = out.info, at = deckBeats(out, outPoint(out)), b = beatNow(out);
   if (b < at - 64) return;   // wait until 16 bars before the outro
+  const j = typeof plJunction === 'function' ? plJunction(out) : {};   // the playlist's transition for this song (playlist.js)
   const gap = tempoGap(inn.info, i.bpm * out.rate), room = Math.floor((deckBeats(out, i.beatEnd) - Math.max(at, b)) / 4);
-  const bars = Math.max(2, Math.min(mixer.bars, room >= 8 ? 8 : room >= 4 ? 4 : 2));
-  startMix({ atBeat: at > b + 2 ? at : undefined, style: gap > 0.08 ? 'echo' : mixer.style === 'cut' ? 'cut' : mixer.style, bars });
+  const bars = Math.max(2, Math.min(j.bars || mixer.bars, room >= 16 ? 16 : room >= 8 ? 8 : room >= 4 ? 4 : 2));
+  const style = j.style && j.style !== 'auto' ? j.style : mixer.style;
+  startMix({ atBeat: at > b + 2 ? at : undefined, style: gap > 0.08 && style !== 'cut' ? 'echo' : style, bars });
 }
 
 // ---------- quantised clip launches ----------

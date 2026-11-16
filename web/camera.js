@@ -58,6 +58,18 @@ CLIP_TYPES.cam = {
   props: (c, p) => p.append(el('div', { className: 'hint', textContent: `Live camera${c.w ? `  -  ${c.w} x ${c.h}` : ' (waiting for the camera)'}. Use the layer's Scaling, Scale and Position to frame it.` })),
 };
 
+// One click: a new top layer called Camera, playing the camera, so it is part of the show (effects, transitions, blend, opacity).
+function camToLayer(deviceId) {
+  addLayer();
+  const li = comp.layers.length - 1;
+  comp.layers[li].name = 'Camera';
+  setClip(li, 0, camClip(deviceId));
+  trigger(li, 0);
+  sel.l = li; sel.c = 0; propTab = 'layer';
+  ui.gridDirty = ui.propsDirty = true;
+  setStatus('Camera is on the new top layer "Camera". Add effects to it, or lower its opacity / change its blend mode to mix it in.');
+}
+
 // ---------- camera input for smart effects ----------
 function camTrack(deviceId) {
   camUntrack();
@@ -151,7 +163,9 @@ SOURCE_PANELS.push(() => {
   const item = el('div', { className: 'src-item', textContent: 'Camera clip', title: 'Drag onto a clip slot, or double-click to fill the selected slot',
     ondblclick: () => { const ci = sel.c >= 0 ? sel.c : comp.layers[sel.l].clips.findIndex(x => !x); if (ci >= 0) setClip(sel.l, ci, camClip(pick.value)); } });
   draggable(item, { kind: 'make', make: () => camClip(pick.value) });
-  box.append(el('div', { className: 'fld' }, el('label', { textContent: 'Device' }), pick), el('div', { className: 'list' }, item));
+  box.append(el('div', { className: 'fld' }, el('label', { textContent: 'Device' }), pick),
+    el('div', { className: 'fld' }, el('button', { textContent: 'Show on a layer', title: 'Adds a top layer playing this camera', onclick: () => camToLayer(pick.value) })),
+    el('div', { className: 'list' }, item));
   const on = !!camState.track;
   box.append(el('div', { className: 'fld' },
     el('button', { className: on ? 'on' : '', textContent: on ? 'Camera input on' : 'Use as input', title: 'Analyse this camera so effects and sliders can follow movement and light', onclick: () => (on ? camUntrack() : camTrack(pick.value)) }),
