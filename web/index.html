@@ -191,6 +191,12 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 /* Agent panel (agentui.js) */
 #agent{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s) var(--m);padding:var(--s) var(--m);background:var(--bg);border-bottom:1px solid var(--line);max-height:46vh;overflow:auto} #agent[hidden]{display:none}
 #app.agentopen #grid{max-height:34vh} #app.agentopen.djopen #grid{max-height:26vh}
+/* Space sharing in the main column: the bottom row (properties, monitors, Files / Effects / Sources) always keeps room,
+   and the DJ panel, Agent panel and clip grid shrink and scroll instead when the window is short. */
+#menubar,#transport{flex-shrink:0}
+#bottom{min-height:min(240px,34vh)}
+#dj,#agent{flex:0 1 auto;min-height:0;overflow:auto}
+#grid{flex:0 1 auto}
 .acard{border:1px solid var(--card-line);border-radius:var(--r-card);background:var(--card);padding:8px 12px;min-width:0} .acard h4{margin-top:0}
 .acard .ar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0} .acard .ar[hidden]{display:none} .acard .ar input[type=range]{flex:1;min-width:80px}
 .acard label{color:var(--dim);white-space:nowrap} .acard .dt{color:var(--dim);font:12px var(--mono)}
