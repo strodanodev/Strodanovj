@@ -4,79 +4,190 @@
 <meta charset="utf-8">
 <title>Strodano VJ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Inter if online; offline (file://, a gig with no network) it falls back to system-ui -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="icon" href="logo.png">
+<script src="theme.js"></script>
 <style>
-:root{--bg:#131418;--panel:#0f1013;--line:#2c2e36;--ctl:#23252d;--ctl2:#32343e;--txt:#d8d9de;--dim:#7d808c;--acc:#ff7a1a;--acc2:#964a14;--warn:#f0dc50;--bad:#e6503f}
+/* Dark Mode Tech Dashboard. Tokens first; every rule below reads them. */
+:root{
+  --bg:#0a0a0a;--surface:#141414;--surface-hover:#1e1e1e;--card:#0d0d0d;--card-line:#1a1a1a;--line:#222;--ctl:#1a1a1a;--ctl-line:#333;
+  --side:#000;--top:#050505;--field:#000;
+  --acc:#cc6688;--acc-muted:rgba(204,102,136,.2);--acc-btn:rgba(204,102,136,.15);--acc-soft:rgba(204,102,136,.1);
+  --txt:#fff;--dim:#888;--term:#a8a8a8;
+  --ok:#2ea44f;--ok-muted:rgba(46,164,79,.2);--ok-soft:rgba(46,164,79,.1);--warn:#d29922;--bad:#cb2431;
+  --sans:Inter,system-ui,sans-serif;--mono:Consolas,ui-monospace,monospace;
+  --s:8px;--m:16px;--l:24px;--r-card:8px;--r-ctl:4px;
+  /* older names, kept so inline styles in the scripts still resolve */
+  --panel:var(--card);--ctl2:var(--surface-hover);--acc2:var(--acc-muted)}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:12px/1.35 system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden;user-select:none}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:400 13px/1.4 var(--sans);overflow:hidden;user-select:none;-webkit-font-smoothing:antialiased}
 button,select,input,textarea{font:inherit;color:inherit}
-button{background:var(--ctl);border:1px solid var(--line);border-radius:3px;padding:3px 8px;cursor:pointer}
-button:hover{background:var(--ctl2)} button.on{background:var(--acc);color:#111;border-color:var(--acc)}
-button.on.red{background:var(--bad);border-color:var(--bad)} button.on.yel{background:var(--warn);border-color:var(--warn)}
-select,input[type=text],input[type=number],textarea{background:var(--ctl);border:1px solid var(--line);border-radius:3px;padding:3px 5px}
+code{font:12px var(--mono);color:var(--acc)}
+::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#262626;border-radius:5px;border:2px solid transparent;background-clip:padding-box} ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+
+/* buttons: secondary by default, .on is the primary/active state */
+button{background:var(--ctl);border:1px solid var(--ctl-line);border-radius:var(--r-ctl);padding:4px 10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+button:hover{background:var(--surface-hover);border-color:#444}
+button.on{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)}
+button.on.red{background:rgba(203,36,49,.3);color:#fff;border-color:var(--bad)} button.on.yel{background:rgba(210,153,34,.3);color:#fff;border-color:var(--warn)}
+button:focus-visible{outline:1px solid var(--acc);outline-offset:1px}
+
+/* inputs and dropdowns */
+select,input[type=text],input[type=number],textarea{background:var(--field);border:1px solid var(--ctl-line);border-radius:var(--r-ctl);padding:5px 10px;outline:none;transition:border-color .12s}
+select:focus,input[type=text]:focus,input[type=number]:focus,textarea:focus{border-color:var(--acc)}
+select option{background:var(--field)}
 input[type=range]{accent-color:var(--acc);height:14px;margin:0;vertical-align:middle}
-#app{display:flex;flex-direction:column;height:100vh}
-#menubar{display:flex;gap:6px;align-items:center;padding:5px 8px;background:#191a1f;border-bottom:1px solid var(--line);flex-wrap:wrap}
-#menubar b{color:var(--acc);letter-spacing:.08em;margin-right:8px} #status{margin-left:auto;color:var(--dim)}
-#grid{flex:0 0 auto;min-height:120px;overflow:auto;padding:6px 8px;border-bottom:1px solid var(--line);max-height:56vh} #app.djopen #grid{max-height:38vh}
-.row{display:flex;gap:4px;margin-bottom:4px;align-items:stretch}
-.lctl{flex:0 0 250px;display:flex;flex-direction:column;gap:4px;justify-content:center;padding:3px 5px;border-radius:3px}
-.row.sel .lctl{background:#281e16} .lctl .r{display:flex;gap:3px;align-items:center}
-.lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px}
-.lctl button{padding:2px 6px;min-width:22px} .lctl input[type=range]{flex:1;min-width:60px} .lctl select{width:92px;padding:2px}
+input[type=checkbox]{accent-color:var(--acc)}
+
+/* shell: 60px icon sidebar + main column under a 48px topbar */
+#app{display:grid;grid-template-columns:60px minmax(0,1fr);height:100vh}
+#sidebar{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:var(--s);min-height:0;overflow:auto}
+#sidebar .logo{flex:0 0 48px;width:100%;display:grid;place-items:center;border-bottom:1px solid var(--line);margin-bottom:var(--s)}
+#sidebar .logo i{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;background:var(--acc-btn);border:1px solid var(--acc);color:var(--acc);font:600 14px var(--sans);font-style:normal}
+#sidebar button{width:40px;height:40px;flex:0 0 40px;padding:0;display:grid;place-items:center;background:transparent;border:0;border-radius:var(--r-card);color:var(--dim);position:relative}
+#sidebar button:hover{background:var(--surface-hover);color:var(--txt)}
+#sidebar button.on{background:var(--acc-soft);color:var(--acc)}
+#sidebar button.on::before{content:"";position:absolute;left:-10px;top:10px;bottom:10px;width:2px;border-radius:2px;background:var(--acc)}
+#sidebar svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#sidebar hr{width:24px;border:0;border-top:1px solid var(--line);margin:4px 0}
+#sidebar .end{margin-top:auto}
+#main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#menubar{flex:0 0 48px;display:flex;gap:var(--s);align-items:center;padding:0 var(--m);background:var(--top);border-bottom:1px solid var(--line);overflow:hidden}
+#menubar h1{margin:0 var(--m) 0 0;font-size:20px;font-weight:600;color:var(--txt);white-space:nowrap;letter-spacing:-.01em}
+#menubar h1 span{color:var(--acc)}
+#menubar .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+#status{margin-left:auto;background:var(--ok-soft);color:var(--ok);border-radius:12px;padding:4px 12px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+#status:empty{display:none}
+#menubar h1.brand{display:flex;align-items:center;gap:6px;margin-right:var(--s)}
+#menubar h1.brand img{height:40px;width:auto;display:block;filter:drop-shadow(0 0 6px rgba(0,0,0,.6))}
+#menubar h1.brand span{font-size:13px;font-weight:600;letter-spacing:.12em;color:var(--acc);align-self:flex-end;margin-bottom:6px}
+#outBtn{display:flex;align-items:center;gap:6px;font-weight:500}
+#outBtn i{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+#outBtn.on i{background:var(--acc);box-shadow:0 0 8px var(--acc);animation:livepulse 1.4s ease-in-out infinite}
+@keyframes livepulse{50%{opacity:.35}}
+#themes{display:flex;gap:6px;align-items:center;margin-left:var(--m)} #status:empty+#themes{margin-left:auto}
+#themes button{width:16px;height:16px;padding:0;border-radius:50%;background:var(--sw);border:2px solid var(--top);box-shadow:0 0 0 1px var(--ctl-line)}
+#themes button:hover{box-shadow:0 0 0 1px var(--dim)} #themes button.on{box-shadow:0 0 0 2px var(--sw)}
+
+/* clip grid */
+#grid{flex:0 0 auto;min-height:120px;overflow:auto;padding:var(--s) var(--m);border-bottom:1px solid var(--line);max-height:56vh} #app.djopen #grid{max-height:38vh}
+.row{display:flex;gap:6px;margin-bottom:6px;align-items:stretch}
+.lctl{flex:0 0 260px;display:flex;flex-direction:column;gap:6px;justify-content:center;padding:6px 8px;border-radius:var(--r-card);background:var(--card);border:1px solid var(--card-line)}
+.row.sel .lctl{background:var(--acc-soft);border-color:var(--acc-muted)} .lctl .r{display:flex;gap:4px;align-items:center}
+.lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;font-weight:500}
+.lctl button{padding:2px 6px;min-width:24px;font-size:12px} .lctl input[type=range]{flex:1;min-width:60px} .lctl select{width:92px;padding:2px 6px;font-size:12px}
 .colbtn,.cell{flex:1 1 0;min-width:96px;max-width:170px}
-.cell{position:relative;aspect-ratio:16/11;background:#16171b;border:1px solid #30323a;border-radius:3px;overflow:hidden;cursor:pointer}
-.cell.has{background:#1e2026} .cell:hover{border-color:#6e707d} .cell.pending{border:2px solid var(--warn)} .cell.active{border:2px solid var(--acc)}
-.cell.selc{box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)} .cell.over{border-color:var(--acc);background:#2a211a}
-.cell img,.cell .ph{position:absolute;left:2px;top:2px;right:2px;bottom:17px;width:calc(100% - 4px);height:calc(100% - 19px);object-fit:cover;background:#2d303a}
-.cell span{position:absolute;left:4px;right:4px;bottom:1px;height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cell .prog{position:absolute;left:2px;right:2px;bottom:17px;height:3px} .cell .prog i{display:block;height:100%;width:0;background:var(--acc)}
-.cell .miss{position:absolute;left:4px;top:4px;background:var(--bad);color:#fff;padding:0 4px;border-radius:2px;font-size:10px}
-#bottom{flex:1 1 0;display:grid;grid-template-columns:27% 1fr 27%;min-height:0}
-#bottom>div{border-right:1px solid var(--line);min-height:0;overflow:auto;padding:6px 8px;background:var(--panel)}
-.tabs{display:flex;gap:3px;margin-bottom:6px;border-bottom:1px solid var(--acc2)} .tabs button{border-bottom:none;border-radius:3px 3px 0 0}
-.fld{display:flex;align-items:center;gap:6px;margin:3px 0} .fld label{flex:0 0 96px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fld input[type=range]{flex:1;min-width:40px} .fld output{flex:0 0 40px;text-align:right;color:var(--dim)} .fld input[type=text],.fld select{flex:1;min-width:0}
-h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);padding-bottom:2px}
-.fx{border:1px solid var(--line);border-radius:3px;margin:4px 0;padding:4px 6px;background:#15161a}
-.fx .hd{display:flex;gap:4px;align-items:center} .fx .hd b{flex:1;font-weight:600} .fx .hd button{padding:0 6px}
-.dropz{border:1px dashed var(--line);border-radius:3px;padding:10px;text-align:center;color:var(--dim);margin-top:6px} .dropz.over{border-color:var(--acc);color:var(--acc)}
-#monitors{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
-#monitors canvas{width:100%;background:#000;border:1px solid var(--line);display:block} #monitors .t{color:var(--dim);margin-bottom:3px} #monitors .t.o{color:var(--acc)}
-.list div{padding:3px 6px;border-radius:3px;cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .list div:hover{background:var(--ctl)}
-.list .miss{color:var(--bad)} .hint{color:var(--dim);margin:4px 0}
-#transport{display:flex;gap:8px;align-items:center;padding:5px 8px;background:#191a1f;border-top:1px solid var(--line)}
-#transport input[type=number]{width:64px} #xf{flex:1} .dots{display:flex;gap:4px} .dots i{width:11px;height:11px;border-radius:50%;background:#3c3e46} .dots i.on{background:var(--acc)}
-#fps{color:var(--dim);min-width:210px;text-align:right} #fps.bad{color:var(--bad)}
-.modal{position:fixed;inset:4vh 4vw;background:var(--bg);border:1px solid var(--acc2);border-radius:5px;box-shadow:0 10px 60px #000c;display:grid;grid-template-rows:auto 1fr;z-index:10}
+.colbtn{font-size:12px;color:var(--dim)} .colbtn:hover{color:var(--txt)}
+.cell{position:relative;aspect-ratio:16/11;background:var(--card);border:1px solid var(--card-line);border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .12s}
+.cell.has{background:var(--surface)} .cell:hover{border-color:var(--ctl-line)} .cell.pending{border:2px solid var(--warn)} .cell.active{border:2px solid var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.cell.selc{box-shadow:inset 0 0 0 1px var(--txt)} .cell.over{border-color:var(--acc);background:var(--acc-soft)}
+.cell img,.cell .ph{position:absolute;left:3px;top:3px;right:3px;bottom:19px;width:calc(100% - 6px);height:calc(100% - 22px);object-fit:cover;background:var(--ctl);border-radius:4px}
+.cell span{position:absolute;left:6px;right:6px;bottom:2px;height:16px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .prog{position:absolute;left:3px;right:3px;bottom:19px;height:2px} .cell .prog i{display:block;height:100%;width:0;background:var(--acc)}
+.cell .miss{position:absolute;left:6px;top:6px;background:var(--bad);color:#fff;padding:1px 6px;border-radius:var(--r-ctl);font-size:11px}
+
+/* live layer previews (preview.js) */
+.lmon{flex:0 0 112px;display:grid;place-items:center;background:#000;border:1px solid var(--card-line);border-radius:6px;overflow:hidden;position:relative}
+.lmon canvas{width:100%;height:auto;display:block}
+.lmon.live{border-color:var(--acc-muted)}
+.lmon:not(.live)::after{content:"OFF";position:absolute;font:11px var(--mono);letter-spacing:.08em;color:#444}
+.lmon.sp{visibility:hidden}
+/* hover playback (preview.js) */
+.cell .hovvid{position:absolute;left:3px;top:3px;width:calc(100% - 6px);height:calc(100% - 22px);object-fit:cover;border-radius:4px;background:#000;z-index:1}
+.cell span,.cell .prog,.cell .miss{z-index:2} .cell.hovering{border-color:var(--acc)}
+#hoverPop{position:fixed;z-index:20;width:280px;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 12px 40px rgba(0,0,0,.7);pointer-events:none}
+#hoverPop[hidden]{display:none}
+#hoverPop>div{aspect-ratio:16/9;background:#000;border-radius:var(--r-ctl);overflow:hidden}
+#hoverPop video,#hoverPop img{width:100%;height:100%;object-fit:contain;display:block}
+#hoverPop span{display:block;margin-top:6px;font:12px var(--mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* bottom: three cards */
+#bottom{flex:1 1 0;display:grid;grid-template-columns:27% 1fr 27%;gap:var(--s);padding:var(--s) var(--m);min-height:0}
+#bottom>div{min-height:0;overflow:auto;padding:var(--m);background:var(--card);border:1px solid var(--card-line);border-radius:var(--r-card)}
+.tabs{display:flex;gap:var(--m);margin-bottom:var(--s);border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:4px 0 8px;color:var(--dim);margin-bottom:-1px}
+.tabs button:hover{background:none;color:var(--txt)} .tabs button.on{background:none;color:var(--acc);border-bottom-color:var(--acc)}
+.fld{display:flex;align-items:center;gap:var(--s);margin:4px 0} .fld label{flex:0 0 96px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fld input[type=range]{flex:1;min-width:40px} .fld output{flex:0 0 44px;text-align:right;color:var(--dim);font:12px var(--mono)} .fld input[type=text],.fld select{flex:1;min-width:0}
+h4{margin:var(--m) 0 var(--s);font-size:14px;font-weight:500;color:var(--dim);border-bottom:1px solid var(--line);padding-bottom:6px}
+.fx{border:1px solid var(--line);border-radius:var(--r-card);margin:6px 0;padding:8px 12px;background:var(--surface)}
+.fx .hd{display:flex;gap:4px;align-items:center} .fx .hd b{flex:1;font-weight:500} .fx .hd button{padding:0 6px}
+.dropz{border:1px dashed var(--ctl-line);border-radius:var(--r-card);padding:12px;text-align:center;color:var(--dim);margin-top:var(--s)} .dropz.over{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+#monitors{display:grid;grid-template-columns:1fr 1fr;gap:var(--m);align-content:start}
+#monitors canvas{width:100%;background:#000;border:1px solid var(--line);border-radius:var(--r-ctl);display:block}
+#monitors .t{color:var(--dim);margin-bottom:6px;font:12px var(--mono);letter-spacing:.06em;display:flex;align-items:center;gap:6px}
+#monitors .t.o{color:var(--acc)} #monitors .t.o::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 6px var(--acc)}
+.list div{padding:4px 8px;border-radius:var(--r-ctl);cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .list div:hover{background:var(--surface-hover)}
+.list .miss{color:var(--bad)} .hint{color:var(--dim);margin:6px 0}
+
+/* transport bar */
+#transport{flex:0 0 48px;display:flex;gap:12px;align-items:center;padding:0 var(--m);background:var(--top);border-top:1px solid var(--line);color:var(--dim)}
+#transport input[type=number]{width:72px;font-family:var(--mono);color:var(--txt)} #xf{flex:1}
+.dots{display:flex;gap:6px} .dots i{width:10px;height:10px;border-radius:50%;background:var(--line)} .dots i.on{background:var(--acc);box-shadow:0 0 8px var(--acc)}
+#fps{color:var(--dim);min-width:210px;text-align:right;font:12px var(--mono)} #fps.bad{color:var(--bad)}
+
+/* modals */
+.modal{position:fixed;inset:4vh 4vw;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 20px 80px rgba(0,0,0,.8);display:grid;grid-template-rows:auto 1fr;z-index:10;overflow:hidden}
 .modal.small{inset:auto;left:50%;top:10vh;transform:translateX(-50%);width:min(560px,92vw);grid-template-rows:auto auto}
-#keysBody{padding:8px 12px} #keysBody label{flex:0 0 170px;color:var(--txt);font-family:ui-monospace,Consolas,monospace}
-.modal[hidden]{display:none} .modal>.mh{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#191a1f;border-bottom:1px solid var(--line)} .modal>.mh b{flex:1}
-#outBody{display:grid;grid-template-columns:230px 1fr 290px;min-height:0} #outBody>div{padding:8px;overflow:auto;min-height:0;border-right:1px solid var(--line)}
-#outCanvasWrap{display:flex;flex-direction:column;gap:6px} #outCanvas{flex:1;width:100%;min-height:0;background:#08080a;cursor:crosshair}
-.sel-item{padding:3px 6px;border-radius:3px;cursor:pointer;display:flex;gap:6px;align-items:center} .sel-item.on{background:var(--acc2)}
-#shBody{display:grid;grid-template-columns:230px 1fr;min-height:0} #shBody>div{padding:8px;min-height:0;overflow:auto}
-#shCode{width:100%;height:calc(100% - 150px);min-height:200px;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre;resize:none;user-select:text}
-body.midi-learn [data-midi]{outline:2px dashed #4f8fe6;outline-offset:-2px;cursor:cell} body.midi-learn [data-midi].midi-mapped{outline:2px solid #4fc27a}
-body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
-#dj{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)} #dj[hidden]{display:none}
-.deck{border:1px solid var(--line);border-radius:3px;padding:5px 6px;background:#15161a;min-width:0} .deck.over{border-color:var(--acc)} .deck.clock{border-color:var(--acc2)}
-.deck .dh{display:flex;gap:8px;align-items:baseline;margin-bottom:4px} .deck .did{background:var(--ctl2);border-radius:2px;padding:0 6px} .deck.clock .did{background:var(--acc);color:#111}
-.deck .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .deck .dt{color:var(--dim);font-variant-numeric:tabular-nums} .deck .dk{color:var(--acc);font-style:normal;font-size:10px;letter-spacing:.08em;visibility:hidden} .deck.clock .dk{visibility:visible}
-.deck canvas{width:100%;height:84px;display:block;background:#0a0a0c;cursor:pointer;touch-action:none}
-.deck .dc{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap} .deck .dc input[type=range]{flex:1;min-width:50px} .deck .dc .dt{min-width:46px;text-align:right}
-#dj .df{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:var(--dim)} #dj .df input{width:60px}
-#shErr{white-space:pre-wrap;font:11px ui-monospace,Consolas,monospace;color:var(--bad);max-height:90px;overflow:auto;margin-top:4px} #shErr.ok{color:#6fd08c}
+#keysBody{padding:var(--s) var(--m) var(--m)} #keysBody label{flex:0 0 170px;color:var(--txt);font:12px var(--mono)}
+.modal[hidden]{display:none} .modal>.mh{display:flex;align-items:center;gap:var(--s);height:48px;padding:0 var(--m);background:var(--top);border-bottom:1px solid var(--line)}
+.modal>.mh b{flex:1;font-size:16px;font-weight:500} .modal>.mh label{display:flex;align-items:center;gap:6px;color:var(--dim)} .modal>.mh .hint{margin:0}
+#outBody{display:grid;grid-template-columns:230px 1fr 290px;min-height:0} #outBody>div{padding:var(--m);overflow:auto;min-height:0;border-right:1px solid var(--line)}
+#outCanvasWrap{display:flex;flex-direction:column;gap:6px;background:var(--bg)} #outCanvas{flex:1;width:100%;min-height:0;background:#000;cursor:crosshair;border-radius:var(--r-ctl)}
+.sel-item{padding:4px 8px;border-radius:var(--r-ctl);cursor:pointer;display:flex;gap:6px;align-items:center} .sel-item:hover{background:var(--surface-hover)} .sel-item.on{background:var(--acc-soft);color:var(--acc)}
+
+/* shader editor: the code box and its log are terminals */
+#shBody{display:grid;grid-template-columns:230px 1fr;min-height:0} #shBody>div{padding:var(--m);min-height:0;overflow:auto} #shBody>div:first-child{border-right:1px solid var(--line)}
+#shCode{width:100%;height:calc(100% - 150px);min-height:200px;margin-top:var(--s);padding:12px;background:#000;color:var(--term);border-color:var(--ctl-line);font:12px/1.5 var(--mono);white-space:pre;resize:none;user-select:text;caret-color:var(--acc);tab-size:2}
+#shErr{white-space:pre-wrap;font:12px/1.5 var(--mono);color:var(--bad);background:#000;border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;max-height:90px;overflow:auto;margin-top:var(--s)} #shErr:empty{display:none} #shErr.ok{color:var(--ok)}
+
+/* MIDI learn overlay */
+body.midi-learn [data-midi]{outline:1px dashed var(--acc);outline-offset:-2px;cursor:cell} body.midi-learn [data-midi].midi-mapped{outline:2px solid var(--ok)}
+body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:inset 0 0 0 100px var(--acc-soft)}
+
+/* DJ decks */
+#dj{display:grid;grid-template-columns:1fr 1fr;gap:var(--s) var(--m);padding:var(--s) var(--m);background:var(--bg);border-bottom:1px solid var(--line)} #dj[hidden]{display:none}
+.deck{border:1px solid var(--card-line);border-radius:var(--r-card);padding:12px;background:var(--card);min-width:0} .deck.over{border-color:var(--acc)} .deck.clock{border-color:var(--acc-muted)}
+.deck .dh{display:flex;gap:var(--s);align-items:baseline;margin-bottom:6px} .deck .did{background:var(--ctl);border:1px solid var(--ctl-line);border-radius:var(--r-ctl);padding:0 7px;font:600 12px var(--mono)}
+.deck.clock .did{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)}
+.deck .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500} .deck .dt{color:var(--dim);font:12px var(--mono)}
+.deck .dk{color:var(--acc);font-style:normal;font-size:10px;letter-spacing:.08em;visibility:hidden;background:var(--acc-soft);border-radius:12px;padding:2px 8px} .deck.clock .dk{visibility:visible}
+.deck canvas{width:100%;height:84px;display:block;background:#000;border-radius:var(--r-ctl);cursor:pointer;touch-action:none}
+.deck .dc{display:flex;gap:6px;align-items:center;margin-top:var(--s);flex-wrap:wrap} .deck .dc input[type=range]{flex:1;min-width:50px} .deck .dc .dt{min-width:46px;text-align:right}
+#dj .df{grid-column:1/-1;display:flex;gap:var(--s);align-items:center;color:var(--dim)} #dj .df input{width:64px}
+/* beat LFO on a parameter (motion.js) */
+.fld .lfo-btn{flex:0 0 auto;padding:0 6px;min-width:22px;font:12px var(--mono)}
+.fld.lfo{margin:0 0 6px 102px;gap:4px} .fld.lfo select{flex:0 1 auto;min-width:0;padding:2px 4px} .fld.lfo input[type=range]{flex:1;min-width:30px}
+.lfo-meter{flex:0 0 40px;height:4px;background:var(--line);border-radius:2px;overflow:hidden} .lfo-meter i{display:block;height:100%;width:0;background:var(--acc)}
 </style>
 </head>
 <body>
 <div id="app">
+  <nav id="sidebar">
+    <div class="logo"><i>S</i></div>
+    <button data-act="media" title="Add media" aria-label="Add media"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg></button>
+    <button data-act="addLayer" title="Add layer" aria-label="Add layer"><svg viewBox="0 0 24 24"><path d="M12 4 3 8.5l9 4.5 9-4.5z"/><path d="M3 13l9 4.5 4-2"/><path d="M19 14v6M16 17h6"/></svg></button>
+    <button data-act="addCol" title="Add column" aria-label="Add column"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><path d="M19.5 9v6M16.5 12h6"/></svg></button>
+    <button data-act="delCol" title="Remove column" aria-label="Remove column"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><path d="M16.5 12h6"/></svg></button>
+    <hr>
+    <button data-act="output" title="Advanced Output" aria-label="Advanced Output"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M7 8l3 5 3-3 4 4" opacity=".7"/></svg></button>
+    <button data-act="shaders" title="Shader Editor" aria-label="Shader Editor"><svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14"/></svg></button>
+    <button id="djBtn" data-act="dj" title="DJ mode: two decks whose music drives the visuals" aria-label="DJ mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3a9 9 0 0 1 9 9" opacity=".5"/></svg></button>
+    <button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad" aria-label="MIDI learn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="7.5" cy="12" r=".6"/><circle cx="16.5" cy="12" r=".6"/><circle cx="9" cy="8.5" r=".6"/><circle cx="15" cy="8.5" r=".6"/><circle cx="12" cy="7" r=".6"/><path d="M10 17h4"/></svg></button>
+    <button class="end" data-act="keys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M8 14h8"/></svg></button>
+  </nav>
+  <div id="main">
   <div id="menubar">
-    <b>STRODANO VJ</b>
+    <h1 class="brand"><img src="logo.png" alt="Strodano" width="71" height="40" draggable="false"><span>VJ</span></h1>
     <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button>
-    <button data-act="media">Add media</button><button data-act="addLayer">+ Layer</button><button data-act="addCol">+ Column</button><button data-act="delCol">- Column</button>
+    <span class="sep"></span>
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
-    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button><button id="djBtn" data-act="dj" title="DJ mode: two decks whose music drives the visuals">DJ</button><button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad">MIDI</button><button data-act="keys" title="Keyboard shortcuts (?)">Keys</button>
+    <span class="sep"></span>
+    <button id="outBtn" data-act="outWin" title="Open the output window (drag it onto the projector). Click again to close it." aria-pressed="false"><i></i>Output</button>
     <span id="status"></span>
+    <div id="themes" role="radiogroup" aria-label="Colour theme"></div>
   </div>
   <div id="dj" hidden></div>
   <div id="grid"></div>
@@ -93,6 +204,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
     <span class="dots" id="dots"><i></i><i></i><i></i><i></i></span>
     <span>A</span><input type="range" id="xf" data-midi="crossfade" min="0" max="1" step="0.001" title="Crossfader"><span>B</span>
     <span id="fps"></span>
+  </div>
   </div>
 </div>
 <div class="modal" id="outModal" hidden>
@@ -122,6 +234,8 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
 <script src="audio.js"></script>
 <script src="dj.js"></script>
 <script src="keys.js"></script>
+<script src="motion.js"></script>
+<script src="preview.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

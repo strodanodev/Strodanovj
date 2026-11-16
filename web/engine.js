@@ -285,13 +285,14 @@ function uploadClip(c) {
 const comp = { w: 1920, h: 1080, columns: 8, layers: [], fx: [], master: 1, crossfade: 0.5, bpm: 120, beats: 0, time: 0, frame: 0, rt: null, outTex: null };
 function newLayer() {
   return { name: 'Layer ' + (comp.layers.length + 1), clips: new Array(comp.columns).fill(null), active: -1, pendingCol: -1, opacity: 1, blend: 0, bypass: false, solo: false,
-    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null };
+    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null,
+    trans: 0, from: -1, transT0: 0, transDur: 0, tf: null };   // trans: clip transition length in beats (0 = cut); from: clip fading out
 }
 function addLayer() { comp.layers.push(newLayer()); ui.gridDirty = true; }
 function removeLayer(i) {
   if (comp.layers.length <= 1) return;
   const L = comp.layers[i];
-  L.clips.forEach(freeClip); freeRT(L.rt);
+  L.clips.forEach(freeClip); freeRT(L.rt); freeFbo(L.tf);
   comp.layers.splice(i, 1); ui.gridDirty = ui.propsDirty = true;
 }
 function setColumns(n) {
@@ -307,10 +308,10 @@ function setColumns(n) {
 function resizeComp(w, h) {
   comp.w = w; comp.h = h;
   freeRT(comp.rt); comp.rt = mkRT(w, h);
-  comp.layers.forEach(L => { freeRT(L.rt); L.rt = mkRT(w, h); });
+  comp.layers.forEach(L => { freeRT(L.rt); L.rt = mkRT(w, h); freeFbo(L.tf); L.tf = null; });
 }
 function resetComp(layers = 3, columns = 8) {
-  comp.layers.forEach(L => { L.clips.forEach(freeClip); freeRT(L.rt); });
+  comp.layers.forEach(L => { L.clips.forEach(freeClip); freeRT(L.rt); freeFbo(L.tf); });
   comp.layers = []; comp.fx = []; comp.columns = columns; comp.master = 1; comp.crossfade = 0.5;
   freeRT(comp.rt); comp.rt = mkRT(comp.w, comp.h);
   for (let i = 0; i < layers; i++) addLayer();
@@ -320,16 +321,27 @@ function setClip(li, ci, clip) {
   const L = comp.layers[li];
   if (!L || ci < 0 || ci >= comp.columns) return;
   if (L.active === ci || L.pendingCol === ci) eject(li);
+  if (L.from === ci) endTransition(L);
   freeClip(L.clips[ci]);
   L.clips[ci] = clip;
   ui.gridDirty = ui.propsDirty = true;
 }
+const pauseClip = c => { if (c && c.video) c.video.pause(); };
 function eject(li) {
   const L = comp.layers[li];
   if (!L) return;
-  [L.active, L.pendingCol].forEach(k => { const c = L.clips[k]; if (c && c.video) c.video.pause(); });
-  L.active = L.pendingCol = -1; L.outTex = null;
+  [L.active, L.pendingCol, L.from].forEach(k => pauseClip(L.clips[k]));
+  L.active = L.pendingCol = L.from = -1; L.outTex = null;
 }
+// The clip in column ci takes over the layer. With a transition set and a clip on screen, the old one keeps playing and fades out.
+function switchActive(L, ci) {
+  const prev = L.active;
+  if (L.from >= 0 && L.from !== ci && L.from !== prev) pauseClip(L.clips[L.from]);
+  if (prev >= 0 && prev !== ci && L.trans > 0 && L.outTex) { L.from = prev; L.transT0 = comp.time; L.transDur = L.trans * 60 / comp.bpm; }
+  else { if (prev !== ci) pauseClip(L.clips[prev]); L.from = -1; }
+  L.active = ci; L.pendingCol = -1;
+}
+function endTransition(L) { if (L.from >= 0 && L.from !== L.active) pauseClip(L.clips[L.from]); L.from = -1; }
 function trigger(li, ci) {
   const L = comp.layers[li], c = L && L.clips[ci];
   if (!c || c.missing || c.error) return;
@@ -339,11 +351,7 @@ function trigger(li, ci) {
     if (c.speed > 0) c.video.play().catch(() => {});
     if (L.active === ci) return;
     L.pendingCol = ci;   // the old clip keeps playing until this one has a frame
-  } else {
-    const old = L.clips[L.active];
-    if (old && old.video && L.active !== ci) old.video.pause();
-    L.active = ci; L.pendingCol = -1;
-  }
+  } else switchActive(L, ci);
 }
 function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) trigger(li, ci); }); }
 // Effects and generator clips carry a uid that is saved with the composition, so MIDI mappings can find them after reordering.
@@ -361,7 +369,7 @@ function applyChain(chain, rt) {
     bindTex(0, rtSrc(rt).tex);
     gl.uniform1i(prog.loc(d.isf ? 'inputImage' : 'tex'), 0);
     gl.uniform1f(prog.loc('mixAmt'), e.mix);
-    setDefUniforms(d, prog, e.params, comp);
+    setDefUniforms(d, prog, modParams(e.params, e.mod), comp);
     tri();
     rtSwap(rt);
   }
@@ -379,44 +387,59 @@ function update(dt, beatDt = dt) {
     if (L.pendingCol >= 0) {
       const c = L.clips[L.pendingCol];
       if (!c || c.error) L.pendingCol = -1;
-      else if (c.video.readyState >= 2) {
-        const old = L.clips[L.active];
-        if (old && old.video && old !== c) old.video.pause();
-        L.active = L.pendingCol; L.pendingCol = -1;
-      }
+      else if (c.video.readyState >= 2) switchActive(L, L.pendingCol);
     }
   }
+}
+// Draw clip c (generator, video or image, with the layer's fit / scale / position) into framebuffer f. False if it has no picture yet.
+function drawSource(L, c, f) {
+  if (c.type === 'gen') {
+    const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
+    if (!prog) return false;
+    bindFbo(f); gl.useProgram(prog.p); setDefUniforms(d, prog, modParams(c.params, c.mod), comp); tri();
+    return true;
+  }
+  if (c.video ? c.video.readyState >= 2 : c.dirty) { uploadClip(c); c.dirty = false; if (c.video) { c.w = c.video.videoWidth; c.h = c.video.videoHeight; } }
+  if (!c.ready || !c.w || !c.h) return false;
+  const va = c.w / c.h, ca = comp.w / comp.h;
+  let sx = 1, sy = 1;
+  if (L.fit === 0) { if (va > ca) sx = va / ca; else sy = ca / va; }
+  else if (L.fit === 1) { if (va > ca) sy = ca / va; else sx = va / ca; }
+  clearFbo(f);
+  gl.useProgram(srcProg.p);
+  bindTex(0, c.tex);
+  gl.uniform1i(srcProg.loc('tex'), 0);
+  gl.uniform2f(srcProg.loc('scl'), sx * L.scale, sy * L.scale);
+  gl.uniform2f(srcProg.loc('off'), L.x, L.y);
+  tri();
+  return true;
+}
+// While a transition runs, cross-fade from the outgoing clip to the new one (smoothstep, timed in beats at the tempo it started with).
+function applyTransition(L) {
+  const fc = L.from >= 0 ? L.clips[L.from] : null;
+  if (!fc) { L.from = -1; return; }
+  const t = L.transDur > 0 ? (comp.time - L.transT0) / L.transDur : 1;
+  if (t >= 1) { endTransition(L); return; }
+  if (!L.tf) L.tf = mkFbo(comp.w, comp.h);
+  if (!drawSource(L, fc, L.tf)) return;
+  const k = t * t * (3 - 2 * t);
+  bindFbo(rtDst(L.rt));
+  gl.useProgram(blendProg.p);
+  bindTex(0, rtSrc(L.rt).tex); bindTex(1, L.tf.tex);
+  gl.uniform1i(blendProg.loc('base'), 0); gl.uniform1i(blendProg.loc('top'), 1);
+  gl.uniform1f(blendProg.loc('opacity'), 1 - k); gl.uniform1i(blendProg.loc('mode'), 0);
+  tri(); rtSwap(L.rt);
 }
 function renderComp() {
   gl.disable(gl.BLEND);
   const anySolo = comp.layers.some(L => L.solo);
   for (const L of comp.layers) {
-    L.outTex = null;
     const c = L.clips[L.active];
-    if (!c || L.bypass || (anySolo && !L.solo)) continue;
+    if (!c || L.bypass || (anySolo && !L.solo)) { L.outTex = null; continue; }
     L.rt.cur = 0;
-    let drew = false;
-    if (c.type === 'gen') {
-      const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
-      if (prog) { bindFbo(rtDst(L.rt)); gl.useProgram(prog.p); setDefUniforms(d, prog, c.params, comp); tri(); drew = true; }
-    } else {
-      if (c.video ? c.video.readyState >= 2 : c.dirty) { uploadClip(c); c.dirty = false; if (c.video) { c.w = c.video.videoWidth; c.h = c.video.videoHeight; } }
-      if (c.ready && c.w && c.h) {
-        const va = c.w / c.h, ca = comp.w / comp.h;
-        let sx = 1, sy = 1;
-        if (L.fit === 0) { if (va > ca) sx = va / ca; else sy = ca / va; }
-        else if (L.fit === 1) { if (va > ca) sy = ca / va; else sx = va / ca; }
-        clearFbo(rtDst(L.rt));
-        gl.useProgram(srcProg.p);
-        bindTex(0, c.tex);
-        gl.uniform1i(srcProg.loc('tex'), 0);
-        gl.uniform2f(srcProg.loc('scl'), sx * L.scale, sy * L.scale);
-        gl.uniform2f(srcProg.loc('off'), L.x, L.y);
-        tri(); drew = true;
-      }
-    }
-    if (!drew) continue;
+    if (!drawSource(L, c, rtDst(L.rt))) { L.outTex = null; continue; }
     rtSwap(L.rt);
+    applyTransition(L);
     applyChain(L.fx, L.rt);
     L.outTex = rtSrc(L.rt).tex;
   }
@@ -572,14 +595,14 @@ window.addEventListener('beforeunload', () => screens.forEach((s, i) => closeOut
 
 // ---------- save / load ----------
 function compToJSON() {
-  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: e.mix, bypass: e.bypass }));
+  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: e.mix, bypass: e.bypass, mod: e.mod }));
   return {
     app: 'Strodano VJ', version: 2, w: comp.w, h: comp.h, columns: comp.columns, master: comp.master, crossfade: comp.crossfade, bpm: comp.bpm,
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),
     fx: fxJ(comp.fx),
     layers: comp.layers.map(L => ({
-      name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && (c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
+      name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, fx: fxJ(L.fx),
+      clips: L.clips.map(c => c && (c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
@@ -587,7 +610,7 @@ function compToJSON() {
 function loadComp(j) {
   if (!j || !Array.isArray(j.layers)) return false;
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-  const fxL = arr => (Array.isArray(arr) ? arr : []).map(e => { const n = mkEffect(e.def); if (!n) return null; (e.params || []).forEach((v, i) => { if (i < n.params.length) n.params[i] = num(v, 0); }); n.mix = num(e.mix, 1); n.bypass = !!e.bypass; keepUid(n, e.uid); return n; }).filter(Boolean);
+  const fxL = arr => (Array.isArray(arr) ? arr : []).map(e => { const n = mkEffect(e.def); if (!n) return null; (e.params || []).forEach((v, i) => { if (i < n.params.length) n.params[i] = num(v, 0); }); n.mix = num(e.mix, 1); n.bypass = !!e.bypass; keepUid(n, e.uid); n.mod = loadMod(e.mod); return n; }).filter(Boolean);
   comp.w = Math.min(8192, Math.max(16, num(j.w, 1920) | 0)); comp.h = Math.min(8192, Math.max(16, num(j.h, 1080) | 0));
   clearCustomDefs();
   customShaders = (Array.isArray(j.shaders) ? j.shaders : []).filter(s => s && s.name && s.code).map(s => ({ name: String(s.name), kind: s.kind === 'gen' ? 'gen' : 'fx', code: String(s.code) }));
@@ -599,11 +622,11 @@ function loadComp(j) {
     addLayer();
     const L = comp.layers[comp.layers.length - 1];
     Object.assign(L, { name: String(l.name || L.name), opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
-      xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)) });
+      xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)), trans: Math.min(16, Math.max(0, num(l.trans, 0))) });
     L.fx = fxL(l.fx);
     (l.clips || []).slice(0, comp.columns).forEach((c, ci) => {
       if (!c) return;
-      if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; keepUid(g, c.uid); (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
+      if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; keepUid(g, c.uid); g.mod = loadMod(c.mod); (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
       else if (c.fileName) {
         const m = media.find(x => x.name === c.fileName);
         const n = m ? mediaClip(m) : { type: c.type === 'image' ? 'image' : 'video', missing: true, fileName: c.fileName, thumb: null };

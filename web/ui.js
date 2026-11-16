@@ -63,7 +63,8 @@ function renderGrid() {
   const head = el('div', { className: 'row' },
     el('div', { className: 'lctl' }, el('div', { className: 'r' }, el('b', { textContent: 'COMPOSITION', style: { color: 'var(--acc)' } }),
       el('button', { textContent: 'X', title: 'Eject all layers', onclick: () => comp.layers.forEach((_, i) => eject(i)) }),
-      el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: comp.master, title: 'Master', dataset: { midi: 'master' }, oninput: e => { comp.master = +e.target.value; } }))));
+      el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: comp.master, title: 'Master', dataset: { midi: 'master' }, oninput: e => { comp.master = +e.target.value; reflectMidi('master', comp.master); } }))));
+  head.append(el('div', { className: 'lmon sp' }));   // keeps the column buttons over their cells
   for (let c = 0; c < comp.columns; c++) head.append(el('button', { className: 'colbtn', textContent: 'Column ' + (c + 1), dataset: { midi: 'column:' + c }, onclick: () => triggerColumn(c) }));
   g.append(head);
   for (let li = comp.layers.length - 1; li >= 0; li--) {
@@ -78,10 +79,10 @@ function renderGrid() {
         tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
         el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } })),
       el('div', { className: 'r' },
-        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; } }),
+        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; reflectMidi('layer:' + li + ':opacity', L.opacity); } }),
         el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
     dropTarget(ctl, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { L.fx.push(e); sel.l = li; ui.propsDirty = true; } });
-    const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') }, ctl);
+    const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') }, ctl, layerMon(li));
     cellEls[li] = [];
     for (let ci = 0; ci < comp.columns; ci++) {
       const c = L.clips[ci];
@@ -116,7 +117,7 @@ function chainUI(chain) {
     if (d) {
       if (d.err) fx.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: 'Shader error - open the Shader Editor' }));
       const tagged = (f, id) => { f.slider.dataset.midi = 'fx:' + e.uid + ':' + id; return f; };
-      d.params.forEach((pd, k) => fx.append(tagged(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; }), k)));
+      d.params.forEach((pd, k) => fx.append(...lfoControls(e, k, tagged(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; }), k))));
       if (!d.isf) fx.append(tagged(fld('Mix', 0, 1, 0.001, () => e.mix, v => { e.mix = v; }), 'mix'));
     }
     box.append(fx);
@@ -129,20 +130,21 @@ function chainUI(chain) {
 function renderProps() {
   const p = $('props');
   p.textContent = '';
-  posSlider = null;
+  posSlider = null; lfoMeters.length = 0;
   sel.l = Math.min(comp.layers.length - 1, Math.max(0, sel.l));
   const L = comp.layers[sel.l];
   p.append(tabs([['comp', 'Composition'], ['layer', 'Layer'], ['clip', 'Clip']], propTab, t => { propTab = t; ui.propsDirty = true; }));
   if (propTab === 'comp') {
-    const fm = fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; ui.gridDirty = true; });
+    const fm = fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; reflectMidi('master', v); });
     const fx = fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; });
     fm.slider.dataset.midi = 'master'; fx.slider.dataset.midi = 'crossfade';
     p.append(fm, fx, el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx), midiPanel());
   } else if (propTab === 'layer') {
-    const fo = fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; ui.gridDirty = true; });
+    const fo = fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; reflectMidi('layer:' + sel.l + ':opacity', v); });
     fo.slider.dataset.midi = 'layer:' + sel.l + ':opacity';
     p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: L.name, onchange: e => { L.name = e.target.value || L.name; ui.gridDirty = true; } })),
       fo,
+      transitionField(L),
       el('div', { className: 'fld' }, el('label', { textContent: 'Scaling' }), el('select', { onchange: e => { L.fit = +e.target.value; } }, ...['Fill', 'Fit', 'Stretch'].map((n, i) => el('option', { value: i, textContent: n, selected: i === L.fit })))),
       fld('Scale', 0.05, 4, 0.01, () => L.scale, v => { L.scale = v; }), fld('Position X', -1, 1, 0.001, () => L.x, v => { L.x = v; }), fld('Position Y', -1, 1, 0.001, () => L.y, v => { L.y = v; }),
       el('div', { className: 'fld' }, el('button', { textContent: 'Reset transform', onclick: () => { L.scale = 1; L.x = L.y = 0; ui.propsDirty = true; } }),
@@ -166,7 +168,7 @@ function renderProps() {
     else if (c.type === 'gen') {
       const d = DEFS.gen.get(c.gen);
       if (!d) p.append(el('div', { className: 'hint', textContent: 'Generator "' + c.gen + '" is not available.' }));
-      else d.params.forEach((pd, k) => { const f = fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; }); f.slider.dataset.midi = 'gen:' + c.uid + ':' + k; p.append(f); });
+      else d.params.forEach((pd, k) => { const f = fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; }); f.slider.dataset.midi = 'gen:' + c.uid + ':' + k; p.append(...lfoControls(c, k, f)); });
     }
   }
 }
@@ -267,19 +269,19 @@ function outHandles() {
   if (outUI.tab === 'in') {
     if (sl.mask) return hs;
     const [x, y, w, h] = sl.in;
-    hs.push({ x: x + w / 2, y: y + h / 2, col: '#78c8ff', move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; } },
-      { x, y, col: '#ff7a1a', move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; sl.in[2] = Math.max(0.01, sl.in[2] - dx); sl.in[3] = Math.max(0.01, sl.in[3] - dy); } },
-      { x: x + w, y: y + h, col: '#ff7a1a', move: (dx, dy) => { sl.in[2] = Math.max(0.01, sl.in[2] + dx); sl.in[3] = Math.max(0.01, sl.in[3] + dy); } });
+    hs.push({ x: x + w / 2, y: y + h / 2, col: '#ffffff', move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; } },
+      { x, y, col: THEME.acc, move: (dx, dy) => { sl.in[0] += dx; sl.in[1] += dy; sl.in[2] = Math.max(0.01, sl.in[2] - dx); sl.in[3] = Math.max(0.01, sl.in[3] - dy); } },
+      { x: x + w, y: y + h, col: THEME.acc, move: (dx, dy) => { sl.in[2] = Math.max(0.01, sl.in[2] + dx); sl.in[3] = Math.max(0.01, sl.in[3] + dy); } });
     return hs;
   }
-  hs.push({ x: (sl.c[0][0] + sl.c[1][0] + sl.c[2][0] + sl.c[3][0]) / 4, y: (sl.c[0][1] + sl.c[1][1] + sl.c[2][1] + sl.c[3][1]) / 4, col: '#78c8ff', move: (dx, dy) => sl.c.forEach(q => { q[0] += dx; q[1] += dy; }) });
+  hs.push({ x: (sl.c[0][0] + sl.c[1][0] + sl.c[2][0] + sl.c[3][0]) / 4, y: (sl.c[0][1] + sl.c[1][1] + sl.c[2][1] + sl.c[3][1]) / 4, col: '#ffffff', move: (dx, dy) => sl.c.forEach(q => { q[0] += dx; q[1] += dy; }) });
   const n = sl.grid;
   for (let j = 0; j <= n && n > 0; j++) for (let i = 0; i <= n; i++) {
     if ((i === 0 || i === n) && (j === 0 || j === n)) continue;
     const [x, y] = slicePoint(sl, i / n, j / n), idx = (j * (n + 1) + i) * 2;
-    hs.push({ x, y, col: '#78ffa0', small: true, move: (dx, dy) => { sl.warp[idx] += dx; sl.warp[idx + 1] += dy; } });
+    hs.push({ x, y, col: '#2ea44f', small: true, move: (dx, dy) => { sl.warp[idx] += dx; sl.warp[idx + 1] += dy; } });
   }
-  sl.c.forEach(q => hs.push({ x: q[0], y: q[1], col: '#ff7a1a', move: (dx, dy) => { q[0] += dx; q[1] += dy; } }));
+  sl.c.forEach(q => hs.push({ x: q[0], y: q[1], col: THEME.acc, move: (dx, dy) => { q[0] += dx; q[1] += dy; } }));
   return hs;
 }
 function drawOutCanvas() {
@@ -299,19 +301,19 @@ function drawOutCanvas() {
   if (h > H - m * 2) { h = H - m * 2; w = h * aspect; }
   const ox = (W - w) / 2, oy = (H - h) / 2;
   outUI.rect = { ox: ox / dpr, oy: oy / dpr, w: w / dpr, h: h / dpr };
-  x.fillStyle = '#08080a'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
   x.drawImage(outUI.prev, ox, oy, w, h);
-  x.strokeStyle = '#5a5c64'; x.lineWidth = 1; x.strokeRect(ox + 0.5, oy + 0.5, w, h);
+  x.strokeStyle = '#333'; x.lineWidth = 1; x.strokeRect(ox + 0.5, oy + 0.5, w, h);
   const px = (u, v) => [ox + u * w, oy + v * h];
   scr.slices.forEach((sl, i) => {
     const on = i === outUI.slice;
-    x.strokeStyle = on ? '#ff7a1a' : 'rgba(170,170,180,.6)'; x.lineWidth = (on ? 2 : 1) * dpr; x.fillStyle = x.strokeStyle;
+    x.strokeStyle = on ? THEME.acc : 'rgba(136,136,136,.7)'; x.lineWidth = (on ? 2 : 1) * dpr; x.fillStyle = x.strokeStyle;
     x.beginPath();
     let lab;
     if (outUI.tab === 'in') { if (sl.mask) return; const [a, b] = px(sl.in[0], sl.in[1]); x.rect(a, b, sl.in[2] * w, sl.in[3] * h); lab = [a, b]; }
     else { sl.c.forEach((q, k) => { const [a, b] = px(q[0], q[1]); if (k) x.lineTo(a, b); else { x.moveTo(a, b); lab = [a, b]; } }); x.closePath(); }
     x.stroke();
-    x.font = 11 * dpr + 'px system-ui'; x.fillText(sl.name, lab[0] + 5 * dpr, lab[1] + 13 * dpr);
+    x.font = 11 * dpr + 'px Inter, system-ui, sans-serif'; x.fillText(sl.name, lab[0] + 5 * dpr, lab[1] + 13 * dpr);
   });
   for (const hd of outHandles()) {
     const [a, b] = px(hd.x, hd.y);
@@ -419,6 +421,8 @@ let lastSaved = '';
 function autosave() {
   try { const s = JSON.stringify(compToJSON()); if (s !== lastSaved) { localStorage.setItem(AUTOSAVE, s); lastSaved = s; } } catch (e) {}
 }
+// keeps the header Output button in step with the output windows (they can be closed from outside the app)
+function syncOutBtn() { const b = $('outBtn'), on = liveScreens().length > 0; if (b && b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } }
 function initMenu() {
   const acts = {
     new: () => { demoComp(); sel.l = 0; sel.c = -1; },
@@ -435,8 +439,11 @@ function initMenu() {
     midi: () => setMidiLearn(!midi.learn),
     dj: () => toggleDJ(!djUI.open),
     keys: () => toggleKeysHelp(),
+    // header Output button: open every screen's output window, or close them all when any is live
+    outWin: () => { if (liveScreens().length) screens.forEach((s, i) => closeOutput(i)); else screens.forEach((s, i) => openOutput(i)); syncOutBtn(); ui.propsDirty = true; },
   };
-  $('menubar').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.act; if (a && acts[a]) acts[a](); });
+  const onAct = e => { const b = e.target.closest && e.target.closest('[data-act]'), a = b && b.dataset.act; if (a && acts[a]) acts[a](); };
+  $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
   $('resSel').addEventListener('change', e => { const [w, h] = e.target.value.split('x').map(Number); resizeComp(w, h); ui.propsDirty = true; });
   $('mediaInput').addEventListener('change', e => {
@@ -493,6 +500,7 @@ function frame() {
       present(comp.outTex, mw, mh); grab(monOut, mw, mh);
       const L = comp.layers[Math.min(sel.l, comp.layers.length - 1)];
       present(L.outTex, mw, mh); grab(monPrev, mw, mh);
+      drawLayerMons();
       if (!$('outModal').hidden) drawOutCanvas();
       tickUI();
     }
@@ -500,6 +508,7 @@ function frame() {
   fpsN++; costSum += performance.now() - t0;
   if (t0 - fpsT >= 500) {
     const fps = fpsN * 1000 / (t0 - fpsT), el2 = $('fps');
+    syncOutBtn();
     el2.textContent = `${liveScreens().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
     el2.className = fps < 29 ? 'bad' : '';
     window.__fps = fps; fpsN = 0; costSum = 0; fpsT = t0;
@@ -534,10 +543,15 @@ function genThumbFor(c) {
   c.thumb = cv.toDataURL('image/jpeg', 0.7);
   ui.gridDirty = true;
 }
+// A panel is not rebuilt while one of its sliders is held: rebuilding would drop the slider out from under the pointer mid-drag.
+let pointerHeld = false;
+['pointerdown', 'pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, () => { pointerHeld = t === 'pointerdown'; }, true));
+const holding = id => { const a = document.activeElement; return pointerHeld && a && a.type === 'range' && $(id).contains(a); };
 function tickUI() {
   outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
-  if (ui.gridDirty) { ui.gridDirty = false; renderGrid(); }
-  if (ui.propsDirty) { ui.propsDirty = false; renderProps(); }
+  if (ui.gridDirty && !holding('grid')) { ui.gridDirty = false; renderGrid(); }
+  if (ui.propsDirty && !holding('props')) { ui.propsDirty = false; renderProps(); }
+  tickLfoMeters();
   if (ui.browserDirty) { ui.browserDirty = false; renderBrowser(); }
   if (midi.learn) markMidi();
   comp.layers.forEach((L, li) => (cellEls[li] || []).forEach((cell, ci) => {

@@ -104,6 +104,104 @@ function analyseTrack(x, sr) {
   let grid0 = (f0 - 0.7) / fps + d * beatLen;
   while (grid0 < -0.05) grid0 += 4 * beatLen;   // a track that starts right on the beat may land a few ms below zero
   res.ok = f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0;
+
+  // ---- loudness and energy ----
+  // Loudness of the loud part (frames above -40 dB), used to bring every track to the same level.
+  let ls = 0, ln = 0, fl = 0;
+  for (let i = 0; i < n; i++) if (eF[i] > 0.01) { ls += eF[i] * eF[i]; ln++; fl += on[i]; }
+  res.loudDb = ln ? 10 * Math.log10(ls / ln) : -60;
+  res.flux = ln ? fl / ln * fps : 0;   // onset strength per second: busier tracks score higher
+
+  // ---- bars: where the beat starts and ends, where the body of the track ends ----
+  if (res.ok) {
+    const barLen = 4 * beatLen, nb = Math.floor((res.duration - grid0) / barLen);
+    const bRms = new Float32Array(Math.max(0, nb)), bOn = new Float32Array(Math.max(0, nb));
+    for (let b = 0; b < nb; b++) {
+      const a = Math.max(0, Math.round((grid0 + b * barLen) * fps)), e = Math.min(n, Math.round((grid0 + (b + 1) * barLen) * fps));
+      let s = 0, o = 0;
+      for (let i = a; i < e; i++) { s += eF[i] * eF[i]; o += onL[i]; }
+      bRms[b] = Math.sqrt(s / Math.max(1, e - a)); bOn[b] = o / Math.max(1, e - a);
+    }
+    const med = arr => { const s = Array.from(arr).sort((p, q) => p - q); return s.length ? s[s.length >> 1] : 0; };
+    const loud = bOn.filter((v, b) => bRms[b] > 0.01), onMed = med(loud);
+    const beaty = b => bOn[b] >= 0.35 * onMed && bRms[b] > 0.01;
+    let first = 0, last = nb - 1;
+    while (first < nb && !beaty(first)) first++;
+    while (last > first && !beaty(last)) last--;
+    if (first < nb && last - first >= 8) {
+      // body end: the last bar still near full level (scanning back from the end), so a quieter outro is left for the mix
+      const rmsMed = med(bRms.slice(first, last + 1)), beatEnd = last + 1;
+      let body = last;
+      while (body > first && bRms[body] < 0.85 * rmsMed) body--;
+      body++;
+      // mixes start on a phrase (8 bars) counted from the first beat, and need 8 bars of beat after them
+      let out = first + 8 * Math.round((body - first) / 8);
+      if (out + 8 > beatEnd) out = first + 8 * Math.floor((beatEnd - 8 - first) / 8);
+      if (out < first + 8) out = Math.max(first, beatEnd - 8);
+      res.mixIn = grid0 + first * barLen;
+      res.mixOut = grid0 + out * barLen;
+      res.beatEnd = grid0 + beatEnd * barLen;
+    }
+  }
+  if (res.mixIn === undefined) { res.mixIn = res.ok ? Math.max(0, grid0) : 0; res.mixOut = Math.max(0, res.duration - 20); res.beatEnd = res.duration; }
+
+  // ---- key ----
+  // Chroma from 8192-point spectra of the signal at about 11 kHz, compared with the Krumhansl key profiles.
+  const dsf = Math.max(1, Math.round(sr / 11025)), fs2 = sr / dsf, N = 8192, half = N >> 1;
+  const m2 = Math.floor(x.length / dsf);
+  if (m2 >= N * 4) {
+    const re = new Float64Array(N), im = new Float64Array(N), win = new Float64Array(N), chroma = new Float64Array(12);
+    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+    const bitrev = new Uint32Array(N);
+    for (let i = 0, j = 0; i < N; i++) { bitrev[i] = j; let bit = half; while (j & bit) { j ^= bit; bit >>= 1; } j |= bit; }
+    const binPc = new Int8Array(half), lo = Math.ceil(65 / fs2 * N), hi = Math.min(half - 1, Math.floor(2100 / fs2 * N));
+    for (let k = 0; k < half; k++) binPc[k] = k >= lo && k <= hi ? ((Math.round(12 * Math.log2(k * fs2 / N / 440)) + 69) % 12 + 12) % 12 : -1;
+    const frames = Math.floor(m2 / N), stride = Math.max(1, Math.floor(frames / 400));   // at most ~400 spectra
+    const fc = new Float64Array(12);
+    for (let fr = 0; fr < frames; fr += stride) {
+      for (let i = 0; i < N; i++) {
+        let s = 0;
+        for (let j = (fr * N + i) * dsf, e = j + dsf; j < e; j++) s += x[j];
+        const r = bitrev[i]; re[r] = s / dsf * win[i]; im[r] = 0;
+      }
+      for (let size = 2; size <= N; size <<= 1) {
+        const h = size >> 1, ang = -2 * Math.PI / size, wr = Math.cos(ang), wi = Math.sin(ang);
+        for (let st = 0; st < N; st += size) {
+          let cr = 1, ci = 0;
+          for (let k = 0; k < h; k++) {
+            const a = st + k, b = a + h, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+            re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+            const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+          }
+        }
+      }
+      fc.fill(0);
+      let mx = 0;
+      for (let k = lo; k <= hi; k++) { const pc = binPc[k]; if (pc >= 0) fc[pc] += Math.sqrt(re[k] * re[k] + im[k] * im[k]); }
+      for (let p = 0; p < 12; p++) if (fc[p] > mx) mx = fc[p];
+      if (mx > 1e-3) for (let p = 0; p < 12; p++) chroma[p] += fc[p] / mx;   // every spectrum counts the same, loud or quiet
+    }
+    const MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88], MIN = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+    const corr = (prof, root) => {
+      let ma = 0, mb = 0;
+      for (let p = 0; p < 12; p++) { ma += chroma[p]; mb += prof[p]; }
+      ma /= 12; mb /= 12;
+      let sab = 0, saa = 0, sbb = 0;
+      for (let p = 0; p < 12; p++) { const a = chroma[(p + root) % 12] - ma, b = prof[p] - mb; sab += a * b; saa += a * a; sbb += b * b; }
+      return sab / Math.sqrt(saa * sbb + 1e-12);
+    };
+    let best = -2, second = -2, bk = 0, bm = false;
+    for (let r = 0; r < 12; r++) for (const minor of [false, true]) {
+      const c = corr(minor ? MIN : MAJ, r);
+      if (c > best) { second = best; best = c; bk = r; bm = minor; } else if (c > second) second = c;
+    }
+    if (best > 0.5) {
+      const NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+      res.key = NAMES[bk] + (bm ? 'm' : '');
+      res.camelot = ((bk * 7) % 12 + (bm ? 4 : 7)) % 12 + 1 + (bm ? 'A' : 'B');
+      res.keyConf = best - second;
+    }
+  }
   return res;
 }
 

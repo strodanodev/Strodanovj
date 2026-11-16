@@ -58,7 +58,7 @@ function toggleDJ(on) {
 
 const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 const setText = (e, s) => { if (e.textContent !== s) e.textContent = s; };
-const waveCol = low => `hsl(${Math.round(212 - 186 * low)} ${Math.round(38 + 55 * low)}% ${Math.round(62 - 6 * low)}%)`;   // blue-grey for highs, orange for bass
+const waveCol = low => `hsl(${THEME.hue} ${Math.round((4 + 50 * low) * THEME.sat)}% ${Math.round(56 + 4 * low)}%)`;   // grey for highs, theme accent for bass
 // Whole-track strip, drawn once per analysis.
 function buildOverview(u) {
   const i = u.d.info, c = u.ov, W = 900, H = 40;
@@ -81,9 +81,9 @@ function drawDeck(u) {
   if (!W || !H) return;
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   const x = cv.getContext('2d'), i = d.info, zh = Math.round(H * 0.7), oh = H - zh - Math.round(3 * dpr), oy = H - oh;
-  x.fillStyle = '#0a0a0c'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
   if (!i) {
-    x.fillStyle = '#7d808c'; x.font = 12 * dpr + 'px system-ui'; x.textAlign = 'center';
+    x.fillStyle = '#888'; x.font = 12 * dpr + 'px Inter, system-ui, sans-serif'; x.textAlign = 'center';
     x.fillText(d.state === 'loading' ? 'Reading the file...' : d.state === 'analysing' ? 'Finding the beat...' : d.state === 'error' ? 'Could not read that file' : 'Drop a track here, or press Load', W / 2, H / 2);
     return;
   }
@@ -107,12 +107,12 @@ function drawDeck(u) {
       x.fillRect(px, bar ? 0 : zh * 0.2, Math.max(1, Math.round((bar ? 1.5 : 1) * dpr)), bar ? zh : zh * 0.6);
     }
   }
-  x.fillStyle = '#ff7a1a'; x.fillRect(Math.round(W / 2) - dpr, 0, 2 * dpr, zh);
+  x.fillStyle = THEME.acc; x.fillRect(Math.round(W / 2) - dpr, 0, 2 * dpr, zh);
   // overview strip with the played part dimmed
   const f = Math.min(1, Math.max(0, pos / i.duration));
   x.drawImage(u.ov, 0, oy, W, oh);
-  x.fillStyle = 'rgba(10,10,12,.6)'; x.fillRect(0, oy, f * W, oh);
-  x.fillStyle = '#ff7a1a'; x.fillRect(Math.round(f * W) - dpr, oy, 2 * dpr, oh);
+  x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, oy, f * W, oh);
+  x.fillStyle = THEME.acc; x.fillRect(Math.round(f * W) - dpr, oy, 2 * dpr, oh);
 }
 // Called from tickUI every frame the control window is visible.
 function tickDJ() {

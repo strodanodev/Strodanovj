@@ -3,12 +3,12 @@
 // changes its pitch too (like vinyl); there is no key lock yet.
 'use strict';
 const OFFSET_KEY = 'strodano-vj-av-offset';
-const audio = { ctx: null, master: null, analyser: null, decks: [], clockDeck: null, offsetMs: 0, fbuf: null, tbuf: null, lastT: 0, bassAvg: 0, bassPrev: 0 };
+const audio = { ctx: null, master: null, analyser: null, decks: [], clockDeck: null, offsetMs: 0, autoGain: true, fbuf: null, tbuf: null, lastT: 0, bassAvg: 0, bassPrev: 0 };
 try { audio.offsetMs = Math.min(500, Math.max(-500, +localStorage.getItem(OFFSET_KEY) || 0)); } catch (e) {}
 // side: which half of the crossfader the deck sits on (1 = A, 2 = B), the same numbers layers use for their A/B buttons.
 function newDeck(id, side) {
-  return { id, side, name: '', buffer: null, info: null, state: 'empty', src: null, vol: null, xf: null, volume: 1, rate: 1, offset: 0, t0: 0,
-    playing: false, sync: true, loadSeq: 0, gVol: -1, gXf: -1 };
+  return { id, side, name: '', file: null, buffer: null, info: null, state: 'empty', src: null, vol: null, xf: null, low: null, echoIn: null, volume: 1, rate: 1, offset: 0, t0: 0,
+    playing: false, sync: true, loadSeq: 0, gVol: -1, gXf: -1, bass: 0.5, gBass: -1, echo: 0, gEcho: -1, trim: 1 };
 }
 audio.decks.push(newDeck('A', 1), newDeck('B', 2));
 const otherDeck = d => audio.decks[d === audio.decks[0] ? 1 : 0];
@@ -28,7 +28,17 @@ function audioCtx() {
     an.fftSize = 2048; an.smoothingTimeConstant = 0.4; an.minDecibels = -75; an.maxDecibels = -15;
     audio.master.connect(an);
     audio.fbuf = new Uint8Array(an.frequencyBinCount); audio.tbuf = new Float32Array(an.fftSize);
-    for (const d of audio.decks) { d.vol = c.createGain(); d.xf = c.createGain(); d.vol.connect(d.xf); d.xf.connect(audio.master); }
+    // Per deck: source -> bass EQ -> volume -> crossfader -> master. The echo is fed from after the volume but rejoins at the
+    // master, so its tail keeps ringing after the crossfader has closed the deck (that is what an echo-out mix relies on).
+    for (const d of audio.decks) {
+      d.low = c.createBiquadFilter(); d.low.type = 'lowshelf'; d.low.frequency.value = 180;
+      d.vol = c.createGain(); d.xf = c.createGain();
+      d.low.connect(d.vol); d.vol.connect(d.xf); d.xf.connect(audio.master);
+      d.echoIn = c.createGain(); d.echoIn.gain.value = 0;
+      d.echoDelay = c.createDelay(2); d.echoFb = c.createGain(); d.echoFb.gain.value = 0.55;
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;   // repeats lose their bass so they do not muddy the next track
+      d.vol.connect(d.echoIn); d.echoIn.connect(d.echoDelay); d.echoDelay.connect(hp); hp.connect(d.echoFb); d.echoFb.connect(d.echoDelay); hp.connect(audio.master);
+    }
   }
   if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
   return audio.ctx;
@@ -48,12 +58,20 @@ function deckHeard(d) {
   return deckPos(d) - ((audio.ctx.outputLatency || audio.ctx.baseLatency || 0) + audio.offsetMs / 1000) * d.rate;
 }
 const deckBeats = (d, pos) => (pos - d.info.grid0) / d.info.beatLen;   // beat 0, 4, 8... are first beats of a bar
-function startSrc(d) {
+function startSrc(d, when) {
   const c = audio.ctx, s = c.createBufferSource();
-  s.buffer = d.buffer; s.playbackRate.value = d.rate; s.connect(d.vol);
+  s.buffer = d.buffer; s.playbackRate.value = d.rate; s.connect(d.low);
   s.onended = () => { if (d.src === s) { d.offset = deckPos(d); d.src = null; d.playing = false; } };   // ran off the end
-  d.t0 = c.currentTime; s.start(0, d.offset);
+  d.t0 = Math.max(c.currentTime, when || 0); s.start(d.t0, d.offset);
   d.src = s; d.playing = true;
+}
+// Start playing from offset exactly at AudioContext time 'when' (used by the auto-mix to land a track on the beat).
+function deckStartAt(d, when, offset) {
+  if (!d.buffer) return;
+  audioCtx();
+  if (d.playing) stopSrc(d);
+  d.offset = Math.min(d.buffer.duration - 0.01, Math.max(0, offset));
+  startSrc(d, when);
 }
 function stopSrc(d) {
   const s = d.src;
@@ -70,6 +88,7 @@ function applySyncRate(d) {
   const o = otherDeck(d);
   if (!d.sync || !beatOK(d) || !beatOK(o)) return;
   if (o.sync && audio.clockDeck === d) return;   // both synced: the deck the visuals follow leads
+  if (d.playing && !o.playing) return;            // a stopped deck never leads a playing one
   let r = o.info.bpm * o.rate / d.info.bpm;
   while (r > 1.42) r /= 2;
   while (r < 0.71) r *= 2;
@@ -128,12 +147,11 @@ async function deckLoad(d, file) {
   try {
     const buf = await c.decodeAudioData(await file.arrayBuffer());
     if (seq !== d.loadSeq) return;
-    d.buffer = buf; d.state = 'analysing';   // playable from here on; the beat grid follows
-    const n = buf.length, mono = new Float32Array(n), g = 1 / buf.numberOfChannels;
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) { const x = buf.getChannelData(ch); for (let i = 0; i < n; i++) mono[i] += x[i] * g; }
-    const info = await analyseAsync(mono, buf.sampleRate);
+    d.buffer = buf; d.file = file; d.state = 'analysing';   // playable from here on; the beat grid follows
+    const info = await trackInfo(file, buf);
     if (seq !== d.loadSeq) return;
     d.info = info; d.state = 'ready';
+    d.trim = trimFor(info);
     applySyncRate(d);
     setStatus('Deck ' + d.id + ': ' + d.name + (info.ok ? ' - ' + info.bpm.toFixed(1) + ' BPM' : ' - no steady beat found, so it will not drive the visuals or sync'));
   } catch (e) {
@@ -142,6 +160,22 @@ async function deckLoad(d, file) {
     setStatus('Deck ' + d.id + ': this browser cannot play ' + file.name);
   }
 }
+
+// Mono mix of a decoded buffer, for analysis.
+function monoOf(buf) {
+  const n = buf.length, mono = new Float32Array(n), g = 1 / buf.numberOfChannels;
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) { const x = buf.getChannelData(ch); for (let i = 0; i < n; i++) mono[i] += x[i] * g; }
+  return mono;
+}
+// Analysis of a track: from the track list's cache when it has one (crate.js), otherwise worked out now.
+async function trackInfo(file, buf) {
+  if (typeof crateInfo === 'function') { const i = await crateInfo(file, buf); if (i) return i; }
+  return analyseAsync(monoOf(buf), buf.sampleRate);
+}
+// Auto-gain: bring every track's loud part to the same level (-14 dB RMS), within -12..+6 dB.
+const trimFor = info => (info && info.loudDb > -59 ? Math.min(2, Math.max(0.25, Math.pow(10, (-14 - info.loudDb) / 20))) : 1);
+// Bass knob 0..1: 0 kills the bass (-30 dB), 0.5 leaves it alone, 1 adds 6 dB.
+const bassDb = v => (v < 0.5 ? -30 * (1 - v * 2) : (v - 0.5) * 12);
 
 // ---------- music clock ----------
 // The deck the visuals follow: the louder playing deck, with a margin so it does not flip back and forth mid-fade.
@@ -170,7 +204,12 @@ function audioTick() {
     applySyncRate(d);
     const x = xfGain(d);
     if (x !== d.gXf) { d.gXf = x; d.xf.gain.setTargetAtTime(x, c.currentTime, 0.008); }
-    if (d.volume !== d.gVol) { d.gVol = d.volume; d.vol.gain.setTargetAtTime(d.volume, c.currentTime, 0.008); }
+    const v = d.volume * (audio.autoGain ? d.trim : 1);
+    if (v !== d.gVol) { d.gVol = v; d.vol.gain.setTargetAtTime(v, c.currentTime, 0.008); }
+    if (d.bass !== d.gBass) { d.gBass = d.bass; d.low.gain.setTargetAtTime(bassDb(d.bass), c.currentTime, 0.006); }
+    const dl = d.info && d.info.ok ? Math.min(2, d.info.beatLen * 0.75 / d.rate) : 0.35;   // a dotted-eighth echo, in time with the deck
+    if (Math.abs(dl - d.echoDelay.delayTime.value) > 1e-4) d.echoDelay.delayTime.setValueAtTime(dl, c.currentTime);
+    if (d.echo !== d.gEcho) { d.gEcho = d.echo; d.echoIn.gain.setTargetAtTime(d.echo, c.currentTime, 0.01); }
   }
   const an = audio.analyser, f = audio.fbuf, t = audio.tbuf, hz = c.sampleRate / an.fftSize;
   an.getByteFrequencyData(f); an.getFloatTimeDomainData(t);
@@ -185,7 +224,7 @@ function audioTick() {
   else audioFeat.kick *= Math.exp(-dt * 9);
   audio.bassPrev = raw.bass;
 }
-// MIDI targets "deck:<A|B>:play | cue | sync | volume | tempo" (see midi.js).
+// MIDI targets "deck:<A|B>:play | cue | sync | volume | tempo | bass | load" (see midi.js).
 function djMidiTarget(id, what) {
   const d = audio.decks.find(x => x.id === id);
   if (!d) return null;
@@ -194,5 +233,7 @@ function djMidiTarget(id, what) {
   if (what === 'sync') return { fire: () => deckSyncToggle(d) };
   if (what === 'volume') return { set: v => { d.volume = v; } };
   if (what === 'tempo') return { set: v => deckTempo(d, v) };
+  if (what === 'bass') return { set: v => { d.bass = v; } };
+  if (what === 'load') return { fire: () => { if (typeof crateLoadNext === 'function') crateLoadNext(d); } };
   return null;
 }
