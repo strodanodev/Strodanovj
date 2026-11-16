@@ -43,12 +43,25 @@ function midiClock() {
 }
 
 // ---------- track recognition from the line-in ----------
-const follow = { on: false, hist: [], lastBeat: null, match: null, cand: null, checkT: 0, best: null, seq: new WeakMap(), lost: 0 };
+const follow = { on: false, hist: [], lastBeat: null, match: null, cand: null, checkT: 0, best: null, seq: new WeakMap(), lost: 0, ref: null };
 // Every beat the live listener completes: its level (log) and bass share, from the listener's 12 s ring buffer.
 function collectBeats() {
-  if (typeof live === 'undefined' || !live.locked || live.src === 'dj' || !live.count) { follow.lastBeat = null; return; }
-  const bNow = Math.floor(rawBeatAt(live.tLast));
-  if (follow.lastBeat === null || bNow <= follow.lastBeat || bNow - follow.lastBeat > 16) {   // first beat, or the count jumped
+  if (typeof live === 'undefined' || !live.locked || live.src === 'dj' || !live.count) return;   // keep the history: a short loss of lock is bridged above
+  // The listener re-counts its beats when it re-locks or moves the first beat of the bar. Measure that jump at one
+  // moment against the clock it had before, and shift the history and the match by it, so nothing is lost.
+  const ref = follow.ref, t = live.tLast;
+  if (ref && follow.lastBeat !== null) {
+    const J = Math.round(rawBeatAt(t) - (ref.b0 + (t - ref.t0) / ref.beatLen));
+    if (J !== 0 && Math.abs(ref.beatLen / live.beatLen - 1) < 0.08) {
+      for (const x of follow.hist) x.B += J;
+      follow.lastBeat += J;
+      if (follow.match) follow.match.delta -= J;
+      if (follow.cand) follow.cand.delta -= J;
+    } else if (J !== 0) { follow.hist = []; follow.lastBeat = null; follow.cand = null; }   // a different tempo: start the window again
+  }
+  follow.ref = { t0: live.t0, b0: live.b0, beatLen: live.beatLen };
+  const bNow = Math.floor(rawBeatAt(t));
+  if (follow.lastBeat === null || bNow <= follow.lastBeat || bNow - follow.lastBeat > 16) {   // first beat, or a gap
     if (follow.lastBeat !== null) follow.hist = [];
     follow.lastBeat = bNow - 1; return;
   }
@@ -184,7 +197,7 @@ function buildFollow() {
     el('button', { textContent: 'Forget', title: 'Drop the recognised track', onclick: () => { follow.match = null; follow.cand = null; } }), followUI.txt);
 }
 function setFollow(on) {
-  follow.on = on; follow.hist = []; follow.lastBeat = null; follow.match = null; follow.cand = null;
+  follow.on = on; follow.hist = []; follow.lastBeat = null; follow.match = null; follow.cand = null; follow.ref = null;
   if (on && !crate.tracks.some(t => t.info && t.info.ok)) setStatus('Add the tracks the DJ will play to the track list first: recognition compares against them');
   else if (on && live.src === 'dj') setStatus('Recognition is on: turn on Line-in so it can hear the external mixer');
 }
