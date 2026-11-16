@@ -57,7 +57,7 @@ function tri() { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
 function bindTex(unit, tex) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
 
 // ---------- shader registry (built-in, custom and ISF) ----------
-const FX_PRE = HEAD + `uniform sampler2D tex; uniform vec4 p; uniform vec4 q; uniform float time; uniform float beat; uniform vec2 res; uniform float mixAmt;
+const FX_PRE = HEAD + `uniform sampler2D tex; uniform vec4 p; uniform vec4 q; uniform float time; uniform float beat; uniform float bar; uniform float phrase; uniform vec4 audio; uniform float kick; uniform vec2 res; uniform float mixAmt;
 in vec2 uv; out vec4 o;
 vec3 hsv2rgb(vec3 c){ vec3 k = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(k - 1.0, 0.0, 1.0), c.y); }
 float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -190,7 +190,12 @@ function setDefUniforms(d, prog, params, c) {
   gl.uniform4f(P('p'), g(0), g(1), g(2), g(3));
   gl.uniform4f(P('q'), g(4), g(5), g(6), g(7));
   gl.uniform1f(P('time'), c.time % 3600);
-  gl.uniform1f(P('beat'), c.beats % 1024);
+  const b = ((c.beats % 1024) + 1024) % 1024;   // beats run negative before a track's first bar
+  gl.uniform1f(P('beat'), b);
+  gl.uniform1f(P('bar'), b / 4);
+  gl.uniform1f(P('phrase'), b / 32);
+  gl.uniform4f(P('audio'), audioFeat.bass, audioFeat.mid, audioFeat.high, audioFeat.level);
+  gl.uniform1f(P('kick'), audioFeat.kick);
   gl.uniform2f(P('res'), c.w, c.h);
 }
 
@@ -259,7 +264,7 @@ function mediaClip(m) {
 function genClip(name) {
   const d = DEFS.gen.get(name);
   if (!d) return null;
-  return { type: 'gen', name, gen: name, params: d.params.map(x => x.def), speed: 1, thumb: null, needThumb: true };
+  return { uid: newUid(), type: 'gen', name, gen: name, params: d.params.map(x => x.def), speed: 1, thumb: null, needThumb: true };
 }
 function freeClip(c) {
   if (!c) return;
@@ -341,7 +346,10 @@ function trigger(li, ci) {
   }
 }
 function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) trigger(li, ci); }); }
-function mkEffect(name) { const d = DEFS.fx.get(name); return d ? { def: name, params: d.params.map(x => x.def), mix: 1, bypass: false } : null; }
+// Effects and generator clips carry a uid that is saved with the composition, so MIDI mappings can find them after reordering.
+function newUid() { return Math.random().toString(36).slice(2, 10); }
+const keepUid = (o, u) => { if (typeof u === 'string' && u) o.uid = u; };
+function mkEffect(name) { const d = DEFS.fx.get(name); return d ? { uid: newUid(), def: name, params: d.params.map(x => x.def), mix: 1, bypass: false } : null; }
 
 function applyChain(chain, rt) {
   for (const e of chain) {
@@ -358,8 +366,15 @@ function applyChain(chain, rt) {
     rtSwap(rt);
   }
 }
-function update(dt) {
-  comp.time += dt; comp.beats += dt * comp.bpm / 60; comp.frame++;
+// Live audio levels, 0..1, written by audio.js every frame and read by every shader (audio.xyzw = bass, mid, high, level).
+const audioFeat = { bass: 0, mid: 0, high: 0, level: 0, kick: 0 };
+// Set by audio.js. Returns { beats, bpm } while a deck with a beat grid is playing, so the visuals follow the music itself.
+let musicClock = null;
+// dt is capped for animation; beatDt is the real time since the last frame, so a stalled frame never puts the beat behind.
+function update(dt, beatDt = dt) {
+  comp.time += dt; comp.frame++;
+  const mc = musicClock && musicClock();
+  if (mc) { comp.beats = mc.beats; comp.bpm = mc.bpm; } else comp.beats += beatDt * comp.bpm / 60;
   for (const L of comp.layers) {
     if (L.pendingCol >= 0) {
       const c = L.clips[L.pendingCol];
@@ -557,14 +572,14 @@ window.addEventListener('beforeunload', () => screens.forEach((s, i) => closeOut
 
 // ---------- save / load ----------
 function compToJSON() {
-  const fxJ = ch => ch.map(e => ({ def: e.def, params: e.params, mix: e.mix, bypass: e.bypass }));
+  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: e.mix, bypass: e.bypass }));
   return {
     app: 'Strodano VJ', version: 2, w: comp.w, h: comp.h, columns: comp.columns, master: comp.master, crossfade: comp.crossfade, bpm: comp.bpm,
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),
     fx: fxJ(comp.fx),
     layers: comp.layers.map(L => ({
       name: L.name, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && (c.type === 'gen' ? { type: 'gen', gen: c.gen, name: c.name, params: c.params } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
+      clips: L.clips.map(c => c && (c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
@@ -572,7 +587,7 @@ function compToJSON() {
 function loadComp(j) {
   if (!j || !Array.isArray(j.layers)) return false;
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-  const fxL = arr => (Array.isArray(arr) ? arr : []).map(e => { const n = mkEffect(e.def); if (!n) return null; (e.params || []).forEach((v, i) => { if (i < n.params.length) n.params[i] = num(v, 0); }); n.mix = num(e.mix, 1); n.bypass = !!e.bypass; return n; }).filter(Boolean);
+  const fxL = arr => (Array.isArray(arr) ? arr : []).map(e => { const n = mkEffect(e.def); if (!n) return null; (e.params || []).forEach((v, i) => { if (i < n.params.length) n.params[i] = num(v, 0); }); n.mix = num(e.mix, 1); n.bypass = !!e.bypass; keepUid(n, e.uid); return n; }).filter(Boolean);
   comp.w = Math.min(8192, Math.max(16, num(j.w, 1920) | 0)); comp.h = Math.min(8192, Math.max(16, num(j.h, 1080) | 0));
   clearCustomDefs();
   customShaders = (Array.isArray(j.shaders) ? j.shaders : []).filter(s => s && s.name && s.code).map(s => ({ name: String(s.name), kind: s.kind === 'gen' ? 'gen' : 'fx', code: String(s.code) }));
@@ -588,7 +603,7 @@ function loadComp(j) {
     L.fx = fxL(l.fx);
     (l.clips || []).slice(0, comp.columns).forEach((c, ci) => {
       if (!c) return;
-      if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
+      if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; keepUid(g, c.uid); (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
       else if (c.fileName) {
         const m = media.find(x => x.name === c.fileName);
         const n = m ? mediaClip(m) : { type: c.type === 'image' ? 'image' : 'video', missing: true, fileName: c.fileName, thumb: null };

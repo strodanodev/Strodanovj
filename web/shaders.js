@@ -39,6 +39,8 @@ const BUILTIN_FX = [
  return (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) ? vec4(0.0) : texture(tex, s); }` },
   { name: 'Flip', params: [P('Horizontal', 1), P('Vertical', 0)], body: `vec4 fx(){ vec2 s = uv; if (p.x > 0.5) s.x = 1.0 - s.x; if (p.y > 0.5) s.y = 1.0 - s.y; return texture(tex, s); }` },
   { name: 'Vignette', params: [P('Size', 0.5), P('Softness', 0.5)], body: `vec4 fx(){ vec4 c = texture(tex, uv); float d = length(uv - 0.5) * 1.414; float v = 1.0 - smoothstep(p.x, p.x + p.y + 0.001, d); return vec4(c.rgb * v, c.a); }` },
+  { name: 'Audio Pulse', params: [P('Zoom', 0.3), P('Flash', 0.3), P('Kick Bass Mid High', 0)], body: `vec4 fx(){ float a = p.z < 0.25 ? kick : p.z < 0.5 ? audio.x : p.z < 0.75 ? audio.y : audio.z;
+ vec4 c = texture(tex, (uv - 0.5) / (1.0 + a * p.x * 0.5) + 0.5); return vec4(c.rgb * (1.0 + a * p.y * 2.0), c.a); }` },
   { name: 'Noise Grain', params: [P('Amount', 0.3)], body: `vec4 fx(){ vec4 c = texture(tex, uv); float n = hash(uv * res + fract(time) * 100.0) - 0.5; return vec4(c.rgb + n * p.x, c.a); }` },
 ];
 const BUILTIN_GEN = [
@@ -59,6 +61,10 @@ const BUILTIN_GEN = [
  float v = step(0.5, fract(z)) * step(0.5, w) + step(fract(z), 0.5) * step(w, 0.5);
  return vec4(hsv2rgb(vec3(p.z, 0.7, 1.0)) * v * clamp(r * 3.0, 0.0, 1.0), 1.0); }` },
   { name: 'Beat Flash', params: [P('Hue', 0), P('Saturation', 0), P('Decay', 0.5)], body: `vec4 gen(){ float v = pow(1.0 - fract(beat), 1.0 + p.z * 8.0); return vec4(hsv2rgb(vec3(p.x, p.y, 1.0)) * v, 1.0); }` },
+  { name: 'Audio Rings', params: [P('Hue', 0.55), P('Size', 0.5)], body: `vec4 gen(){ vec2 s = uv - 0.5; s.x *= res.x / res.y; float r = length(s), k = 0.6 + p.y; vec3 c = vec3(0.0);
+ for (int i = 0; i < 3; i++) { float lv = i == 0 ? audio.x : i == 1 ? audio.y : audio.z; float rad = (0.12 + 0.13 * float(i)) * k + lv * 0.08;
+  c += hsv2rgb(vec3(p.x + float(i) * 0.12, 0.8, 1.0)) * smoothstep(0.004 + lv * 0.03, 0.0, abs(r - rad)) * (0.25 + lv); }
+ c += hsv2rgb(vec3(p.x, 0.5, 1.0)) * kick * smoothstep(0.12 * k, 0.0, r); return vec4(c, 1.0); }` },
 ];
 const TEMPLATE_FX = `// @param Amount 0.5
 // @param Speed 0.3

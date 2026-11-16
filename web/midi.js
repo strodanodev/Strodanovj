@@ -1,6 +1,8 @@
 // Strodano VJ (web) - MIDI control with learn mode (Web MIDI, Chrome / Edge). GPL-3.0.
 // Mappable controls carry data-midi="<target id>". Target ids are strings, so mappings survive the UI being rebuilt:
 //   master, crossfade, tap, resync, column:C, clip:L:C, layer:L:opacity | bypass | solo | eject   (L, C count from 0)
+//   deck:D:play | cue | sync | volume | tempo   (D is A or B)
+//   fx:<effect uid>:<param index> | mix | bypass,  gen:<generator clip uid>:<param index>   (uids are saved with the composition)
 // Mappings are app-wide (kept in localStorage), not part of a composition.
 'use strict';
 const MIDI_KEY = 'strodano-vj-midi';
@@ -8,14 +10,34 @@ const midi = { access: null, map: {}, learn: false, target: null };   // map: "c
 try { midi.map = JSON.parse(localStorage.getItem(MIDI_KEY) || '{}') || {}; } catch (e) {}
 function saveMidiMap() { try { localStorage.setItem(MIDI_KEY, JSON.stringify(midi.map)); } catch (e) {} }
 
+function findFx(uid) {
+  for (const [owner, chain] of [['Composition', comp.fx], ...comp.layers.map(L => [L.name, L.fx])]) {
+    const e = chain.find(x => x.uid === uid);
+    if (e) return { e, owner };
+  }
+  return null;
+}
+function findGenClip(uid) {
+  for (const L of comp.layers) for (const c of L.clips) if (c && c.type === 'gen' && c.uid === uid) return { c, owner: L.name };
+  return null;
+}
 // What a target id does right now: {set(v)} for faders, {fire()} for buttons. null if it points at nothing (layer removed...).
 function midiTarget(id) {
   const [a, b, c] = id.split(':'), L = comp.layers[+b];
+  if (a === 'fx') {
+    const f = findFx(b);
+    if (!f) return null;
+    if (c === 'mix') return { set: v => { f.e.mix = v; } };
+    if (c === 'bypass') return { fire: () => { f.e.bypass = !f.e.bypass; ui.propsDirty = true; } };
+    return { set: v => { f.e.params[+c] = v; } };
+  }
+  if (a === 'gen') { const g = findGenClip(b); return g ? { set: v => { g.c.params[+c] = v; } } : null; }
   if (a === 'master') return { set: v => { comp.master = v; } };
   if (a === 'crossfade') return { set: v => { comp.crossfade = v; } };
   if (a === 'tap' || a === 'resync') return { fire: () => $(a).click() };
   if (a === 'column') return +b < comp.columns ? { fire: () => triggerColumn(+b) } : null;
   if (a === 'clip') return L && +c < comp.columns ? { fire: () => trigger(+b, +c) } : null;
+  if (a === 'deck') return djMidiTarget(b, c);
   if (a !== 'layer' || !L) return null;
   if (c === 'opacity') return { set: v => { L.opacity = v; } };
   if (c === 'bypass') return { fire: () => { L.bypass = !L.bypass; ui.gridDirty = true; } };
@@ -25,12 +47,20 @@ function midiTarget(id) {
 }
 function midiLabel(id) {
   const [a, b, c] = id.split(':'), ln = i => (comp.layers[+i] ? comp.layers[+i].name : 'Layer ' + (+i + 1));
+  const pname = (def, k) => (def && def.params[+k] ? def.params[+k].name : 'parameter ' + (+k + 1));
+  if (a === 'fx') {
+    const f = findFx(b);
+    if (!f) return 'Effect not in this composition';
+    return f.owner + ' > ' + f.e.def + ' > ' + (c === 'mix' ? 'Mix' : c === 'bypass' ? 'On/off' : pname(DEFS.fx.get(f.e.def), c));
+  }
+  if (a === 'gen') { const g = findGenClip(b); return g ? g.owner + ' > ' + g.c.name + ' > ' + pname(DEFS.gen.get(g.c.gen), c) : 'Generator clip not in this composition'; }
   if (a === 'master') return 'Master';
   if (a === 'crossfade') return 'Crossfader';
   if (a === 'tap') return 'Tap tempo';
   if (a === 'resync') return 'Resync';
   if (a === 'column') return 'Column ' + (+b + 1);
   if (a === 'clip') return ln(b) + ', clip ' + (+c + 1);
+  if (a === 'deck') return 'Deck ' + b + ' ' + c;
   if (a === 'layer') return ln(b) + ' ' + c;
   return id;
 }

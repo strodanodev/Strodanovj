@@ -14,10 +14,10 @@ button:hover{background:var(--ctl2)} button.on{background:var(--acc);color:#111;
 button.on.red{background:var(--bad);border-color:var(--bad)} button.on.yel{background:var(--warn);border-color:var(--warn)}
 select,input[type=text],input[type=number],textarea{background:var(--ctl);border:1px solid var(--line);border-radius:3px;padding:3px 5px}
 input[type=range]{accent-color:var(--acc);height:14px;margin:0;vertical-align:middle}
-#app{display:grid;grid-template-rows:auto minmax(120px,auto) 1fr auto;height:100vh}
+#app{display:flex;flex-direction:column;height:100vh}
 #menubar{display:flex;gap:6px;align-items:center;padding:5px 8px;background:#191a1f;border-bottom:1px solid var(--line);flex-wrap:wrap}
 #menubar b{color:var(--acc);letter-spacing:.08em;margin-right:8px} #status{margin-left:auto;color:var(--dim)}
-#grid{overflow:auto;padding:6px 8px;border-bottom:1px solid var(--line);max-height:56vh}
+#grid{flex:0 0 auto;min-height:120px;overflow:auto;padding:6px 8px;border-bottom:1px solid var(--line);max-height:56vh} #app.djopen #grid{max-height:38vh}
 .row{display:flex;gap:4px;margin-bottom:4px;align-items:stretch}
 .lctl{flex:0 0 250px;display:flex;flex-direction:column;gap:4px;justify-content:center;padding:3px 5px;border-radius:3px}
 .row.sel .lctl{background:#281e16} .lctl .r{display:flex;gap:3px;align-items:center}
@@ -31,7 +31,7 @@ input[type=range]{accent-color:var(--acc);height:14px;margin:0;vertical-align:mi
 .cell span{position:absolute;left:4px;right:4px;bottom:1px;height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cell .prog{position:absolute;left:2px;right:2px;bottom:17px;height:3px} .cell .prog i{display:block;height:100%;width:0;background:var(--acc)}
 .cell .miss{position:absolute;left:4px;top:4px;background:var(--bad);color:#fff;padding:0 4px;border-radius:2px;font-size:10px}
-#bottom{display:grid;grid-template-columns:27% 1fr 27%;min-height:0}
+#bottom{flex:1 1 0;display:grid;grid-template-columns:27% 1fr 27%;min-height:0}
 #bottom>div{border-right:1px solid var(--line);min-height:0;overflow:auto;padding:6px 8px;background:var(--panel)}
 .tabs{display:flex;gap:3px;margin-bottom:6px;border-bottom:1px solid var(--acc2)} .tabs button{border-bottom:none;border-radius:3px 3px 0 0}
 .fld{display:flex;align-items:center;gap:6px;margin:3px 0} .fld label{flex:0 0 96px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -48,6 +48,8 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
 #transport input[type=number]{width:64px} #xf{flex:1} .dots{display:flex;gap:4px} .dots i{width:11px;height:11px;border-radius:50%;background:#3c3e46} .dots i.on{background:var(--acc)}
 #fps{color:var(--dim);min-width:210px;text-align:right} #fps.bad{color:var(--bad)}
 .modal{position:fixed;inset:4vh 4vw;background:var(--bg);border:1px solid var(--acc2);border-radius:5px;box-shadow:0 10px 60px #000c;display:grid;grid-template-rows:auto 1fr;z-index:10}
+.modal.small{inset:auto;left:50%;top:10vh;transform:translateX(-50%);width:min(560px,92vw);grid-template-rows:auto auto}
+#keysBody{padding:8px 12px} #keysBody label{flex:0 0 170px;color:var(--txt);font-family:ui-monospace,Consolas,monospace}
 .modal[hidden]{display:none} .modal>.mh{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#191a1f;border-bottom:1px solid var(--line)} .modal>.mh b{flex:1}
 #outBody{display:grid;grid-template-columns:230px 1fr 290px;min-height:0} #outBody>div{padding:8px;overflow:auto;min-height:0;border-right:1px solid var(--line)}
 #outCanvasWrap{display:flex;flex-direction:column;gap:6px} #outCanvas{flex:1;width:100%;min-height:0;background:#08080a;cursor:crosshair}
@@ -56,6 +58,13 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
 #shCode{width:100%;height:calc(100% - 150px);min-height:200px;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre;resize:none;user-select:text}
 body.midi-learn [data-midi]{outline:2px dashed #4f8fe6;outline-offset:-2px;cursor:cell} body.midi-learn [data-midi].midi-mapped{outline:2px solid #4fc27a}
 body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
+#dj{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)} #dj[hidden]{display:none}
+.deck{border:1px solid var(--line);border-radius:3px;padding:5px 6px;background:#15161a;min-width:0} .deck.over{border-color:var(--acc)} .deck.clock{border-color:var(--acc2)}
+.deck .dh{display:flex;gap:8px;align-items:baseline;margin-bottom:4px} .deck .did{background:var(--ctl2);border-radius:2px;padding:0 6px} .deck.clock .did{background:var(--acc);color:#111}
+.deck .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .deck .dt{color:var(--dim);font-variant-numeric:tabular-nums} .deck .dk{color:var(--acc);font-style:normal;font-size:10px;letter-spacing:.08em;visibility:hidden} .deck.clock .dk{visibility:visible}
+.deck canvas{width:100%;height:84px;display:block;background:#0a0a0c;cursor:pointer;touch-action:none}
+.deck .dc{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap} .deck .dc input[type=range]{flex:1;min-width:50px} .deck .dc .dt{min-width:46px;text-align:right}
+#dj .df{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:var(--dim)} #dj .df input{width:60px}
 #shErr{white-space:pre-wrap;font:11px ui-monospace,Consolas,monospace;color:var(--bad);max-height:90px;overflow:auto;margin-top:4px} #shErr.ok{color:#6fd08c}
 </style>
 </head>
@@ -66,9 +75,10 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
     <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button>
     <button data-act="media">Add media</button><button data-act="addLayer">+ Layer</button><button data-act="addCol">+ Column</button><button data-act="delCol">- Column</button>
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
-    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button><button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad">MIDI</button>
+    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button><button id="djBtn" data-act="dj" title="DJ mode: two decks whose music drives the visuals">DJ</button><button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad">MIDI</button><button data-act="keys" title="Keyboard shortcuts (?)">Keys</button>
     <span id="status"></span>
   </div>
+  <div id="dj" hidden></div>
   <div id="grid"></div>
   <div id="bottom">
     <div id="props"></div>
@@ -94,15 +104,24 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
   <div class="mh"><b>Shader Editor</b><span class="hint">Edits compile as you type and show on the output immediately.</span><button data-close="shModal">Close</button></div>
   <div id="shBody"><div id="shList"></div><div><div class="fld"><label>Name</label><input type="text" id="shName"></div>
     <textarea id="shCode" spellcheck="false"></textarea><div id="shErr"></div>
-    <div class="hint">Effects define <code>vec4 fx()</code> and read <code>texture(tex, uv)</code>; generators define <code>vec4 gen()</code>. Available: <code>uv, res, time, beat, p.xyzw, q.xyzw</code>, <code>hsv2rgb()</code>, <code>luma()</code>, <code>hash()</code>. Declare sliders with <code>// @param Name 0.5</code> (first four map to p, next four to q).</div></div></div>
+    <div class="hint">Effects define <code>vec4 fx()</code> and read <code>texture(tex, uv)</code>; generators define <code>vec4 gen()</code>. Available: <code>uv, res, time, beat, bar, phrase, p.xyzw, q.xyzw</code>, music levels <code>audio.xyzw</code> (bass, mid, high, level) and <code>kick</code>, <code>hsv2rgb()</code>, <code>luma()</code>, <code>hash()</code>. Declare sliders with <code>// @param Name 0.5</code> (first four map to p, next four to q).</div></div></div>
+</div>
+<div class="modal small" id="keysModal" hidden>
+  <div class="mh"><b>Keyboard shortcuts</b><button data-close="keysModal">Close</button></div>
+  <div id="keysBody"></div>
 </div>
 <input type="file" id="mediaInput" multiple accept="video/*,image/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
+<input type="file" id="trackInput" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff" hidden>
 <input type="file" id="compInput" accept=".svj,.json" hidden>
 <input type="file" id="shaderInput" accept=".fs,.frag,.glsl,.isf,.txt" multiple hidden>
 <script src="shaders.js"></script>
 <script src="engine.js"></script>
 <script src="mediafolder.js"></script>
 <script src="midi.js"></script>
+<script src="analysis.js"></script>
+<script src="audio.js"></script>
+<script src="dj.js"></script>
+<script src="keys.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

@@ -8,7 +8,11 @@ Open-source, lightweight Resolume-style live-visuals (VJ) app. GPL-3.0. Owner: S
   - `shaders.js` built-in effects/generators (`vec4 fx()` / `vec4 gen()`, params 0..1 in `p`/`q`)
   - `engine.js` GL helpers, shader registry (built-in, custom, single-pass ISF), media pool, composition, renderer, output mapping (slices, homography corner-pin, mesh warp, masks), save/load
   - `mediafolder.js` remembered media folder (File System Access API; handle kept in IndexedDB, Reconnect button when permission lapses)
-  - `midi.js` Web MIDI + learn mode. Mappable controls carry `data-midi="<target id>"` (`master`, `crossfade`, `tap`, `resync`, `column:C`, `clip:L:C`, `layer:L:opacity|bypass|solo|eject`); mappings live in localStorage, app-wide
+  - `midi.js` Web MIDI + learn mode. Mappable controls carry `data-midi="<target id>"` (`master`, `crossfade`, `tap`, `resync`, `column:C`, `clip:L:C`, `layer:L:opacity|bypass|solo|eject`, `fx:<uid>:<param>|mix|bypass`, `gen:<uid>:<param>`); effects and generator clips carry a `uid` saved in the .svj so mappings follow them; mappings live in localStorage, app-wide
+  - `keys.js` keyboard shortcuts on `KeyboardEvent.code`, capture phase; ignored while typing, in the Shader Editor, or with Ctrl/Cmd/Alt
+  - `analysis.js` track analysis (`analyseTrack`: BPM, beat grid `grid0` + `beatLen`, first beat of the bar, waveform peaks). Self-contained, because its source is also run in a Worker made from a Blob URL (the only worker that loads from `file://`)
+  - `audio.js` DJ audio: two decks on decoded buffers (sample-locked sync; tempo changes pitch, no key lock), the music clock (`musicClock`, which sets `comp.beats` / `comp.bpm` from the audible deck's position while a track plays), live levels in `audioFeat` (shader uniforms `audio.xyzw` = bass, mid, high, level, and `kick`; plus `bar`, `phrase`). The AudioContext is created on first Load/Play, never at page load
+  - `dj.js` DJ panel (decks, waveforms, beat grid). Built once and refreshed in place from `tickDJ()`, not through the dirty-flag rebuilds. MIDI targets `deck:A|B:play|cue|sync|volume|tempo`
   - `ui.js` DOM UI, Advanced Output editor, Shader Editor, autosave (localStorage), main loop (exactly one rAF request outstanding; the watchdog must never add a second)
 - Native C++ (`src/`, `CMakeLists.txt`) - OpenGL 4.1 + FFmpeg + Dear ImGui + FFGL 2.x plugin host. Kept as the later native/FFGL edition. `.github/workflows/build.yml` builds the Windows NSIS installer and macOS .dmg; first run (2026-11-17) was green on Linux, Windows and both macOS architectures.
 
@@ -16,7 +20,7 @@ Open-source, lightweight Resolume-style live-visuals (VJ) app. GPL-3.0. Owner: S
 
 - Web first, because the owner wants to test without installing/compiling and change code live. FFGL plugins are dropped in the web edition; ISF/GLSL shaders replace them.
 - Same workflow and panel arrangement as Resolume (layer/column clip grid, faders, B/S/X, A/B crossfader, BPM tap, effects, advanced output) but its own visual design, not a pixel copy.
-- v1 scope: core VJ features + advanced mapping (multiple screens/slices, warping, masks). Since added: media folder, MIDI learn. Not yet: audio, OSC, keyboard shortcuts, clip transitions, per-clip effects, MIDI on effect parameters.
+- v1 scope: core VJ features + advanced mapping (multiple screens/slices, warping, masks). Since added: media folder, MIDI learn (including effect and generator parameters), keyboard shortcuts. Not yet: OSC, clip transitions, per-clip effects.
 - Hard requirement: steady 30 fps or better with H.264 MP4 / .mov clips.
 
 ## State of testing
@@ -27,7 +31,7 @@ Open-source, lightweight Resolume-style live-visuals (VJ) app. GPL-3.0. Owner: S
 ## Known gaps / next steps
 
 1. Hand test: output window fullscreen on a second display, a real MIDI controller, the real folder picker, drag from Explorer.
-2. Keyboard shortcuts, audio-reactive input (FFT uniforms + parameter modulation), clip transitions, BPM-synced LFOs on parameters.
+2. Clip transitions, BPM-synced LFOs on parameters.
 3. Re-upload video only on new frames (`requestVideoFrameCallback`); stop rebuilding the whole clip grid while a fader is dragged.
 4. Installers for the web edition would need a desktop wrapper (Electron/Tauri).
 

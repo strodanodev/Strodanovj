@@ -109,14 +109,15 @@ function chainUI(chain) {
     const d = DEFS.fx.get(e.def);
     const move = dir => { const j = i + dir; if (j >= 0 && j < chain.length) { [chain[i], chain[j]] = [chain[j], chain[i]]; ui.propsDirty = true; } };
     const fx = el('div', { className: 'fx' }, el('div', { className: 'hd' },
-      el('input', { type: 'checkbox', checked: !e.bypass, title: 'Enabled', onchange: ev => { e.bypass = !ev.target.checked; } }),
+      el('input', { type: 'checkbox', checked: !e.bypass, title: 'Enabled', dataset: { midi: 'fx:' + e.uid + ':bypass' }, onchange: ev => { e.bypass = !ev.target.checked; } }),
       el('b', { textContent: e.def + (d ? (d.custom ? '  (custom)' : '') : '  (missing)') }),
       el('button', { textContent: '↑', title: 'Move up', onclick: () => move(-1) }), el('button', { textContent: '↓', title: 'Move down', onclick: () => move(1) }),
       el('button', { textContent: '×', title: 'Remove', onclick: () => { chain.splice(i, 1); ui.propsDirty = true; } })));
     if (d) {
       if (d.err) fx.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: 'Shader error - open the Shader Editor' }));
-      d.params.forEach((pd, k) => fx.append(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; })));
-      if (!d.isf) fx.append(fld('Mix', 0, 1, 0.001, () => e.mix, v => { e.mix = v; }));
+      const tagged = (f, id) => { f.slider.dataset.midi = 'fx:' + e.uid + ':' + id; return f; };
+      d.params.forEach((pd, k) => fx.append(tagged(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; }), k)));
+      if (!d.isf) fx.append(tagged(fld('Mix', 0, 1, 0.001, () => e.mix, v => { e.mix = v; }), 'mix'));
     }
     box.append(fx);
   });
@@ -165,7 +166,7 @@ function renderProps() {
     else if (c.type === 'gen') {
       const d = DEFS.gen.get(c.gen);
       if (!d) p.append(el('div', { className: 'hint', textContent: 'Generator "' + c.gen + '" is not available.' }));
-      else d.params.forEach((pd, k) => p.append(fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; })));
+      else d.params.forEach((pd, k) => { const f = fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; }); f.slider.dataset.midi = 'gen:' + c.uid + ':' + k; p.append(f); });
     }
   }
 }
@@ -432,6 +433,8 @@ function initMenu() {
     output: () => { $('outModal').hidden = false; renderOutPanels(); },
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),
+    dj: () => toggleDJ(!djUI.open),
+    keys: () => toggleKeysHelp(),
   };
   $('menubar').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.act; if (a && acts[a]) acts[a](); });
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
@@ -477,10 +480,11 @@ function initTransport() {
 let lastT = performance.now(), lastFrameAt = 0, fpsN = 0, fpsT = lastT, costSum = 0, loopWin = null;
 const monOut = $('monOut').getContext('2d'), monPrev = $('monPrev').getContext('2d');
 function frame() {
-  const t0 = performance.now(), dt = Math.min((t0 - lastT) / 1000, 0.1);
+  const t0 = performance.now(), realDt = Math.max(0, (t0 - lastT) / 1000), dt = Math.min(realDt, 0.1);
   lastT = t0; lastFrameAt = t0;
   try {
-    update(dt);
+    audioTick();
+    update(dt, realDt);
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
     if (!document.hidden) {
@@ -514,7 +518,7 @@ function schedule() {
   loopWin = w;
   rafId = w.requestAnimationFrame(ts => { rafId = 0; frame(ts); });
 }
-setInterval(() => { if (performance.now() - lastFrameAt > 600) { lastT = performance.now(); schedule(); } }, 300);
+setInterval(() => { if (performance.now() - lastFrameAt > 600) schedule(); }, 300);
 
 function genThumbFor(c) {
   const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
@@ -543,7 +547,8 @@ function tickUI() {
     const c = L.clips[ci], bar = cell.querySelector('.prog i');
     if (bar) bar.style.width = a && c && c.video && c.video.duration ? (100 * c.video.currentTime / c.video.duration).toFixed(1) + '%' : '0';
   }));
-  const beat = Math.floor(comp.beats) % 4;
+  const beat = ((Math.floor(comp.beats) % 4) + 4) % 4;
+  tickDJ();
   [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
   if (posSlider && document.activeElement !== posSlider.input && posSlider.video.duration) posSlider.input.value = posSlider.video.currentTime / posSlider.video.duration;
   $('monPrevT').textContent = 'PREVIEW: ' + comp.layers[Math.min(sel.l, comp.layers.length - 1)].name;
@@ -552,7 +557,7 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi();
+  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi(); initDJ(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) demoComp();
@@ -563,4 +568,4 @@ function tickUI() {
   schedule();
 })();
 // Small hook for automated checks: compile every shader and report failures.
-window.strodano = { comp, screens, DEFS, midi, midiIn: onMidiMessage, mediaFolder, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };
+window.strodano = { comp, screens, DEFS, midi, audio, audioFeat, midiIn: onMidiMessage, mediaFolder, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };
