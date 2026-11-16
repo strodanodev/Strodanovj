@@ -99,7 +99,7 @@ function recallLook(look) {
   });
   look.layers.forEach((sv, li) => {
     const L = comp.layers[li];
-    if (!L || L.locked || L.agent) return;   // locked layers keep what you set (agent.js layerLocked)
+    if (!L || L.locked) return;   // locked layers keep what you set (agent.js layerLocked)
     if (sv.active !== L.active) { if (sv.active < 0 || !L.clips[sv.active]) eject(li); else trigger(li, sv.active); }
     L.bypass = !!sv.bypass;
     glide(L, 'opacity', sv.opacity);

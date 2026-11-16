@@ -627,8 +627,8 @@ function compToJSON() {
     fx: fxJ(comp.fx),
     agentTags: comp.agentTags || {},   // the Agent's column tags (agent.js)
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
-    layers: comp.layers.filter(L => !L.agent).map(L => ({   // the Agent's own layers are rebuilt, never saved
-      name: L.name, locked: L.locked || undefined, opacity: L.opacity, blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
+    layers: comp.layers.map(L => ({
+      name: L.name, locked: L.locked || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),

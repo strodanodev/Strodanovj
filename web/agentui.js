@@ -61,7 +61,11 @@ function buildAgentPanel() {
   // live touches: always there, small
   u.next = el('button', { textContent: 'New look', dataset: { midi: 'agent:next' }, title: 'A new look on the next bar', onclick: agentNext });
   u.hold = el('button', { textContent: 'Hold', dataset: { midi: 'agent:hold' }, title: 'Keep the current look: no changes until you release it', onclick: () => agentHold() });
-  u.drop = el('button', { textContent: 'Drop!', dataset: { midi: 'agent:drop' }, title: 'Cut to a peak look with a flash, right now', onclick: agentDrop });
+  u.drop = el('button', { textContent: 'Drop!', dataset: { midi: 'agent:drop' }, title: 'Cut to the drop scene right now: your Drop or Peak columns, or all your layers up', onclick: agentDrop });
+  u.next.textContent = 'New scene'; u.next.title = 'Another combination of your clips on the next bar';
+  u.hold.title = 'Keep the current scene: no changes until you release it';
+  u.starter = el('div', { className: 'astarter', hidden: true }, el('span', { textContent: 'Nothing for the Agent to play yet: it plays the clips on your layers. Add clips to the grid (Layers tab), or start from a ready-made set: ' }),
+    el('button', { textContent: 'Add starter clips', title: 'Puts generator clips into your empty grid slots, with columns tagged Calm / Groove / Peak / Drop. All of it stays editable.', onclick: agentStarter }));
   u.meter = el('span', { className: 'meter' }, el('i'));
   u.info = el('span', { className: 'ainfo' });
   u.now = el('div', { className: 'hint anow' });
@@ -73,7 +77,7 @@ function buildAgentPanel() {
   const show = el('div', { className: 'acard ashow' },
     el('div', { className: 'ar amain' }, u.on, el('span', { className: 'albl', textContent: 'Vibe' }), u.vibe, u.nextSong, u.rec, u.rtime),
     el('div', { className: 'ar' }, u.next, u.hold, u.drop, u.meter, u.info),
-    u.fileRow, u.now);
+    u.fileRow, u.now, u.starter);
 
   // more options
   u.src = seg([['dj', 'Playlist', 'Play the songs in the playlist (they are analysed in advance, so the visuals know every drop)'], ['mic', 'Microphone / line-in', 'Listen to a microphone or the line input: music from anywhere'],
@@ -90,14 +94,11 @@ function buildAgentPanel() {
   u.more = el('details', { className: 'amore' }, el('summary', { textContent: 'More options' }),
     el('div', { className: 'amgrid' },
       el('div', null, el('h4', { textContent: 'Listen to' }), el('div', { className: 'ar' }, u.src),
-        el('h4', { textContent: 'Visuals' }),
-        el('div', { className: 'ar' }, el('span', { textContent: 'Looks from' }), sel('Where the looks come from', [['gen', 'The Agent (generated)'], ['clips', 'My clip columns'], ['both', 'Both']], () => agent.visuals, v => { agent.visuals = v; agUI.dirty = true; }),
-          el('span', { textContent: 'Vary every' }), sel('A small change to the look this often (on the phrase). The Vibe sets this too.', [[8, '8 bars'], [16, '16 bars'], [32, '32 bars'], [0, 'never']], () => agent.vary, v => { agent.vary = +v; })),
-        el('div', { className: 'ar' }, chk('New look on each song', 'Change the look when the song changes (microphone / music file)', () => agent.onSong, v => { agent.onSong = v; }),
-          chk('Use my videos', 'Generated looks may use the videos in Files as their source', () => agent.useMedia, v => { agent.useMedia = v; if (typeof plReplanAll === 'function') plReplanAll(); }),
-          chk('Strobe on drops', 'Adds a beat strobe to drop looks. Flashing light can trigger seizures in people with photosensitive epilepsy.', () => agent.strobe, v => { agent.strobe = v; }))),
-      el('div', null, el('h4', { textContent: 'My clip columns' }),
-        el('div', { className: 'hint', textContent: 'With "My clip columns" or "Both", the Agent plays your columns: tag them so it knows which to use when. Untagged columns can be used any time.' }), u.tags),
+        el('h4', { textContent: 'Changes' }),
+        el('div', { className: 'ar' }, el('span', { textContent: 'Vary every' }), sel('A small change (another clip, another layer) this often. The Vibe sets this too.', [[8, '8 bars'], [16, '16 bars'], [32, '32 bars'], [0, 'never']], () => agent.vary, v => { agent.vary = +v; }),
+          chk('New scene on each song', 'Change the scene when the song changes (microphone / music file)', () => agent.onSong, v => { agent.onSong = v; }))),
+      el('div', null, el('h4', { textContent: 'Column energy (optional)' }),
+        el('div', { className: 'hint', textContent: 'The Agent plays the clips on your layers. Tag a column and it becomes a finished look the Agent plays as you built it, when the music fits: Calm, Groove, Peak, or Drop for the drops. Untagged clips are combined by the Agent.' }), u.tags),
       el('div', null, el('h4', { textContent: 'Record and render' }),
         el('div', { className: 'ar' }, el('span', { textContent: 'Quality' }),
           el('select', { onchange: e => { rec.quality = e.target.value; try { localStorage.setItem('strodano-vj-rec-quality', rec.quality); } catch (err) {} } },
@@ -123,7 +124,7 @@ function renderTags() {
   const box = agUI.tags;
   box.textContent = '';
   for (let ci = 0; ci < comp.columns; ci++) {
-    const used = comp.layers.some(L => !L.agent && L.clips[ci]);
+    const used = comp.layers.some(L => L.clips[ci]);
     box.append(el('label', { className: used ? '' : 'empty', title: used ? '' : 'Column ' + (ci + 1) + ' has no clips' }, 'Col ' + (ci + 1) + ' ',
       el('select', { onchange: e => { comp.agentTags = comp.agentTags || {}; if (e.target.value) comp.agentTags[ci] = e.target.value; else delete comp.agentTags[ci]; } },
         ...COL_TAGS.map(t => el('option', { value: t, textContent: t || 'Any', selected: colTag(ci) === t })))));
@@ -152,10 +153,11 @@ function tickAgentUI() {
   const mc = audio.ctx ? musicClock() : null, k = musicKey();
   const src = live.src === 'dj' ? (audio.clockDeck ? audio.clockDeck.name || 'Deck ' + audio.clockDeck.id : 'Playlist') : live.src === 'mic' ? 'Microphone' : live.fileName || 'Music file';
   setText(u.info, src + '  ·  ' + (mc ? mc.bpm.toFixed(0) + ' BPM' : live.src !== 'dj' && audio.ctx ? 'finding the beat...' : 'not playing') + (k ? '  ·  key ' + k : '') + '  ·  ' + live.band + (live.section === 'breakdown' ? ', breakdown' : ''));
-  const why = agent.hold ? 'Holding this look' : agent.scored ? 'DJ section looks are in charge of the clips' : comp.beats < agent.holdUntil ? 'You are playing: the Agent waits ' + Math.ceil((agent.holdUntil - comp.beats) / 4) + ' bars' : agent.pending ? 'Next change on the bar (' + agent.pending.reason + ')' : '';
+  u.starter.hidden = agentLayers().length > 0;
+  const why = agent.hold ? 'Holding this scene' : agent.scored ? 'DJ section looks are in charge of the clips' : comp.beats < agent.holdUntil ? 'You are playing: the Agent waits ' + Math.ceil((agent.holdUntil - comp.beats) / 4) + ' bars' : agent.pending ? 'Next change on the bar (' + agent.pending.reason + ')' : '';
   const mixTxt = live.src === 'dj' && (mixer.auto || mixer.m) ? '  ·  ' + mixStatus() : '';
   setText(u.now, !agent.on ? (live.src === 'dj' ? (crate.tracks.length ? 'Press Start: the playlist plays in order and the visuals follow the music by themselves.' : 'Drop songs on the playlist below, pick a vibe, and press Start. No programming needed.') : 'Press Start and the Agent takes over the visuals.')
-    : (agent.showingClips ? (agent.col >= 0 ? 'Showing your column ' + (agent.col + 1) : 'Showing your clips') : 'Look: ' + lookLabel(agent.look)) + (why ? '  ·  ' + why : '') + mixTxt);
+    : (agent.scene ? 'Playing ' + sceneLabel(agent.scene) : agent.empty ? 'Nothing to play' : 'Starting...') + (why ? '  ·  ' + why : '') + mixTxt);
   setText(u.rec, rec.on ? (rec.stopping ? 'Saving...' : '● Stop rec') : '● Record');
   u.rec.classList.toggle('on', rec.on);
   setText(u.rtime, rec.on ? mmss(recElapsed()) + ' / 60:00  ' + (rec.bytes / 1048576).toFixed(0) + ' MB' : '');

@@ -92,7 +92,7 @@ function applyCue(e) {
   if (cueLocked(e.id)) return;
   if (e.id.startsWith('column:') && e.v === undefined) {   // column launch: only on unlocked layers
     const ci = +e.id.split(':')[1];
-    comp.layers.forEach((L, li) => { if (!L.locked && !L.agent && L.clips[ci]) trigger(li, ci); });
+    comp.layers.forEach((L, li) => { if (!L.locked && L.clips[ci]) trigger(li, ci); });
     return;
   }
   const t = midiTarget(e.id);

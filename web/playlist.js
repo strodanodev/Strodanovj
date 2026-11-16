@@ -1,17 +1,18 @@
-// Strodano VJ (web) - Agent playlist: the songs in play order, each with its waveform, its transition points and the looks
-// the Agent has planned for each part of it. GPL-3.0.
+// Strodano VJ (web) - Agent playlist: the songs in play order, each with its waveform, its transition points and the
+// scenes the Agent has planned for each part of it, made from YOUR layers and clips. GPL-3.0.
 // The playlist IS the DJ track list (crate.tracks) in order: dragging a song reorders the list, and the Agent's Start
 // plays it in that order (mixer.order, mix.js). Per song: t.inAt / t.outAt move where it is mixed in and where the mix
 // to the next song begins (seconds, snapped to bars; crate.js inPoint / outPoint), t.jStyle / t.jVis are the audio and
-// visual transition into the next song, and t.plan holds one Agent look per analysed section (agent.js plannedLook).
-// Planned looks are compiled ahead of time (warmLook), so the first frame of a new look never waits for a shader.
+// visual transition into the next song, and t.plan holds one Agent scene per analysed section (agent.js makeScene; the
+// Agent plays it through plannedScene). Plans are made again when your grid changes (compSig), and the shaders of the
+// clips they use are compiled ahead of time (warmScene), so the first frame of a scene never waits for one.
 // Shown in place of the clip grid while the Agent panel is open; a Layers tab brings the grid back.
 'use strict';
 const PL_KEY = 'strodano-vj-playlist';
 const PL_STYLES = [['auto', 'Mix: auto'], ['blend', 'Smooth blend'], ['bass', 'Bass swap'], ['echo', 'Echo out'], ['cut', 'Cut']];
 const PL_VIS = [['mix', 'Visuals: with the mix'], ['quick', 'Visuals: quick fade'], ['cut', 'Visuals: cut + flash']];
 const SECTION_BAND = { intro: 'calm', outro: 'calm', breakdown: 'calm', build: 'groove', drop: 'peak' };
-const pl = { view: 'playlist', order: [], saved: {}, root: null, list: null, rows: [], dirty: true, held: false, warmQ: [], lockKey: '' };
+const pl = { view: 'playlist', order: [], saved: {}, root: null, list: null, rows: [], dirty: true, held: false, warmQ: [], lockKey: '', sig: '' };
 try {
   const s = JSON.parse(localStorage.getItem(PL_KEY) || '{}');
   if (Array.isArray(s.order)) pl.order = s.order.filter(k => typeof k === 'string').slice(0, 5000);
@@ -51,12 +52,7 @@ function plDirty() { pl.dirty = true; }
 // The transition after the song on deck d (mix.js tickAuto, agent.js agentMixStart).
 function plJunction(d) { const t = trackOf(d); return { style: (t && t.jStyle) || 'auto', vis: (t && t.jVis) || 'mix' }; }
 
-// ---------- planned looks ----------
-function trackHue(t) {
-  if (t.hueShift === undefined) t.hueShift = Math.random();
-  const n = t.info && parseInt(t.info.camelot);
-  return n ? ((n - 1) / 12 + t.hueShift * 0.08) % 1 : t.hueShift;
-}
+// ---------- planned scenes ----------
 // The parts of a song the plan follows: its analysed sections, or the whole song as one part.
 const planParts = t => (t.info.ok && t.info.sections && t.info.sections.length ? t.info.sections : [{ type: 'whole', t: 0, end: t.info.duration, bar: 0, bars: 1e9 }]);
 // Energy band for a part: from the section type, nudged by the song's energy in the list and by the vibe.
@@ -66,25 +62,26 @@ function partBand(t, type) {
   if (type === 'drop' && t.energy <= 2) b = 'groove';
   return vibeBand(b);
 }
-// One look per part. A part type that comes back (a second drop) gets a variation of the first one, so a song keeps a
-// visual identity; neighbouring parts never share a source.
+// What the plans are made from: your layers, their clips, locks and bypass, and the column tags.
+const compSig = () => comp.layers.map(L => (L.locked ? 'L' : '') + (L.bypass ? 'B' : '') + L.clips.map(c => (c ? c.name + (c.missing || c.error ? '!' : '') : '')).join(',')).join('|') + JSON.stringify(comp.agentTags || {});
+// One scene per part. A part type that comes back (a second drop) gets a variation of the first one, so a song keeps a
+// visual identity, and each scene is made to differ from the one before it.
 function planTrack(t) {
-  if (!t.info || typeof makeLook !== 'function') return;
-  const hue = trackHue(t), byType = {}, recent = [];
+  if (!t.info || typeof makeScene !== 'function') return;
+  const byType = {};
+  let prev = null;
   t.plan = planParts(t).map(s => {
     const band = partBand(t, s.type), drop = s.type === 'drop';
-    let look;
-    if (byType[s.type] && byType[s.type].band === band) look = varyLook(byType[s.type]);
-    else look = makeLook(band, drop, hue, recent.slice(-2));
-    byType[s.type] = look; recent.push(look.src);
-    return { s, look };
+    let sc = byType[s.type] && byType[s.type].band === band ? varyScene(byType[s.type]) : makeScene(band, drop, prev);
+    if (sc) { byType[s.type] = sc; prev = sc; }
+    return { s, sc };
   });
-  t.planFor = t.info;
-  pl.warmQ.push(...t.plan.map(p => p.look));
+  t.planFor = t.info; t.planSig = pl.sig;
+  pl.warmQ.push(...t.plan.map(p => p.sc));
   pl.dirty = true;
 }
-function plReplanAll() { for (const t of crate.tracks) if (t.info) planTrack(t); }
-const ensurePlan = t => { if (t && t.info && t.planFor !== t.info) planTrack(t); return t && t.plan; };
+function plReplanAll() { pl.sig = compSig(); for (const t of crate.tracks) if (t.info) planTrack(t); }
+const ensurePlan = t => { if (t && t.info && (t.planFor !== t.info || t.planSig !== pl.sig)) planTrack(t); return t && t.plan; };
 // The part of song t at position pos (seconds).
 function partAt(t, pos) {
   const parts = ensurePlan(t);
@@ -92,43 +89,56 @@ function partAt(t, pos) {
   for (let k = parts.length - 1; k >= 0; k--) if (pos >= parts[k].s.t - 0.05) return k;
   return 0;
 }
-// The look planned for the part of the playlist song playing now (null when no planned song is playing).
-function plannedLook() {
-  if (live.src !== 'dj' || agent.visuals === 'clips') return null;
+// The scene planned for the part of the playlist song playing now (null when no planned song is playing).
+function plannedScene() {
+  if (live.src !== 'dj') return null;
   const d = audio.clockDeck, t = trackOf(d);
   if (!t || !ensurePlan(t)) return null;
-  return t.plan[Math.max(0, partAt(t, deckHeard(d)))].look;
+  return t.plan[Math.max(0, partAt(t, deckHeard(d)))].sc;
 }
-function plannedLookAt(d, pos) {
+function plannedSceneAt(d, pos) {
   if (live.src !== 'dj') return null;
   const t = trackOf(d);
   if (!t || !ensurePlan(t)) return null;
-  return t.plan[Math.max(0, partAt(t, pos))].look;
+  return t.plan[Math.max(0, partAt(t, pos))].sc;
 }
 function rerollPart(t, k) {
   const p = t.plan && t.plan[k];
-  if (!p) return;
-  p.look = makeLook(p.look.band, p.s.type === 'drop', trackHue(t), [p.look.src]);
-  pl.warmQ.push(p.look);
+  if (!p || !p.sc) return;
+  p.sc = makeScene(p.sc.band, p.s.type === 'drop', p.sc) || p.sc;
+  pl.warmQ.push(p.sc);
   // the Agent is showing the old one right now: swap it in on the next bar
   const d = audio.clockDeck;
   if (agent.on && trackOf(d) === t && partAt(t, deckHeard(d)) === k) agentSchedule('section');
   pl.dirty = true;
 }
-// Compile a look's shaders now, so switching to it later does not stall a frame.
-function warmLook(l) {
-  if (!l || l.warm) return;
-  l.warm = true;
-  if (!l.media) { const g = DEFS.gen.get(l.src); if (g) defProg(g); }
-  for (const f of l.fx) { const d = DEFS.fx.get(f.def); if (d) defProg(d); }
+// Compile the shaders a scene's clips and layers use now, so showing it later does not stall a frame.
+function warmScene(sc) {
+  if (!sc || sc.warm) return;
+  sc.warm = true;
+  for (const li in sc.show) {
+    const L = comp.layers[+li], c = L && L.clips[sc.show[li]];
+    if (!L) continue;
+    if (c && c.type === 'gen') { const g = DEFS.gen.get(c.gen); if (g) defProg(g); }
+    for (const e of L.fx) { const d = DEFS.fx.get(e.def); if (d) defProg(d); }
+  }
 }
+// Short label for a planned scene: the clips that are up, bottom layer first.
+const sceneShort = sc => (sc ? (sc.col >= 0 ? 'Col ' + (sc.col + 1) + ': ' : '') + Object.keys(sc.show).map(Number).sort((a, b) => a - b).map(li => clipName(li, sc.show[li])).join(' + ') : 'nothing to play');
 
 // ---------- view ----------
 const plShowing = () => agUI.open && pl.view === 'playlist';
 function plSetView(v) { pl.view = v; plSave(); plApplyView(); }
+// In Layers view the header (with the Playlist / Layers tabs and the layer locks) stays above the grid, so the way back
+// to the playlist is always on screen; only the song list is hidden.
 function plApplyView() {
   const on = plShowing();
-  if (pl.root) pl.root.hidden = !on;
+  if (pl.root) {
+    pl.root.hidden = !agUI.open;
+    pl.list.hidden = !on;
+    pl.root.classList.toggle('collapsed', agUI.open && !on);
+    renderPlHead();   // tabs show the current view
+  }
   const g = $('grid');
   if (g) g.style.display = on ? 'none' : '';
   if (on) pl.dirty = true;
@@ -202,25 +212,23 @@ function renderPlHead() {
     el('span', { className: 'seg' }, tab('playlist', 'Playlist', 'Songs in play order, with transitions and planned visuals'), tab('layers', 'Layers', 'The clip grid')));
   pl.lockKey = '';
 }
-// Lock chips: a locked layer is left alone by the Agent, section looks and track scores. "Agent" holds the Agent's look.
+// Lock chips: a locked layer is left alone by the Agent, section looks and track scores.
 function renderLocks() {
-  const key = comp.layers.map(L => (L.agent ? '' : L.name + (L.locked ? '1' : '0'))).join('|') + agent.hold;
+  const key = comp.layers.map(L => L.name + (L.locked ? '1' : '0')).join('|');
   if (key === pl.lockKey || !pl.locks) return;
   pl.lockKey = key;
   pl.locks.textContent = '';
   pl.locks.append(el('span', { className: 'hint', textContent: 'Lock:' }));
   comp.layers.forEach((L, li) => {
-    if (L.agent) return;
     pl.locks.append(el('button', { className: 'lockchip' + (L.locked ? ' on' : ''), title: L.locked ? L.name + ' is locked: the Agent and auto-score leave it alone. Click to unlock.' : 'Lock ' + L.name + ' so the Agent and auto-score leave it alone',
       textContent: (L.locked ? '\u{1F512} ' : '') + L.name, onclick: () => toggleLayerLock(li) }));
   });
-  pl.locks.append(el('button', { className: 'lockchip' + (agent.hold ? ' on' : ''), title: 'Freeze the Agent\'s own look (same as Hold)', textContent: (agent.hold ? '\u{1F512} ' : '') + 'Agent look', onclick: () => agentHold() }));
 }
 function toggleLayerLock(li) {
   const L = comp.layers[li];
   if (!L) return;
-  if (L.agent) { agentHold(); return; }
   L.locked = !L.locked;
+  if (L.locked && typeof agentRelease === 'function') agentRelease(L);   // a layer locked mid-fade gets your level back
   if (L.locked && typeof quantQ !== 'undefined') quantQ.delete(li);
   setStatus(L.name + (L.locked ? ' locked: the Agent and auto-score will not touch it' : ' unlocked'));
   ui.gridDirty = true; pl.lockKey = '';
@@ -263,7 +271,7 @@ function plRow(t, i) {
   r.state = el('span', { className: 'plst' });
   const meta = inf ? [inf.ok ? inf.bpm.toFixed(0) + ' BPM' : 'no beat', inf.camelot || '', 'E' + t.energy, mmss(inf.duration)].filter(Boolean).join(' · ') : t.state === 'error' ? 'cannot read this file' : 'listening...';
   const info = el('div', { className: 'pli' }, el('b', { textContent: t.name, title: t.file.name }), el('span', { className: 'dt', textContent: meta }), r.state);
-  // waveform with transition markers, playhead and the planned looks underneath
+  // waveform with transition markers, playhead and the planned scenes underneath
   r.cv = el('canvas');
   r.done = el('div', { className: 'pldone' });
   r.head = el('div', { className: 'plhead' });
@@ -284,9 +292,9 @@ function plRow(t, i) {
   if (inf && ensurePlan(t)) {
     t.plan.forEach((p, k) => {
       const a = p.s.t / inf.duration, w = (Math.min(inf.duration, p.s.end) - p.s.t) / inf.duration;
-      const c = el('button', { className: 'plchip band-' + p.look.band + ' sec-' + p.s.type, style: { left: (a * 100).toFixed(3) + '%', width: 'calc(' + (w * 100).toFixed(3) + '% - 2px)' },
-        textContent: lookShort(p.look), title: (SECTION_NAMES[p.s.type] || 'Whole song') + ': ' + lookLabel(p.look) + '\nClick for a different look', onclick: () => rerollPart(t, k) });
-      c.look = p.look;
+      const c = el('button', { className: 'plchip band-' + (p.sc ? p.sc.band : 'calm') + ' sec-' + p.s.type, style: { left: (a * 100).toFixed(3) + '%', width: 'calc(' + (w * 100).toFixed(3) + '% - 2px)' },
+        textContent: sceneShort(p.sc), title: (SECTION_NAMES[p.s.type] || 'Whole song') + ': ' + (p.sc ? sceneLabel(p.sc) : 'no layer can play: add clips or unlock a layer') + '\nClick for a different combination of your clips', onclick: () => rerollPart(t, k) });
+      c.sc = p.sc;
       r.chips.append(c);
     });
   }
@@ -294,7 +302,6 @@ function plRow(t, i) {
   r.root.classList.toggle('err', t.state === 'error');
   return r;
 }
-const lookShort = l => (l.media ? l.src.replace(/\.[^.]+$/, '') : l.src) + (l.fx.length ? ' + ' + l.fx[0].def : '');
 // A transition marker: drag to move it (it snaps to bars), double-click to put it back where the analysis had it.
 function plMarker(t, which, wave) {
   const m = el('div', { className: 'plm ' + which, title: which === 'in' ? 'MIX IN: where this song starts when it is mixed in. Drag to move, double-click to reset.' : 'MIX OUT: where the mix into the next song begins. Drag to move, double-click to reset.' },
@@ -351,11 +358,15 @@ function drawPlWave(r) {
 
 // ---------- per frame ----------
 function tickPlaylist() {
-  // warm one planned look per frame (playing and next songs first, then the rest)
-  if (pl.warmQ.length) warmLook(pl.warmQ.shift());
+  // warm one planned scene per frame (playing and next songs first, then the rest)
+  if (pl.warmQ.length) warmScene(pl.warmQ.shift());
+  // you changed the grid (clips, locks, tags): plan the songs again from what is there now
+  const sig = compSig();
+  if (sig !== pl.sig) { pl.sig = sig; for (const t of crate.tracks) if (t.info) planTrack(t); }
+  if (!agUI.open) return;
+  renderLocks();   // the header shows in both views
   if (!plShowing()) return;
   if (pl.dirty && !pl.held && !pl.dragT) renderPlaylist();
-  renderLocks();
   const clock = audio.clockDeck, next = clock ? crateNextTrack(clock) : mixer.order || agent.on ? crateNextTrack(null) : null;
   for (const r of pl.rows) {
     const t = r.t, i = t.info;
@@ -376,8 +387,8 @@ function tickPlaylist() {
       r.mOut.style.left = (100 * (typeof t.outAt === 'number' ? t.outAt : i.mixOut) / i.duration).toFixed(3) + '%';
       r.mIn.classList.toggle('moved', typeof t.inAt === 'number'); r.mOut.classList.toggle('moved', typeof t.outAt === 'number');
     }
-    for (const c of r.chips.children) c.classList.toggle('on', agent.on && !agent.showingClips && agent.look === c.look);
-    // the playing and next songs' looks are compiled first
-    if ((playing || t === next) && t.plan && !t.warmed) { t.warmed = true; pl.warmQ.unshift(...t.plan.map(p => p.look)); }
+    for (const c of r.chips.children) c.classList.toggle('on', agent.on && !!agent.scene && !!c.sc && (agent.scene === c.sc || agent.scene.src === c.sc));
+    // the playing and next songs' scenes are compiled first
+    if ((playing || t === next) && t.plan && t.warmed !== t.plan) { t.warmed = t.plan; pl.warmQ.unshift(...t.plan.map(p => p.sc)); }
   }
 }
