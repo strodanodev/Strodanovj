@@ -492,10 +492,16 @@ function frame() {
   schedule();
 }
 // Run the loop from an output window when one is open, so the show keeps its frame rate even if the control window is covered.
+// At most one frame request is ever outstanding, so the watchdog below can never start a second loop. It only re-requests when
+// the loop has to move to another window (an output window was closed); a request still waiting in the right window is left alone,
+// because cancelling it would starve a throttled window that only delivers a frame every second or so.
+let rafId = 0;
 function schedule() {
-  const live = liveScreens()[0];
-  loopWin = live ? live.win : window;
-  loopWin.requestAnimationFrame(frame);
+  const live = liveScreens()[0], w = live ? live.win : window;
+  if (rafId && loopWin === w) return;
+  if (rafId && loopWin && !loopWin.closed) { try { loopWin.cancelAnimationFrame(rafId); } catch (e) {} }
+  loopWin = w;
+  rafId = w.requestAnimationFrame(ts => { rafId = 0; frame(ts); });
 }
 setInterval(() => { if (performance.now() - lastFrameAt > 600) { lastT = performance.now(); schedule(); } }, 300);
 

@@ -82,7 +82,8 @@ BUILTIN_GEN.forEach(d => registerDef('gen', d));
 function defProg(d) {
   if (!d.tried) {
     d.tried = true;
-    try { d.prog = mkProg(d.isf ? d.src : FX_PRE + d.body + (d.kind === 'fx' ? FX_POST : GEN_POST)); d.err = null; }
+    // #line makes compile errors count lines from the start of the user's code, not the hidden preamble.
+    try { d.prog = mkProg(d.isf ? d.src : FX_PRE + '#line 1\n' + d.body + (d.kind === 'fx' ? FX_POST : GEN_POST)); d.err = null; }
     catch (e) { d.prog = null; d.err = String(e.message || e); }
   }
   return d.prog;
@@ -136,8 +137,19 @@ function parseISF(text) {
       default: throw new Error('ISF input type "' + inp.TYPE + '" is not supported yet');
     }
   }
+  const bodyLine = text.slice(0, m.index + m[0].length).split('\n').length;   // line of the .fs file the code after the header starts on
   const body = text.slice(m.index + m[0].length).replace(/\bgl_FragColor\b/g, 'isf_FragColor').replace(/\btexture2D\b/g, 'texture').replace(/\bvarying\b/g, 'in');
-  return { kind: isFx ? 'fx' : 'gen', params, isfU: us, src: ISF_PRE + decl + body };
+  return { kind: isFx ? 'fx' : 'gen', params, isfU: us, src: ISF_PRE + decl + '#line ' + bodyLine + '\n' + body };
+}
+// Drop every custom shader from the registry (before loading another composition), restoring any built-in one a custom shader had replaced.
+function clearCustomDefs() {
+  for (const kind of ['fx', 'gen']) for (const d of [...DEFS[kind].values()]) {
+    if (!d.custom) continue;
+    if (d.prog) gl.deleteProgram(d.prog.p);
+    DEFS[kind].delete(d.name);
+  }
+  BUILTIN_FX.forEach(d => { if (!DEFS.fx.has(d.name)) registerDef('fx', d); });
+  BUILTIN_GEN.forEach(d => { if (!DEFS.gen.has(d.name)) registerDef('gen', d); });
 }
 // Register (or replace) a custom shader. Returns the def; def.err is set if it does not compile.
 function applyCustom(s) {
@@ -524,10 +536,11 @@ function openOutput(i) {
   const w = window.open('', 'strodano_out_' + i, 'width=960,height=540');
   if (!w) { setStatus('The browser blocked the output window. Allow pop-ups for this page.'); return false; }
   w.document.open();
-  w.document.write(`<!DOCTYPE html><title>${s.name} - Strodano VJ output</title><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  w.document.write(`<!DOCTYPE html><title>Strodano VJ output</title><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 canvas{width:100vw;height:100vh;display:block}#h{position:fixed;left:12px;bottom:10px;color:#999;font:13px system-ui;transition:opacity 1s}</style>
 <canvas id="c"></canvas><div id="h">Drag this window onto the projector or second display, then double-click for fullscreen.</div>`);
   w.document.close();
+  w.document.title = s.name + ' - Strodano VJ output';   // set as text: the name can come from a shared .svj file
   const c = w.document.getElementById('c');
   const fit = () => { c.width = Math.max(16, Math.round(w.innerWidth * w.devicePixelRatio)); c.height = Math.max(16, Math.round(w.innerHeight * w.devicePixelRatio)); };
   fit();
@@ -561,6 +574,7 @@ function loadComp(j) {
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
   const fxL = arr => (Array.isArray(arr) ? arr : []).map(e => { const n = mkEffect(e.def); if (!n) return null; (e.params || []).forEach((v, i) => { if (i < n.params.length) n.params[i] = num(v, 0); }); n.mix = num(e.mix, 1); n.bypass = !!e.bypass; return n; }).filter(Boolean);
   comp.w = Math.min(8192, Math.max(16, num(j.w, 1920) | 0)); comp.h = Math.min(8192, Math.max(16, num(j.h, 1080) | 0));
+  clearCustomDefs();
   customShaders = (Array.isArray(j.shaders) ? j.shaders : []).filter(s => s && s.name && s.code).map(s => ({ name: String(s.name), kind: s.kind === 'gen' ? 'gen' : 'fx', code: String(s.code) }));
   customShaders.forEach(s => { try { applyCustom(s); } catch (e) {} });
   resetComp(0, Math.min(32, Math.max(1, num(j.columns, 8) | 0)));
