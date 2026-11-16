@@ -54,6 +54,8 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
 .sel-item{padding:3px 6px;border-radius:3px;cursor:pointer;display:flex;gap:6px;align-items:center} .sel-item.on{background:var(--acc2)}
 #shBody{display:grid;grid-template-columns:230px 1fr;min-height:0} #shBody>div{padding:8px;min-height:0;overflow:auto}
 #shCode{width:100%;height:calc(100% - 150px);min-height:200px;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre;resize:none;user-select:text}
+body.midi-learn [data-midi]{outline:2px dashed #4f8fe6;outline-offset:-2px;cursor:cell} body.midi-learn [data-midi].midi-mapped{outline:2px solid #4fc27a}
+body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc)}
 #shErr{white-space:pre-wrap;font:11px ui-monospace,Consolas,monospace;color:var(--bad);max-height:90px;overflow:auto;margin-top:4px} #shErr.ok{color:#6fd08c}
 </style>
 </head>
@@ -64,7 +66,7 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
     <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button>
     <button data-act="media">Add media</button><button data-act="addLayer">+ Layer</button><button data-act="addCol">+ Column</button><button data-act="delCol">- Column</button>
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
-    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button>
+    <button data-act="output">Advanced Output</button><button data-act="shaders">Shader Editor</button><button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad">MIDI</button>
     <span id="status"></span>
   </div>
   <div id="grid"></div>
@@ -77,9 +79,9 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
     <div id="browser"></div>
   </div>
   <div id="transport">
-    BPM <input type="number" id="bpm" min="20" max="300" step="0.1"><button id="tap">TAP</button><button id="resync">Resync</button>
+    BPM <input type="number" id="bpm" min="20" max="300" step="0.1"><button id="tap" data-midi="tap">TAP</button><button id="resync" data-midi="resync">Resync</button>
     <span class="dots" id="dots"><i></i><i></i><i></i><i></i></span>
-    <span>A</span><input type="range" id="xf" min="0" max="1" step="0.001" title="Crossfader"><span>B</span>
+    <span>A</span><input type="range" id="xf" data-midi="crossfade" min="0" max="1" step="0.001" title="Crossfader"><span>B</span>
     <span id="fps"></span>
   </div>
 </div>
@@ -99,6 +101,8 @@ h4{margin:10px 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;le
 <input type="file" id="shaderInput" accept=".fs,.frag,.glsl,.isf,.txt" multiple hidden>
 <script src="shaders.js"></script>
 <script src="engine.js"></script>
+<script src="mediafolder.js"></script>
+<script src="midi.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

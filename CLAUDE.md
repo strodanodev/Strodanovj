@@ -7,27 +7,29 @@ Open-source, lightweight Resolume-style live-visuals (VJ) app. GPL-3.0. Owner: S
 - `web/` - **the edition under active development.** Plain HTML + classic scripts, WebGL2, no build step, no dependencies. Open `web/index.html` in Chrome/Edge; edit and refresh. Must keep working from `file://` (so: no ES modules, no fetch of local files, no bundler).
   - `shaders.js` built-in effects/generators (`vec4 fx()` / `vec4 gen()`, params 0..1 in `p`/`q`)
   - `engine.js` GL helpers, shader registry (built-in, custom, single-pass ISF), media pool, composition, renderer, output mapping (slices, homography corner-pin, mesh warp, masks), save/load
-  - `ui.js` DOM UI, Advanced Output editor, Shader Editor, autosave (localStorage), main loop
-- Native C++ (`src/`, `CMakeLists.txt`) - OpenGL 4.1 + FFmpeg + Dear ImGui + FFGL 2.x plugin host. Kept as the later native/FFGL edition. `.github/workflows/build.yml` builds the Windows NSIS installer and macOS .dmg; **it has never run** (nothing has been pushed yet), so expect fixes on first CI run.
+  - `mediafolder.js` remembered media folder (File System Access API; handle kept in IndexedDB, Reconnect button when permission lapses)
+  - `midi.js` Web MIDI + learn mode. Mappable controls carry `data-midi="<target id>"` (`master`, `crossfade`, `tap`, `resync`, `column:C`, `clip:L:C`, `layer:L:opacity|bypass|solo|eject`); mappings live in localStorage, app-wide
+  - `ui.js` DOM UI, Advanced Output editor, Shader Editor, autosave (localStorage), main loop (exactly one rAF request outstanding; the watchdog must never add a second)
+- Native C++ (`src/`, `CMakeLists.txt`) - OpenGL 4.1 + FFmpeg + Dear ImGui + FFGL 2.x plugin host. Kept as the later native/FFGL edition. `.github/workflows/build.yml` builds the Windows NSIS installer and macOS .dmg; first run (2026-11-17) was green on Linux, Windows and both macOS architectures.
 
 ## Decisions already made
 
 - Web first, because the owner wants to test without installing/compiling and change code live. FFGL plugins are dropped in the web edition; ISF/GLSL shaders replace them.
 - Same workflow and panel arrangement as Resolume (layer/column clip grid, faders, B/S/X, A/B crossfader, BPM tap, effects, advanced output) but its own visual design, not a pixel copy.
-- v1 scope: core VJ features + advanced mapping (multiple screens/slices, warping, masks). Not yet: audio, MIDI/OSC, clip transitions, per-clip effects.
+- v1 scope: core VJ features + advanced mapping (multiple screens/slices, warping, masks). Since added: media folder, MIDI learn. Not yet: audio, OSC, keyboard shortcuts, clip transitions, per-clip effects, MIDI on effect parameters.
 - Hard requirement: steady 30 fps or better with H.264 MP4 / .mov clips.
 
 ## State of testing
 
-- Web: verified in headless Chrome with software GL only - all shaders compile, H.264 .mp4 and .mov play, custom + ISF shaders compile, output window renders warped/masked picture, save/load round-trips. **Never measured on a real GPU and never used by hand** (drag from Explorer, fullscreen on a second display, Save download).
-- Native: builds and passes `--selftest` on Linux (llvmpipe), including two FFGL SDK example plugins. Never compiled on Windows or macOS.
+- Web: measured on a real GPU (RTX 3080 Ti, 2026-11-17): 3 x 1080p video layers with effects composite in ~1.3 ms, a 1080p output window costs ~1.5 ms (4K ~4.1 ms), so the `drawImage` copy path is not a bottleneck. Media folder tested with an OPFS folder, MIDI with synthetic messages. **Still never used by hand** (drag from Explorer, real pop-up output on a second display, a real MIDI controller, the real folder picker).
+- Native: CI builds Linux (`--selftest`), Windows installer and macOS arm64/x86_64 .dmg. Installers never run by hand.
 
 ## Known gaps / next steps
 
-1. Measure real frame rate in the web edition with several 1080p clips; previews and output windows copy from a hidden WebGL canvas via `drawImage`, which is the first place to look if it is slow.
-2. Clips must be relinked after a page reload (browser cannot reopen local files); consider the File System Access API to remember a media folder.
-3. Installers for the web edition would need a desktop wrapper (Electron/Tauri).
-4. Push this repo to GitHub and get the native CI green.
+1. Hand test: output window fullscreen on a second display, a real MIDI controller, the real folder picker, drag from Explorer.
+2. Keyboard shortcuts, audio-reactive input (FFT uniforms + parameter modulation), clip transitions, BPM-synced LFOs on parameters.
+3. Re-upload video only on new frames (`requestVideoFrameCallback`); stop rebuilding the whole clip grid while a fader is dragged.
+4. Installers for the web edition would need a desktop wrapper (Electron/Tauri).
 
 ## Testing the web edition headlessly
 

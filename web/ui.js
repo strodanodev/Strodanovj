@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 function el(tag, props, ...kids) {
   const e = document.createElement(tag);
-  if (props) for (const k in props) { if (k === 'style') Object.assign(e.style, props[k]); else if (k.startsWith('on')) e.addEventListener(k.slice(2), props[k]); else e[k] = props[k]; }
+  if (props) for (const k in props) { if (k === 'style') Object.assign(e.style, props[k]); else if (k === 'dataset') Object.assign(e.dataset, props[k]); else if (k.startsWith('on')) e.addEventListener(k.slice(2), props[k]); else e[k] = props[k]; }
   for (const k of kids) if (k != null) e.append(k);
   return e;
 }
@@ -63,29 +63,29 @@ function renderGrid() {
   const head = el('div', { className: 'row' },
     el('div', { className: 'lctl' }, el('div', { className: 'r' }, el('b', { textContent: 'COMPOSITION', style: { color: 'var(--acc)' } }),
       el('button', { textContent: 'X', title: 'Eject all layers', onclick: () => comp.layers.forEach((_, i) => eject(i)) }),
-      el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: comp.master, title: 'Master', oninput: e => { comp.master = +e.target.value; } }))));
-  for (let c = 0; c < comp.columns; c++) head.append(el('button', { className: 'colbtn', textContent: 'Column ' + (c + 1), onclick: () => triggerColumn(c) }));
+      el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: comp.master, title: 'Master', dataset: { midi: 'master' }, oninput: e => { comp.master = +e.target.value; } }))));
+  for (let c = 0; c < comp.columns; c++) head.append(el('button', { className: 'colbtn', textContent: 'Column ' + (c + 1), dataset: { midi: 'column:' + c }, onclick: () => triggerColumn(c) }));
   g.append(head);
   for (let li = comp.layers.length - 1; li >= 0; li--) {
     const L = comp.layers[li];
-    const tog = (label, title, on, cls, fn) => el('button', { textContent: label, title, className: (on ? 'on ' : '') + cls, onclick: () => { fn(); ui.gridDirty = true; } });
+    const tog = (label, title, on, cls, fn, mid) => el('button', { textContent: label, title, className: (on ? 'on ' : '') + cls, dataset: mid ? { midi: mid } : {}, onclick: () => { fn(); ui.gridDirty = true; } });
     const ctl = el('div', { className: 'lctl' },
       el('div', { className: 'r' },
-        el('button', { textContent: 'X', title: 'Eject clip', onclick: () => eject(li) }),
-        tog('B', 'Bypass layer', L.bypass, 'red', () => { L.bypass = !L.bypass; }),
-        tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }),
+        el('button', { textContent: 'X', title: 'Eject clip', dataset: { midi: 'layer:' + li + ':eject' }, onclick: () => eject(li) }),
+        tog('B', 'Bypass layer', L.bypass, 'red', () => { L.bypass = !L.bypass; }, 'layer:' + li + ':bypass'),
+        tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }, 'layer:' + li + ':solo'),
         tog('A', 'Crossfader side A', L.xfade === 1, '', () => { L.xfade = L.xfade === 1 ? 0 : 1; }),
         tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
         el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } })),
       el('div', { className: 'r' },
-        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', oninput: e => { L.opacity = +e.target.value; } }),
+        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; } }),
         el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
     dropTarget(ctl, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { L.fx.push(e); sel.l = li; ui.propsDirty = true; } });
     const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') }, ctl);
     cellEls[li] = [];
     for (let ci = 0; ci < comp.columns; ci++) {
       const c = L.clips[ci];
-      const cell = el('div', { className: 'cell' + (c ? ' has' : '') + (sel.l === li && sel.c === ci ? ' selc' : '') });
+      const cell = el('div', { className: 'cell' + (c ? ' has' : '') + (sel.l === li && sel.c === ci ? ' selc' : ''), dataset: { midi: 'clip:' + li + ':' + ci } });
       if (c) {
         cell.append(c.thumb ? el('img', { src: c.thumb, draggable: false }) : el('div', { className: 'ph' }), el('div', { className: 'prog' }, el('i')), el('span', { textContent: c.name, title: c.fileName || c.name }));
         if (c.missing) cell.append(el('div', { className: 'miss', textContent: 'missing file' }));
@@ -133,12 +133,15 @@ function renderProps() {
   const L = comp.layers[sel.l];
   p.append(tabs([['comp', 'Composition'], ['layer', 'Layer'], ['clip', 'Clip']], propTab, t => { propTab = t; ui.propsDirty = true; }));
   if (propTab === 'comp') {
-    p.append(fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; ui.gridDirty = true; }),
-      fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; }),
-      el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx));
+    const fm = fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; ui.gridDirty = true; });
+    const fx = fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; });
+    fm.slider.dataset.midi = 'master'; fx.slider.dataset.midi = 'crossfade';
+    p.append(fm, fx, el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx), midiPanel());
   } else if (propTab === 'layer') {
+    const fo = fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; ui.gridDirty = true; });
+    fo.slider.dataset.midi = 'layer:' + sel.l + ':opacity';
     p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: L.name, onchange: e => { L.name = e.target.value || L.name; ui.gridDirty = true; } })),
-      fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; ui.gridDirty = true; }),
+      fo,
       el('div', { className: 'fld' }, el('label', { textContent: 'Scaling' }), el('select', { onchange: e => { L.fit = +e.target.value; } }, ...['Fill', 'Fit', 'Stretch'].map((n, i) => el('option', { value: i, textContent: n, selected: i === L.fit })))),
       fld('Scale', 0.05, 4, 0.01, () => L.scale, v => { L.scale = v; }), fld('Position X', -1, 1, 0.001, () => L.x, v => { L.x = v; }), fld('Position Y', -1, 1, 0.001, () => L.y, v => { L.y = v; }),
       el('div', { className: 'fld' }, el('button', { textContent: 'Reset transform', onclick: () => { L.scale = 1; L.x = L.y = 0; ui.propsDirty = true; } }),
@@ -175,8 +178,15 @@ function renderBrowser() {
   b.append(tabs([['files', 'Files'], ['fx', 'Effects'], ['src', 'Sources']], browserTab, t => { browserTab = t; ui.browserDirty = true; }));
   const list = el('div', { className: 'list' });
   if (browserTab === 'files') {
-    b.append(el('button', { textContent: 'Add media...', onclick: () => $('mediaInput').click() }),
-      el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
+    b.append(el('div', { className: 'fld' }, el('button', { textContent: 'Add media...', onclick: () => $('mediaInput').click() }),
+      canPickFolder ? el('button', { textContent: mediaFolder.handle ? 'Change folder...' : 'Media folder...', title: 'Pick a folder once; clips relink from it on every start', onclick: pickMediaFolder }) : null));
+    if (mediaFolder.handle) {
+      const st = mediaFolder.state, nm = mediaFolder.handle.name;
+      b.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1' }, textContent: st === 'scanning' ? `Reading "${nm}"...` : st === 'needs-permission' ? `"${nm}" needs permission again` : st === 'error' ? `"${nm}" could not be read` : `Folder "${nm}": ${mediaFolder.count} file(s)` }),
+        st === 'needs-permission' ? el('button', { className: 'on', textContent: 'Reconnect', onclick: reconnectMediaFolder }) : el('button', { textContent: 'Rescan', onclick: loadMediaFolder }),
+        el('button', { textContent: 'Forget', title: 'Stop remembering this folder', onclick: forgetMediaFolder })));
+    }
+    b.append(el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
     const missing = new Set();
     comp.layers.forEach(L => L.clips.forEach(c => { if (c && c.missing) missing.add(c.fileName); }));
     missing.forEach(n => list.append(el('div', { className: 'miss', textContent: 'Missing: ' + n, title: 'Add this file again to relink it' })));
@@ -421,6 +431,7 @@ function initMenu() {
     addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
     output: () => { $('outModal').hidden = false; renderOutPanels(); },
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
+    midi: () => setMidiLearn(!midi.learn),
   };
   $('menubar').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.act; if (a && acts[a]) acts[a](); });
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
@@ -524,6 +535,7 @@ function tickUI() {
   if (ui.gridDirty) { ui.gridDirty = false; renderGrid(); }
   if (ui.propsDirty) { ui.propsDirty = false; renderProps(); }
   if (ui.browserDirty) { ui.browserDirty = false; renderBrowser(); }
+  if (midi.learn) markMidi();
   comp.layers.forEach((L, li) => (cellEls[li] || []).forEach((cell, ci) => {
     const a = L.active === ci, p = L.pendingCol === ci;
     if (cell.classList.contains('active') !== a) cell.classList.toggle('active', a);
@@ -540,14 +552,15 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initShaderEditor();
+  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) demoComp();
   else if (comp.layers.some(L => L.clips.some(c => c && c.missing))) setStatus('Session restored. Add your video files again to relink the clips marked "missing file".');
   syncTransport();
+  initMediaFolder();
   setInterval(autosave, 2000);
   schedule();
 })();
 // Small hook for automated checks: compile every shader and report failures.
-window.strodano = { comp, screens, DEFS, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };
+window.strodano = { comp, screens, DEFS, midi, midiIn: onMidiMessage, mediaFolder, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };
