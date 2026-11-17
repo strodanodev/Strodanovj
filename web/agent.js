@@ -189,6 +189,7 @@ function varyScene(prev) {
 // The limits every scene is shown with (planned, tagged and older ones too): no flashes outside a drop, no overlay on
 // top of a drop's flashes, at most MAX_MAIN picture layers outside tagged columns.
 function tame(sc) {
+  if (sc.pinned) return { ...sc, src: sc.src || sc };   // your own choice for a part (plsegs.js) plays as you made it
   const out = { ...sc, show: {}, src: sc.src || sc };
   const ks = Object.keys(sc.show).map(Number).sort((a, b) => a - b);
   const role = {}; for (const li of ks) role[li] = layerRole(li);
@@ -260,6 +261,8 @@ function change(reason) {
   const band = vibeBand(inDrop ? 'peak' : reason === 'breakdown' ? 'calm' : live.band);
   const beats = FADE[reason] !== undefined ? FADE[reason] : 4;
   const now = typeof plannedScene === 'function' ? plannedScene() : null;
+  // a part with your own visuals (plsegs.js): Keep leaves the picture alone, and variations never replace your choice
+  if (now && now.pinned && (now.keep ? reason !== 'next' : reason === 'vary')) { agent.seenPlan = now; agent.lookBeat = comp.beats; return; }
   const planned = reason !== 'vary' && reason !== 'next' ? validScene(now) : null;
   let sc = planned;
   if (!sc && reason === 'vary' && agent.scene && agent.scene.band === band) sc = varyScene({ ...agent.scene, drop: inDrop });
