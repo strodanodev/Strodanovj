@@ -129,14 +129,14 @@ function clipOptsTick() {
 function videoClipOpts(c, L) {
   const v = c.video, d = () => clipDur(c), sec = f => (f * (d() || 0)).toFixed(2) + 's';
   const box = el('div', null, el('h4', { textContent: 'Clip playback' }));
-  const inF = fld('In', 0, 1, 0.001, () => c.inP || 0, f => { c.inP = Math.min(f, (c.outP ?? 1) - 0.01); }, sec);
+  const inF = fld('In', 0, 1, 0.001, () => c.inP || 0, f => { c.inP = Math.min(f, (c.outP ?? 1) - 0.01); posterClip(c); }, sec);
   const outF = fld('Out', 0, 1, 0.001, () => c.outP ?? 1, f => { c.outP = Math.max(f, (c.inP || 0) + 0.01); }, sec);
   const here = () => (d() ? v.currentTime / d() : 0);
   box.append(inF, outF,
     el('div', { className: 'fld' },
-      el('button', { textContent: 'In = here', title: 'Set the in point to the current position', onclick: () => { c.inP = Math.min(here(), (c.outP ?? 1) - 0.01); ui.propsDirty = true; } }),
+      el('button', { textContent: 'In = here', title: 'Set the in point to the current position', onclick: () => { c.inP = Math.min(here(), (c.outP ?? 1) - 0.01); posterClip(c); ui.propsDirty = true; } }),
       el('button', { textContent: 'Out = here', title: 'Set the out point to the current position', onclick: () => { c.outP = Math.max(here(), (c.inP || 0) + 0.01); ui.propsDirty = true; } }),
-      el('button', { textContent: 'Reset', title: 'Whole clip, loop, no beat-sync', onclick: () => { delete c.inP; delete c.outP; delete c.loopMode; delete c.syncBeats; v.playbackRate = Math.max(0.0625, c.speed || 1); ui.propsDirty = true; } })),
+      el('button', { textContent: 'Reset', title: 'Whole clip, loop, no beat-sync', onclick: () => { delete c.inP; delete c.outP; delete c.loopMode; delete c.syncBeats; v.playbackRate = Math.max(0.0625, c.speed || 1); posterClip(c); ui.propsDirty = true; } })),
     el('div', { className: 'fld' }, el('label', { textContent: 'When it ends' }),
       el('select', { onchange: e => { c.loopMode = e.target.value; c.done = false; } }, ...LOOP_MODES.map(([k, n]) => el('option', { value: k, textContent: n, selected: k === (c.loopMode || 'loop') })))),
     el('div', { className: 'fld' }, el('label', { textContent: 'Beat sync', title: 'Stretch the clip (in to out) to last exactly this long at the current tempo' }),
