@@ -3,7 +3,8 @@
 // to sleep, quitting asks first, there is no Reload shortcut (it would end the show), a crashed page reloads itself (the
 // composition comes back from its autosave), and output windows open without a pop-up blocker.
 // `electron . --selftest` loads the app, opens an output window, simulates a GPU reset and prints a JSON report
-// (exit code 0 = all good); CI runs it before packaging (STRODANO_SOFTWARE_GL=1 there: the runners have no GPU).
+// (exit code 0 = all good); CI runs it before packaging (STRODANO_SOFTWARE_GL=1 on Windows runners, which have no GPU;
+// macOS runners have a virtual Metal GPU and SwiftShader does not start there).
 'use strict';
 const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell } = require('electron');
 const path = require('path');
@@ -75,7 +76,7 @@ function runSelftest() {
     app.exit(ok ? 0 : 1);
   };
   setTimeout(() => finish(false, 'timed out'), 90000);
-  wc.on('console-message', (e, level, message) => { if (level >= 3) (report.consoleErrors = report.consoleErrors || []).push(String(message).slice(0, 200)); });
+  wc.on('console-message', e => { if (e.level === 'error') (report.consoleErrors = report.consoleErrors || []).push(String(e.message).slice(0, 200)); });
   wc.on('did-finish-load', async () => {
     loads++;
     try {

@@ -37,7 +37,8 @@ jobs:
         working-directory: desktop
         timeout-minutes: 5
         env:
-          STRODANO_SOFTWARE_GL: "1"
+          # Windows runners have no GPU: use SwiftShader. macOS runners have a virtual Metal GPU (SwiftShader cannot start there).
+          STRODANO_SOFTWARE_GL: ${{ matrix.target == 'win' && '1' || '' }}
         run: npx electron . --selftest
       - name: Build installers
         working-directory: desktop
