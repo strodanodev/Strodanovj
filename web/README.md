@@ -13,7 +13,10 @@ Runs in Chrome or Edge with nothing to install or compile.
 - `camera.js`, `text.js`, `smart3d.js` - camera clips and camera input, text clips, 3D generators (three.js, in `vendor/`)
 - `hands.js`, `inputs.js` - hand tracking and gestures (MediaPipe, in `vendor/mediapipe/`), and the input picker on every slider
 - `analysis.js`, `audio.js`, `crate.js`, `mix.js`, `score.js`, `segments.js`, `cues.js`, `follow.js`, `dj.js` - DJ mode (and `report.js`, the analysis report page): track analysis, the two decks and the music clock, the track list, auto-mix and autopilot, and the deck panel
-- `ui.js` - interface and main loop
+- `core.js` - shared helpers and one frame of the show, used by both pages
+- `ui.js` - interface and main loop (desktop page)
+- `mobile.html`, `mobileui.js`, `medialib.js`, `sw.js`, `manifest.webmanifest` - the phone edition (installable web app)
+- `vdoin.js` - web link input: show a phone's broadcast as a clip on the desktop
 - `index.html` - layout and styles
 
 Inside the app, **Shader Editor** compiles custom effects and generators as you type, and loads single-pass ISF shaders.
@@ -71,3 +74,16 @@ Inside the app, **Shader Editor** compiles custom effects and generators as you 
 **Show safety:** **BLACK** (or Shift+B, or a mapped pad) fades the whole output to black and back. If the graphics driver resets during a show, the app reloads itself and puts back the playing clips, the blackout and the output windows. While an output window is live, closing the page asks first; the desktop app also keeps the display awake and has no reload shortcut.
 
 Limits of running in a browser: video codecs are whatever the browser plays (H.264 MP4/MOV yes; ProRes, HAP and DXV no), FFGL plugins cannot load, and without a media folder the clips must be relinked after a reload by adding the same files again.
+
+## Phone edition
+
+Open `mobile.html` on a phone (it has to come from an `https://` address, or `localhost` while developing). Chrome on Android offers **Install**; on iPhone tap **Share > Add to Home Screen**. Installed, it opens full screen and works offline (except broadcasting).
+
+- **Library:** **Import photos & videos** copies them into the app, so they are still there next time. Delete them here to free space.
+- **Build:** tap **+** on a slot and pick a photo or video, a visual, a 3D scene, text or the camera. Tap a clip to play it, move it, set what happens when it ends, its speed or beat sync. **Layer...** sets the blend, the change between clips, effects and the lock.
+- **Perform:** **Scenes** play a whole column; tap a clip to play it on its layer; **Level**, **B** (hide) and **X** (clear) per layer. Hold an **Effect** pad for as long as you want it (or turn on **Latch**). **Snapshots:** tap an empty one to save the show, tap again to bring it back, hold to save over it. **BLACK** fades the output out and back.
+- **Auto:** press **Start auto** and point the phone at the music: the Agent plays your clips with the beat, drops and breakdowns it hears. Or play a **music file** from the phone, or just tap the tempo. Pick a **Vibe**, set the **Rules** (how often the scene changes, strobe on drops, new scene on a new song) and tell it what each scene is for (**Calm / Groove / Peak / Drop**). Tap any clip to take over that layer for a while.
+- **Broadcast:** **Go live** sends the output as a web link. Others scan the **QR code**, or you **Share** the link. They watch in any browser or add it to OBS as a Browser Source. Pick **Wi-Fi**, **Mobile data** or **High** quality. Each viewer uses your upload, so for more than 2 or 3 viewers send it to a computer and share from there.
+- **To NDI:** in the desktop app, **Sources > Web link input (phone)**, paste the phone's link, **Show on a layer**, then set a screen's display to **NDI** in Advanced Output.
+
+Keep the app open and the screen on while live: phones pause web pages in the background.

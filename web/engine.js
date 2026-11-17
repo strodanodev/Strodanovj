@@ -683,7 +683,7 @@ window.addEventListener('beforeunload', () => { if (!window.vjKeepOutputs) scree
 
 // ---------- save / load ----------
 function compToJSON() {
-  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: typeof agentFxMix === 'function' ? agentFxMix(e) : e.mix, bypass: e.bypass, mod: e.mod }));   // your mix, not the Agent's drop gate
+  const fxJ = ch => ch.filter(e => !e.padHeld).map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: typeof agentFxMix === 'function' ? agentFxMix(e) : e.mix, bypass: e.bypass, mod: e.mod }));   // your mix, not the Agent's drop gate; effects held on a phone FX pad (padHeld) are momentary and never saved
   return {
     app: 'Strodano VJ', version: 2, w: comp.w, h: comp.h, columns: comp.columns, master: comp.master, crossfade: comp.crossfade, bpm: comp.bpm,
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),

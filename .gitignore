@@ -3,3 +3,6 @@ out/
 .DS_Store
 *.user
 web/stock/
+
+# phone edition build (tools/build-mobile.mjs)
+dist-mobile/
