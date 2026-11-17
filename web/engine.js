@@ -251,7 +251,7 @@ function addMediaFiles(files) {
     added.push(m);
     // relink clips that were saved with this file name
     comp.layers.forEach((L, li) => L.clips.forEach((c, ci) => {
-      if (c && c.missing && c.fileName === m.name) { const n = mediaClip(m); n.speed = c.speed; n.name = c.name; L.clips[ci] = n; }
+      if (c && c.missing && c.fileName === m.name) { const n = mediaClip(m); n.speed = c.speed; n.name = c.name; if (typeof clipOptsCopy === 'function') clipOptsCopy(c, n); L.clips[ci] = n; }
     }));
   }
   ui.gridDirty = ui.browserDirty = true;
@@ -293,6 +293,23 @@ function freeClip(c) {
   if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].free) CLIP_TYPES[c.type].free(c);
   if (c.video) { c.video.pause(); c.video.removeAttribute('src'); c.video.load(); }
   if (c.tex) gl.deleteTexture(c.tex);
+}
+// True when a video has a new frame since its last upload, so an unchanged frame is not re-uploaded to the GPU (a 1080p
+// upload is ~0.3 ms; paused clips now cost nothing, and a 30 fps clip uploads 30 times a second, not once per render).
+// New frames are reported by requestVideoFrameCallback, but only while this page is being drawn: when the control window
+// is minimised and the show runs from an output window, the callbacks stop. So when they have been quiet for 100 ms, a
+// change of currentTime counts as a new frame instead (otherwise the video would freeze on the output).
+function videoFrameNew(c) {
+  const v = c.video, now = performance.now();
+  if (v.requestVideoFrameCallback && c._rvfcVideo !== v) {
+    c._rvfcVideo = v; c._fresh = true;
+    const cb = () => { if (c.video !== v) return; c._fresh = true; c._rvfcAt = performance.now(); v.requestVideoFrameCallback(cb); };
+    v.requestVideoFrameCallback(cb);
+  }
+  const moved = v.currentTime !== c._upT;
+  const go = c._fresh || (moved && !(c._rvfcAt && now - c._rvfcAt < 100));
+  if (go) { c._fresh = false; c._upT = v.currentTime; }
+  return go;
 }
 function uploadClip(c) {
   const src = c.video || c.img;
@@ -369,8 +386,10 @@ function trigger(li, ci) {
   const L = comp.layers[li], c = L && L.clips[ci];
   if (!c || c.missing || c.error) return;
   if (typeof quantHold === 'function' && quantHold(li, ci)) return;   // mix.js: wait for the next beat or bar while music plays
+  if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
   if (c.video) {
-    try { c.video.currentTime = 0; } catch (e) {}
+    const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // clipopts.js: the clip's in point
+    try { c.video.currentTime = start; } catch (e) {}
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
     if (c.speed > 0) c.video.play().catch(() => {});
     if (L.active === ci) return;
@@ -424,7 +443,7 @@ function drawSource(L, c, f) {
     bindFbo(f); gl.useProgram(prog.p); setDefUniforms(d, prog, modParams(c.params, c.mod), comp); tri();
     return true;
   }
-  if (c.video ? c.video.readyState >= 2 : c.dirty) { uploadClip(c); c.dirty = false; if (c.video) { c.w = c.video.videoWidth; c.h = c.video.videoHeight; } }
+  if (c.video ? c.video.readyState >= 2 && (!c.ready || videoFrameNew(c)) : c.dirty) { uploadClip(c); c.dirty = false; if (c.video) { c.w = c.video.videoWidth; c.h = c.video.videoHeight; } }
   if (!c.ready || !c.w || !c.h) return false;
   const va = c.w / c.h, ca = comp.w / comp.h;
   let sx = 1, sy = 1;
@@ -489,7 +508,7 @@ function renderComp() {
   bindFbo(rtDst(rt));
   gl.useProgram(copyProg.p);
   bindTex(0, rtSrc(rt).tex);
-  gl.uniform1i(copyProg.loc('tex'), 0); gl.uniform1f(copyProg.loc('gain'), comp.master);
+  gl.uniform1i(copyProg.loc('tex'), 0); gl.uniform1f(copyProg.loc('gain'), comp.master * (typeof outGain === 'function' ? outGain() : 1));   // outGain: blackout (safety.js)
   tri(); rtSwap(rt);
   comp.outTex = rtSrc(rt).tex;
 }
@@ -616,7 +635,8 @@ canvas{width:100vw;height:100vh;display:block}#h{position:fixed;left:12px;bottom
 }
 function closeOutput(i) { const s = screens[i]; if (s.win && !s.win.closed) s.win.close(); s.win = null; s.ctx = null; }
 const liveScreens = () => screens.filter(s => s.win && !s.win.closed);
-window.addEventListener('beforeunload', () => screens.forEach((s, i) => closeOutput(i)));
+// Output windows close with the page, except on a GPU-recovery reload (safety.js), where they stay open to be picked up again.
+window.addEventListener('beforeunload', () => { if (!window.vjKeepOutputs) screens.forEach((s, i) => closeOutput(i)); });
 
 // ---------- save / load ----------
 function compToJSON() {
@@ -626,10 +646,11 @@ function compToJSON() {
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),
     fx: fxJ(comp.fx),
     agentTags: comp.agentTags || {},   // the Agent's column tags (agent.js)
+    snapshots: typeof snapsToJSON === 'function' ? snapsToJSON() : undefined,   // snapshots.js
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
     layers: comp.layers.map(L => ({
       name: L.name, locked: L.locked || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed })),
+      clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
@@ -660,7 +681,7 @@ function loadComp(j) {
       else if (c.fileName) {
         const m = media.find(x => x.name === c.fileName);
         const n = m ? mediaClip(m) : { type: c.type === 'image' ? 'image' : 'video', missing: true, fileName: c.fileName, thumb: null };
-        n.name = c.name || c.fileName; n.speed = num(c.speed, 1); L.clips[ci] = n;
+        n.name = c.name || c.fileName; n.speed = num(c.speed, 1); if (typeof clipOptsFrom === 'function') clipOptsFrom(n, c); L.clips[ci] = n;
       }
     });
   }
@@ -681,12 +702,14 @@ function loadComp(j) {
     }
   }
   if (typeof scoreFromJSON === 'function') scoreFromJSON(j.score);   // after the layers and effects exist: looks refer to them
+  if (typeof snapsFromJSON === 'function') snapsFromJSON(j.snapshots);
   ui.gridDirty = ui.propsDirty = ui.browserDirty = true;
   return true;
 }
 function demoComp() {
   resetComp(3, 8);
   if (typeof scoreFromJSON === 'function') scoreFromJSON(null);   // a new composition starts with no section looks
+  if (typeof snapsFromJSON === 'function') snapsFromJSON(null);
   [['Plasma', 'Tunnel', 'Gradient'], ['Lines', 'Checkerboard'], ['Beat Flash']].forEach((row, li) => row.forEach((g, ci) => { comp.layers[li].clips[ci] = genClip(g); }));
   comp.layers[1].blend = 1; comp.layers[2].blend = 1;
   // 4 different random 3D visuals (smart3d.js) in the first free slots: one per layer, the 4th on layer 1. Layer 2's starts playing.

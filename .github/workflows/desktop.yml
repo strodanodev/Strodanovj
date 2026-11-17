@@ -1,0 +1,73 @@
+name: desktop
+
+# The Strodano VJ desktop app (desktop/, Electron around web/): Windows installer and macOS disk images.
+# Every run: self-test (desktop/main.js --selftest, software GL) and installers as artifacts.
+# A v* tag also collects them into a DRAFT GitHub release, which a person publishes by hand.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+          - os: macos-latest
+            target: mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+      - name: Self-test (boot, shaders, output window, GPU-reset recovery)
+        working-directory: desktop
+        timeout-minutes: 5
+        env:
+          STRODANO_SOFTWARE_GL: "1"
+        run: npx electron . --selftest
+      - name: Build installers
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StrodanoVJ-desktop-${{ matrix.target }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Strodano VJ ${{ github.ref_name }}
+          files: dist/*
+          body: |
+            Strodano VJ desktop app.
+
+            - **Windows:** `StrodanoVJ-*-win-x64.exe`. The installer is not code-signed: if SmartScreen warns, choose *More info* > *Run anyway*.
+            - **Mac (Apple Silicon):** `StrodanoVJ-*-mac-arm64.dmg`. **Mac (Intel):** `StrodanoVJ-*-mac-x64.dmg`. Not notarised: the first time, right-click the app > *Open*, or allow it under *System Settings > Privacy & Security*.

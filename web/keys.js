@@ -8,6 +8,8 @@ const KEYS_HELP = [
   ['Up / Down', 'Select the layer above / below'],
   ['B  /  S  /  X', 'Bypass / solo / eject the selected layer'],
   ['Shift + X', 'Eject all layers'],
+  ['Shift + B', 'Blackout: fade the output to black, and back'],
+  ['F1 ... F8', 'Recall snapshot 1 ... 8 (Shift: store)'],
   ['Left / Right', 'Crossfader a step toward A / B'],
   ['Shift + Left / Right', 'Crossfader all the way to A / B'],
   ['Space', 'Tap tempo'],
@@ -34,7 +36,8 @@ function onShortcut(e) {
   if (e.key === 'Escape' && !$('keysModal').hidden) { toggleKeysHelp(false); return true; }
   if (e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target) || !$('shModal').hidden) return false;
   if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) { toggleKeysHelp(); return true; }
-  const L = comp.layers[sel.l], digit = /^Digit(\d)$/.exec(e.code);
+  const L = comp.layers[sel.l], digit = /^Digit(\d)$/.exec(e.code), fkey = /^F([1-8])$/.exec(e.code);
+  if (fkey) { if (!e.repeat) { if (e.shiftKey) snapStore(+fkey[1] - 1); else snapRecall(+fkey[1] - 1); } return true; }   // snapshots.js
   if (digit) {
     const col = (+digit[1] + 9) % 10;   // 1 -> column 1 ... 0 -> column 10
     if (e.repeat || col >= comp.columns) return true;
@@ -47,7 +50,7 @@ function onShortcut(e) {
     case 'ArrowDown': selectLayer(sel.l - 1); return true;
     case 'ArrowLeft': setCrossfade(e.shiftKey ? 0 : Math.round(comp.crossfade * 10 - 1) / 10); return true;
     case 'ArrowRight': setCrossfade(e.shiftKey ? 1 : Math.round(comp.crossfade * 10 + 1) / 10); return true;
-    case 'KeyB': if (!e.repeat && L) { L.bypass = !L.bypass; ui.gridDirty = true; } return true;
+    case 'KeyB': if (!e.repeat) { if (e.shiftKey) setBlackout(); else if (L) { L.bypass = !L.bypass; ui.gridDirty = true; } } return true;
     case 'KeyS': if (!e.repeat && L) { L.solo = !L.solo; ui.gridDirty = true; } return true;
     case 'KeyX': if (!e.repeat) { if (e.shiftKey) comp.layers.forEach((_, i) => eject(i)); else eject(sel.l); } return true;
     case 'Space': if (!e.repeat) $('tap').click(); return true;

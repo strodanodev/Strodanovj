@@ -274,6 +274,10 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .in-out{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden} .in-out i{display:block;height:100%;width:0;background:var(--acc)}
 .hand-preview{width:100%;display:block;background:#000;border:1px solid var(--line);border-radius:3px;margin:4px 0}
 .hand-stat{font:11px var(--mono,monospace)} .hand-stat.bad{color:var(--warn,#d29922)}
+/* blackout button (safety.js), snapshots (snapshots.js) */
+.black-btn{font-weight:600;letter-spacing:.06em} .black-btn.on{background:#000;color:#fff;border-color:var(--bad,#cb2431);box-shadow:0 0 0 1px var(--bad,#cb2431)}
+.snap-row{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0} .snap{min-width:30px;padding:4px 0;font:12px var(--mono,monospace)}
+.snap.full{background:var(--acc-btn,rgba(255,122,26,.2));color:var(--acc);border-color:var(--acc)} .snap.pending{outline:1px dashed var(--warn,#d29922);outline-offset:1px}
 </style>
 </head>
 <body>
@@ -370,6 +374,9 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="smart3d.js"></script>
 <script src="hands.js"></script>
 <script src="inputs.js"></script>
+<script src="safety.js"></script>
+<script src="clipopts.js"></script>
+<script src="snapshots.js"></script>
 <script src="preview.js"></script>
 <script src="ui.js"></script>
 </body>

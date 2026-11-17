@@ -38,6 +38,8 @@ function midiTarget(id) {
   if (a === 'column') return +b < comp.columns ? { fire: () => triggerColumn(+b) } : null;
   if (a === 'clip') return L && +c < comp.columns ? { fire: () => trigger(+b, +c) } : null;
   if (a === 'deck') return djMidiTarget(b, c);
+  if (a === 'blackout') return { fire: () => setBlackout() };   // safety.js
+  if (a === 'snap') return +b < SNAP_COUNT ? { fire: () => snapRecall(+b) } : null;   // snapshots.js
   if (a === 'agent') return typeof agentMidiTarget === 'function' ? agentMidiTarget(b) : null;
   if (a !== 'layer' || !L) return null;
   if (c === 'opacity') return { set: v => { L.opacity = v; } };
@@ -62,6 +64,8 @@ function midiLabel(id) {
   if (a === 'column') return 'Column ' + (+b + 1);
   if (a === 'clip') return ln(b) + ', clip ' + (+c + 1);
   if (a === 'deck') return 'Deck ' + b + ' ' + c;
+  if (a === 'blackout') return 'Blackout';
+  if (a === 'snap') return 'Snapshot ' + (+b + 1);
   if (a === 'agent') return { on: 'Agent on/off', next: 'Agent next look', hold: 'Agent hold', drop: 'Agent drop', rec: 'Record' }[b] || 'Agent ' + b;
   if (a === 'layer') return ln(b) + ' ' + c;
   return id;

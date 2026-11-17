@@ -162,7 +162,7 @@ function renderProps() {
     const fm = fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; reflectMidi('master', v); });
     const fx = fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; });
     fm.slider.dataset.midi = 'master'; fx.slider.dataset.midi = 'crossfade';
-    p.append(fm, fx, el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx), midiPanel());
+    p.append(fm, fx, el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx), snapPanel(), midiPanel());
   } else if (propTab === 'layer') {
     const fo = fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; reflectMidi('layer:' + sel.l + ':opacity', v); });
     fo.slider.dataset.midi = 'layer:' + sel.l + ':opacity';
@@ -188,7 +188,8 @@ function renderProps() {
       posSlider = { input: pos.slider, video: v };
       p.append(pos, el('div', { className: 'fld' },
         el('button', { textContent: 'Play / Pause', onclick: () => { if (v.paused) v.play().catch(() => {}); else v.pause(); } }),
-        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = 0; } }), el('button', { textContent: '1x', onclick: () => { c.speed = 1; v.playbackRate = 1; ui.propsDirty = true; } })));
+        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = clipStart(c); c.sync0 = comp.beats; c.done = false; } }), el('button', { textContent: '1x', onclick: () => { c.speed = 1; v.playbackRate = 1; ui.propsDirty = true; } })),
+        ...videoClipOpts(c, L));
     } else if (c.type === 'image') p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}` }));
     else if (c.type === 'gen') {
       const d = DEFS.gen.get(c.gen);
@@ -522,6 +523,7 @@ function frame() {
     audioTick();
     camTick(); handsTick();
     update(dt, realDt);
+    vjTick(realDt);   // blackout fade, clip in / out / beat sync, snapshot on the bar (safety.js, clipopts.js, snapshots.js)
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
     if (!document.hidden) {
