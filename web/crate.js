@@ -152,7 +152,7 @@ let crateEl = null, crateRebuild = true;
 function crateDirty() { crateRebuild = true; if (typeof plDirty === 'function') plDirty(); }
 function buildCrate() {
   crateEl = el('div', { className: 'crate' });
-  dropTarget(crateEl, hasFiles, e => { const n = crateAdd(e.dataTransfer.files); setStatus(n ? n + ' track(s) added to the list' : 'Drop audio files (MP3, WAV, FLAC, M4A...) here'); });
+  dropTarget(crateEl, hasFiles, e => { rememberDropped(e.dataTransfer); const n = crateAdd(e.dataTransfer.files); setStatus(n ? n + ' track(s) added to the list' : 'Drop audio files (MP3, WAV, FLAC, M4A...) here'); });
   return crateEl;
 }
 function renderCrate() {
@@ -162,7 +162,7 @@ function renderCrate() {
   const head = el('div', { className: 'ch' },
     el('b', { textContent: 'Tracks' }),
     el('span', { className: 'hint', textContent: crate.tracks.length ? (ref ? 'Ranked as next track for deck ' + ref.id + ' by tempo, key and energy' : 'Play a track to get suggestions') : 'Drop audio files here or use Add tracks. The beat, key and energy are worked out once and remembered.' }),
-    el('button', { textContent: 'Add tracks...', onclick: () => $('crateInput').click() }));
+    el('button', { textContent: 'Add tracks...', onclick: addTracksPicker }));
   const rows = crate.tracks.slice().sort((a, b) => {
     const sa = sug.get(a), sb = sug.get(b);
     if (sa && sb) return sa.rank - sb.rank;
@@ -195,6 +195,8 @@ function tickCrate() {
   if (ref !== tickCrate.ref || now - crateRefT > 3000) { tickCrate.ref = ref; crateRefT = now; crateRebuild = true; }
   if (crateRebuild && djUI.open) renderCrate();
 }
+// Add tracks / Add songs: the system picker when the browser can remember the files for the next start (mediafolder.js).
+const addTracksPicker = () => pickFiles('audio', 'crateInput', files => { const n = crateAdd(files); setStatus(n ? n + ' track(s) added' : 'Those tracks are already in the list'); });
 function initCrate() {
   $('crateInput').addEventListener('change', e => { crateAdd(e.target.files); e.target.value = ''; });
 }

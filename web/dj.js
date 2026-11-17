@@ -29,6 +29,7 @@ function buildDeck(d) {
       el('button', { textContent: 'Bar 1', title: 'If the bright bar lines sit on the wrong beat: press this on the first beat of a bar', onclick: () => deckSetDownbeat(d) }),
       el('span', { textContent: 'Tempo' }), u.tempo, u.rate, el('span', { textContent: 'Bass' }), u.bass, el('span', { textContent: 'Vol' }), u.vol));
   dropTarget(u.root, hasFiles, e => {
+    rememberDropped(e.dataTransfer);
     const f = [...e.dataTransfer.files].find(isAudioFile);
     if (f) deckLoad(d, f); else setStatus('Drop an audio file (MP3, WAV, FLAC, M4A...) on a deck');
   });

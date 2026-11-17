@@ -44,7 +44,7 @@ function putMedia(list, li, ci, onlyFree) {
   }
 }
 function dropOnCell(li, ci, e) {
-  if (hasFiles(e)) { putMedia(addMediaFiles(e.dataTransfer.files), li, ci, false); return; }
+  if (hasFiles(e)) { rememberDropped(e.dataTransfer); putMedia(addMediaFiles(e.dataTransfer.files), li, ci, false); return; }
   if (!drag) return;
   if (drag.kind === 'media') setClip(li, ci, mediaClip(drag.m));
   else if (drag.kind === 'gen') setClip(li, ci, genClip(drag.name));
@@ -178,7 +178,8 @@ function renderProps() {
     const c = L.clips[sel.c];
     if (!c) { p.append(el('div', { className: 'hint', textContent: 'Select a clip in the grid.' })); return; }
     p.append(el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: c.name, onchange: e => { c.name = e.target.value || c.name; ui.gridDirty = true; } })));
-    if (c.missing) p.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: `"${c.fileName}" is not loaded. Add that file again (Add media, or drop it anywhere) to relink it.` }));
+    if (c.missing) p.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: `"${c.fileName}" is not loaded. Find it to relink it (or drop it anywhere).` }),
+      el('button', { className: 'on', textContent: 'Find missing files...', title: 'Pick this file (and any other missing ones): they relink by name and are remembered for next start', onclick: findMissingFiles }));
     else if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].props) CLIP_TYPES[c.type].props(c, p, L);
     else if (c.type === 'video') {
       const v = c.video;
@@ -207,7 +208,7 @@ function renderBrowser() {
   b.append(tabs([['files', 'Files'], ['fx', 'Effects'], ['src', 'Sources']], browserTab, t => { browserTab = t; ui.browserDirty = true; }));
   const list = el('div', { className: 'list' });
   if (browserTab === 'files') {
-    b.append(el('div', { className: 'fld' }, el('button', { textContent: 'Add media...', onclick: () => $('mediaInput').click() }),
+    b.append(el('div', { className: 'fld' }, el('button', { textContent: 'Add media...', onclick: addMediaPicker }),
       canPickFolder ? el('button', { textContent: mediaFolder.handle ? 'Change folder...' : 'Media folder...', title: 'Pick a folder once; clips relink from it on every start', onclick: pickMediaFolder }) : null));
     if (mediaFolder.handle) {
       const st = mediaFolder.state, nm = mediaFolder.handle.name;
@@ -215,9 +216,16 @@ function renderBrowser() {
         st === 'needs-permission' ? el('button', { className: 'on', textContent: 'Reconnect', onclick: reconnectMediaFolder }) : el('button', { textContent: 'Rescan', onclick: loadMediaFolder }),
         el('button', { textContent: 'Forget', title: 'Stop remembering this folder', onclick: forgetMediaFolder })));
     }
+    if (looseFiles.handles.length) {
+      const pend = looseFiles.pending.length;
+      b.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1' }, textContent: pend ? `${pend} remembered file(s) need permission again` : `${looseFiles.handles.length} added file(s) remembered for next start` }),
+        pend ? el('button', { className: 'on', textContent: 'Reconnect', onclick: reconnectMediaFolder }) : null,
+        el('button', { textContent: 'Forget', title: 'Stop reloading the files you added one by one', onclick: forgetLooseFiles })));
+    } else if (media.length && !mediaFolder.handle && !canKeepFiles) b.append(el('div', { className: 'hint', textContent: 'This browser cannot remember added files: they are gone after a refresh. Use Chrome or Edge, or pick a Media folder.' }));
     b.append(el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
-    const missing = new Set();
-    comp.layers.forEach(L => L.clips.forEach(c => { if (c && c.missing) missing.add(c.fileName); }));
+    const missing = new Set(missingNames());
+    if (missing.size) b.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1', color: 'var(--bad)' }, textContent: missing.size + ' clip file(s) missing' }),
+      el('button', { className: 'on', textContent: 'Find missing files...', title: 'Pick the missing files (several at once): they relink by name and are remembered for next start', onclick: findMissingFiles })));
     missing.forEach(n => list.append(el('div', { className: 'miss', textContent: 'Missing: ' + n, title: 'Add this file again to relink it' })));
     media.forEach(m => {
       const d = el('div', { textContent: m.name, title: m.name, ondblclick: () => { const ci = sel.c >= 0 && !comp.layers[sel.l].clips[sel.c] ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, mediaClip(m)); else setStatus('No free clip slot on the selected layer'); } });
@@ -459,7 +467,7 @@ function initMenu() {
       const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(compToJSON(), null, 1)], { type: 'application/json' })), download: 'composition.svj' });
       document.body.append(a); a.click(); a.remove(); setStatus('Saved composition.svj to your downloads');
     },
-    media: () => $('mediaInput').click(),
+    media: addMediaPicker,
     addLayer: () => { addLayer(); sel.l = comp.layers.length - 1; sel.c = -1; ui.propsDirty = true; },
     addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
     delLayer: () => { const L = comp.layers[sel.l]; if (L) armThen($('delLayerBtn'), 'delete ' + L.name + ' (the selected layer)', () => deleteLayer(sel.l)); },
@@ -476,12 +484,7 @@ function initMenu() {
   $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
   $('resSel').addEventListener('change', e => { const [w, h] = e.target.value.split('x').map(Number); resizeComp(w, h); ui.propsDirty = true; });
-  $('mediaInput').addEventListener('change', e => {
-    const added = addMediaFiles(e.target.files);
-    const fresh = added.filter(m => !comp.layers.some(L => L.clips.some(c => c && c.fileName === m.name)));
-    if (fresh.length) putMedia(fresh, sel.l, 0, true);
-    browserTab = 'files'; ui.browserDirty = true; e.target.value = '';
-  });
+  $('mediaInput').addEventListener('change', e => { onMediaFiles(e.target.files); e.target.value = ''; });
   $('compInput').addEventListener('change', async e => {
     const f = e.target.files[0];
     if (!f) return;
@@ -490,8 +493,16 @@ function initMenu() {
   });
   // Files dropped anywhere outside a clip slot go to the media pool (and relink missing clips).
   window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
-  window.addEventListener('drop', e => { if (hasFiles(e)) { e.preventDefault(); const a = addMediaFiles(e.dataTransfer.files); if (a.length) { browserTab = 'files'; setStatus(a.length + ' file(s) added to Files'); } } });
+  window.addEventListener('drop', e => { if (hasFiles(e)) { e.preventDefault(); rememberDropped(e.dataTransfer); const a = addMediaFiles(e.dataTransfer.files); if (a.length) { browserTab = 'files'; setStatus(a.length + ' file(s) added to Files'); } } });
 }
+// Add media: new files fill free slots on the selected layer; files that match saved clips just relink them.
+function onMediaFiles(files) {
+  const added = addMediaFiles(files);
+  const fresh = added.filter(m => !comp.layers.some(L => L.clips.some(c => c && c.fileName === m.name)));
+  if (fresh.length) putMedia(fresh, sel.l, 0, true);
+  browserTab = 'files'; ui.browserDirty = true;
+}
+const addMediaPicker = () => pickFiles('media', 'mediaInput', onMediaFiles);
 function syncTransport() {
   $('bpm').value = comp.bpm.toFixed(1); $('xf').value = comp.crossfade;
   const r = comp.w + 'x' + comp.h, s = $('resSel');
@@ -608,7 +619,6 @@ function tickUI() {
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) demoComp();
-  else if (comp.layers.some(L => L.clips.some(c => c && c.missing))) setStatus('Session restored. Add your video files again to relink the clips marked "missing file".');
   syncTransport();
   initMediaFolder();
   setInterval(autosave, 2000);

@@ -168,7 +168,7 @@ function initPlaylist() {
     const idx = plDropIndex(e.clientY);
     plMarkDrop(-1);
     if (hasFiles(e)) {
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault(); e.stopPropagation(); rememberDropped(e.dataTransfer);
       const files = [...e.dataTransfer.files], audioF = files.filter(isAudioFile);
       if (!audioF.length) { setStatus('Drop songs here (MP3, WAV, FLAC, M4A...). Videos go to Files.'); return; }
       const before = new Set(crate.tracks);
@@ -210,7 +210,7 @@ function renderPlHead() {
   const tab = (v, label, title) => el('button', { textContent: label, title, className: pl.view === v ? 'on' : '', onclick: () => plSetView(v) });
   pl.locks = el('span', { className: 'pllocks' });
   h.append(el('b', { textContent: 'Playlist' }),
-    el('button', { textContent: 'Add songs...', title: 'Add songs to the end of the playlist (or drop them anywhere on it)', onclick: () => $('crateInput').click() }),
+    el('button', { textContent: 'Add songs...', title: 'Add songs to the end of the playlist (or drop them anywhere on it)', onclick: addTracksPicker }),
     el('span', { className: 'plleg' }, ...['intro', 'build', 'drop', 'breakdown'].map(s => el('i', { className: 'sec-' + s, textContent: SECTION_NAMES[s] }))),
     pl.locks,
     el('span', { className: 'seg' }, tab('playlist', 'Playlist', 'Songs in play order, with transitions and planned visuals'), tab('layers', 'Layers', 'The clip grid')));
@@ -255,7 +255,7 @@ function renderPlaylist() {
     list.append(el('div', { className: 'plempty' },
       el('b', { textContent: 'Drop songs here' }),
       el('span', { textContent: 'MP3, WAV, FLAC, M4A... The Agent finds the tempo, key, build-ups and drops of each song, plans visuals for every part, and mixes them in this order when you press Start.' }),
-      el('button', { textContent: 'Add songs...', onclick: () => $('crateInput').click() })));
+      el('button', { textContent: 'Add songs...', onclick: addTracksPicker })));
     return;
   }
   crate.tracks.forEach((t, i) => {
