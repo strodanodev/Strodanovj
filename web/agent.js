@@ -14,7 +14,7 @@
 const AGENT_KEY = 'strodano-vj-agent';
 const agent = {
   on: false, onSong: true, vary: 16, hold: false, vibe: 'club', strobe: 32,   // strobe: beats of flashes per drop (0 off, -1 the whole drop)
-  scene: null, lookBeat: 0, history: [], pending: null, holdUntil: -1, snap: '', mixLookBeat: -1e9, lastB: undefined,
+  scene: null, lookBeat: 0, recent: [], pending: null, holdUntil: -1, snap: '', mixLookBeat: -1e9, lastB: undefined,
   base: new Map(), vis: new Map(), fades: new Map(), written: new Map(),   // per layer object: your level, shown 0..1, fade, last opacity written
   dim: 1, build: 0, empty: false, scored: false,
   seenPlan: null, prerolled: null, fxGate: 0, gateB: undefined, dropBeat: -1e9, manualDrop: -1e9, wasDrop: false,
@@ -87,15 +87,54 @@ function layerRole(li) {
   return rs.size === 1 ? [...rs][0] : 'main';
 }
 const MAX_MAIN = 2;
-// A clip for layer li: from untagged columns or columns tagged for this band, not the one it plays now when possible.
-// Picture layers skip flash clips unless it is a drop.
+// ---------- variety ----------
+// Every clip the Agent puts up (and every clip a playlist plan uses) goes into a short memory; a clip in it is picked
+// again far less often, so the picture works through all your clips instead of flipping between two.
+const RECENT = 10;
+const recentKey = (li, ci) => li + ':' + ci;
+function remember(sc) {
+  if (!sc) return;
+  for (const li in sc.show) agent.recent.push(recentKey(+li, sc.show[li]));
+  if (agent.recent.length > RECENT * 3) agent.recent.splice(0, agent.recent.length - RECENT * 3);
+}
+// 1 for a clip not up lately, down to ~0.15 for one just used (each use in the memory makes it rarer).
+function freshness(li, ci) {
+  const k = recentKey(li, ci), r = agent.recent;
+  let w = 1;
+  for (let i = r.length - 1, age = 0; i >= 0 && age < RECENT; i--, age++) if (r[i] === k) w *= 0.15 + 0.6 * (age / RECENT);
+  return Math.max(0.03, w);
+}
+// How well a column suits this part: a column tagged for this band (or Drop on a drop) fits best, untagged columns
+// fit anything, the neighbouring band now and then, the opposite band (calm vs peak) rarely.
+function bandFit(ci, band, drop) {
+  const t = colTag(ci);
+  if (!t) return 2;
+  if (t === 'Drop') return drop ? 4 : band === 'peak' ? 1.2 : 0.1;
+  const tb = TAG_BAND[t];
+  if (tb === band) return 3;
+  return Math.abs(BANDS.indexOf(tb) - BANDS.indexOf(band)) === 1 ? 0.6 : 0.1;
+}
+function weighted(items, w) {
+  let sum = 0;
+  const ws = items.map(x => { const v = Math.max(0, w(x)); sum += v; return v; });
+  if (sum <= 0) return pick(items);
+  let r = Math.random() * sum;
+  for (let i = 0; i < items.length; i++) { r -= ws[i]; if (r <= 0) return items[i]; }
+  return items[items.length - 1];
+}
+const clipsFor = (li, drop) => { const cs = []; comp.layers[li].clips.forEach((c, ci) => { if (playable(c) && (drop || clipRole(c) !== 'fx')) cs.push(ci); }); return cs; };
+// How much layer li has to offer this part: its best clip's fit x freshness (picks which picture layers go up).
+const layerAppeal = (li, band, drop) => Math.max(0, ...clipsFor(li, drop).map(ci => bandFit(ci, band, drop) * freshness(li, ci)));
+// A clip for layer li: weighted by how well its column suits the part and how long since it was last up; never the
+// one it plays now when there is another. Picture layers skip flash clips unless it is a drop.
 function pickClipFor(li, band, avoid, drop) {
-  const cs = [];
-  comp.layers[li].clips.forEach((c, ci) => { if (playable(c) && (drop || clipRole(c) !== 'fx')) cs.push(ci); });
+  const cs = clipsFor(li, drop);
   if (!cs.length) return undefined;
-  const fit = cs.filter(ci => !colTag(ci) || TAG_BAND[colTag(ci)] === band);
-  const pool = fit.length ? fit : cs, fresh = pool.filter(ci => ci !== avoid);
-  return pick(fresh.length ? fresh : pool);
+  const pool = cs.length > 1 ? cs.filter(ci => ci !== avoid) : cs;
+  // a clip tagged for the opposite part (a Drop clip in a calm part) only when nothing else on the layer fits
+  const ok = pool.filter(ci => bandFit(ci, band, drop) > 0.1);
+  if (!ok.length && cs.includes(avoid) && bandFit(avoid, band, drop) > 0.1) return avoid;
+  return weighted(ok.length ? ok : pool, ci => bandFit(ci, band, drop) * freshness(li, ci));
 }
 // A scene for this band. prev: the scene it follows (so the next one differs). opts.logo: bring an overlay in (a new
 // song); otherwise calm scenes show one, and a third of the others.
@@ -103,7 +142,9 @@ function makeScene(band, drop, prev, opts) {
   const lis = agentLayers();
   if (!lis.length) return null;
   const sc = { band, drop: !!drop, col: -1, show: {} };
-  const col = taggedColumn(band, drop, prev && prev.col);
+  // A tagged column is a finished look, played whole about a third of the time (half the time on a drop); otherwise
+  // the scene is put together clip by clip, guided by the tags.
+  const col = Math.random() < (drop ? 0.5 : 0.33) ? taggedColumn(band, drop, prev && prev.col) : -1;
   if (col >= 0) {
     for (const li of lis) if (playable(comp.layers[li].clips[col])) sc.show[li] = col;
     sc.col = col;
@@ -115,7 +156,10 @@ function makeScene(band, drop, prev, opts) {
   if (!mains.length) mains = overs.length ? [overs.shift()] : [];
   const nMain = band === 'calm' ? 1 : band === 'groove' ? (Math.random() < 0.5 ? 2 : 1) : MAX_MAIN;
   const put = li => { const ci = pickClipFor(li, band, prev && prev.show[li], drop); if (ci !== undefined) sc.show[li] = ci; };
-  if (mains.length) [mains[0], ...shuffle(mains.slice(1)).slice(0, nMain - 1)].forEach(put);
+  // which picture layers go up: weighted by what each has to offer now, so one layer is not up in every scene
+  const up = [];
+  for (let left = mains.slice(); up.length < nMain && left.length;) { const li = weighted(left, l => layerAppeal(l, band, drop) + 0.05); up.push(li); left = left.filter(l => l !== li); }
+  up.sort((a, b) => a - b).forEach(put);
   if (drop) { if (fxs.length) put(pick(fxs)); }
   else if (overs.length && ((opts && opts.logo) || band === 'calm' || Math.random() < 0.33)) put(pick(overs));
   if (!Object.keys(sc.show).length) { if (fxs.length && drop) put(fxs[0]); else return null; }
@@ -125,7 +169,7 @@ const pickClip = (li, band, avoid) => pickClipFor(li, band, avoid, false);
 // A variation: another column of the same kind, one picture layer on a different clip or swapped for another, or the
 // overlay in or out.
 function varyScene(prev) {
-  if (prev.col >= 0) { const c = taggedColumn(prev.band, prev.drop, prev.col); if (c >= 0 && c !== prev.col) return makeScene(prev.band, prev.drop, prev); }
+  if (prev.col >= 0) return makeScene(prev.band, prev.drop, prev);   // after a finished look the next scene is built afresh
   const lis = agentLayers(), sc = { band: prev.band, drop: !!prev.drop, col: -1, show: {} };
   for (const li of lis) if (prev.show[li] !== undefined && playable(comp.layers[li].clips[prev.show[li]])) sc.show[li] = prev.show[li];
   const role = {}; for (const li of lis) role[li] = layerRole(li);
@@ -203,7 +247,7 @@ function applyScene(sc, beats) {
     } else fadeTo(L, 0, beats);
   }
   agent.scene = sc; agent.lookBeat = comp.beats; agent.empty = false;
-  agent.history.push(sc); if (agent.history.length > 12) agent.history.shift();
+  remember(sc);
   if (typeof agentUIDirty === 'function') agentUIDirty();
 }
 // One decision. reason: song | drop | breakdown | section | band | vary | next

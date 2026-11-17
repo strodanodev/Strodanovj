@@ -102,7 +102,7 @@ function buildAgentPanel() {
         el('div', { className: 'ar' }, el('span', { textContent: 'Strobe on drops' }), sel('How long effect layers and Strobe effects flash when the beat drops. They never show outside drops.', STROBE_LENS, () => agent.strobe, v => { agent.strobe = +v; })),
         el('div', { className: 'hint', textContent: 'What each layer is for. Up to two Picture layers show at once, one Logo / overlay outside drops, and Effect layers only on drops. Auto works it out from the layer name and its clips.' }), u.roles),
       el('div', null, el('h4', { textContent: 'Column energy (optional)' }),
-        el('div', { className: 'hint', textContent: 'The Agent plays the clips on your layers. Tag a column and it becomes a finished look the Agent plays as you built it, when the music fits: Calm, Groove, Peak, or Drop for the drops. Untagged clips are combined by the Agent.' }), u.tags),
+        el('div', { className: 'hint', textContent: 'The Agent plays the clips on your layers and works through all of them, preferring ones it has not shown lately. Tag a column with the part of a song its clips suit (Calm, Groove, Peak, or Drop for the drops): the Agent then uses those clips mostly in those parts, and now and then plays the whole column as you built it. Untagged clips fit any part.' }), u.tags),
       el('div', null, el('h4', { textContent: 'Record and render' }),
         el('div', { className: 'ar' }, el('span', { textContent: 'Quality' }),
           el('select', { onchange: e => { rec.quality = e.target.value; try { localStorage.setItem('strodano-vj-rec-quality', rec.quality); } catch (err) {} } },
