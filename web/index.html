@@ -185,6 +185,12 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .dscore .slot{display:inline-flex;align-items:stretch;border:1px solid var(--ctl-line);border-radius:var(--r-ctl);overflow:hidden;border-left-width:3px}
 .dscore .slot button{border:0;border-radius:0;padding:2px 7px} .dscore .slot .sl-save,.dscore .slot .sl-clr{color:var(--dim);font-size:11px}
 .dscore .slot:not(.has) .sl-clr{display:none} .dscore .slot.has .sl-name{font-weight:600} .dscore .slot.now{box-shadow:0 0 0 2px var(--acc)}
+/* segment editor (segments.js) */
+.seg-body{padding:10px 14px;overflow:auto;min-height:0} .seg-wave{width:100%;height:190px;display:block;background:#000;border-radius:var(--r-ctl);touch-action:none;margin:6px 0}
+.seg-tabs{display:flex;gap:4px} .seg-list{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg-chip{border:1px solid var(--ctl-line);border-left-width:4px;border-radius:var(--r-ctl);padding:2px 8px;cursor:pointer;font-size:12px;background:var(--ctl)} .seg-chip.on{outline:2px solid var(--acc)}
+.seg-chip.sec-intro,.seg-chip.sec-outro{border-left-color:#5a5a5a} .seg-chip.sec-build{border-left-color:#d9a531} .seg-chip.sec-drop{border-left-color:var(--acc)} .seg-chip.sec-breakdown{border-left-color:#4f86d9}
+.seg-panel .fld label{flex:0 0 130px} .seg-panel .fld{flex-wrap:wrap}
 .dcues .cue-rec.on{background:var(--bad);border-color:var(--bad);color:#fff}
 .dscore .sec-mix{border-left-color:#9b7bff}
 .dscore .sec-intro,.dscore .sec-outro{border-left-color:#5a5a5a} .dscore .sec-build{border-left-color:#d9a531} .dscore .sec-drop{border-left-color:var(--acc)} .dscore .sec-breakdown{border-left-color:#4f86d9}
@@ -349,6 +355,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="dj.js"></script>
 <script src="live.js"></script>
 <script src="score.js"></script>
+<script src="segments.js"></script>
 <script src="cues.js"></script>
 <script src="follow.js"></script>
 <script src="agent.js"></script>

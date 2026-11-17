@@ -13,32 +13,34 @@ const musicFeat = { build: 0, drop: 0, mix: 0, midmix: 0 };
 const score = { on: false, morph: 4, looks: {}, deck: null, idx: -1, tweens: [], liveDrop: false };
 
 // ---------- where are we in the song ----------
+// A deck's sections: the artist's edit (segments.js) if there is one, otherwise the analysis.
+const secList = d => (typeof segmentsOf === 'function' ? segmentsOf(d) : d && d.info && d.info.sections);
 function sectionNow(d) {
-  const i = d && d.info;
-  if (!i || !i.sections || !i.ok || !d.buffer) return null;
+  const i = d && d.info, L = secList(d);
+  if (!i || !L || !L.length || !i.ok || !d.buffer) return null;
   const bar = (deckHeard(d) - i.grid0) / i.barLen;
-  for (let k = 0; k < i.sections.length; k++) {
-    const s = i.sections[k];
-    if (bar < s.bar + s.bars || k === i.sections.length - 1) {
+  for (let k = 0; k < L.length; k++) {
+    const s = L[k];
+    if (bar < s.bar + s.bars || k === L.length - 1) {
       if (bar < s.bar) return null;   // before the first bar
-      return { type: s.type, index: k, bars: s.bars, progress: Math.min(1, (bar - s.bar) / s.bars), barsLeft: s.bar + s.bars - bar };
+      return { type: s.type, index: k, bars: s.bars, progress: Math.min(1, (bar - s.bar) / s.bars), barsLeft: s.bar + s.bars - bar, seg: s };
     }
   }
   return null;
 }
 // The next section and how many bars until it starts (fractional), or null at the last one.
 function sectionAhead(d) {
-  const now = sectionNow(d), i = d && d.info;
-  if (!now || now.index + 1 >= i.sections.length) return null;
-  return { type: i.sections[now.index + 1].type, bars: now.barsLeft };
+  const now = sectionNow(d), L = secList(d);
+  if (!now || now.index + 1 >= L.length) return null;
+  return { type: L[now.index + 1].type, bars: now.barsLeft };
 }
 // Bars until the next drop starts (0 while in one), or null when no drop is left.
 function dropAhead(d) {
-  const now = sectionNow(d), i = d && d.info;
+  const now = sectionNow(d), i = d && d.info, L = secList(d);
   if (!now) return null;
   if (now.type === 'drop') return 0;
   const bar = (deckHeard(d) - i.grid0) / i.barLen;
-  for (let k = now.index + 1; k < i.sections.length; k++) if (i.sections[k].type === 'drop') return i.sections[k].bar - bar;
+  for (let k = now.index + 1; k < L.length; k++) if (L[k].type === 'drop') return L[k].bar - bar;
   return null;
 }
 const scoreActive = () => score.on;
@@ -57,7 +59,9 @@ function tickScore() {
   if (s && (d !== score.deck || s.index !== score.idx)) {
     const data = { source: 'deck', deck: d.id, section: s.type, bars: s.bars };
     if (typeof emitMusic === 'function') emitMusic(s.type === 'drop' || s.type === 'breakdown' ? s.type : 'section', data);
-    if (score.on && score.looks[s.type] && !score.mixing) recallLook(score.looks[s.type]);
+    // the segment's own choice (segments.js): its type's look, another slot's, its own, or none
+    const look = typeof lookForSegment === 'function' ? lookForSegment(s.seg) : score.looks[s.type];
+    if (score.on && look && !score.mixing) recallLook(look);
     score.deck = d; score.idx = s.index;
   } else if (!s) { score.deck = null; score.idx = -1; }
   // structure sources: the build ramps 0 -> 1 over the build; "in drop" fades in over a beat and out over a bar
@@ -117,18 +121,20 @@ function tickTweens() {
   if (p >= 1) { score.tweens = []; ui.propsDirty = true; }
 }
 // Saved with the composition (engine.js compToJSON / loadComp).
-function scoreToJSON() { return { on: score.on, morph: score.morph, looks: score.looks, cues: typeof cuesToJSON === 'function' ? cuesToJSON() : undefined }; }
+function scoreToJSON() { return { on: score.on, morph: score.morph, looks: score.looks, cues: typeof cuesToJSON === 'function' ? cuesToJSON() : undefined, segments: typeof segmentsToJSON === 'function' ? segmentsToJSON() : undefined }; }
+// A saved look, checked field by field (it can come from a shared .svj file). null if it is not a look.
+function lookFromJSON(l) {
+  if (!l || !Array.isArray(l.layers)) return null;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  const fx = a => (Array.isArray(a) ? a : []).filter(e => e && typeof e.uid === 'string').map(e => ({ uid: e.uid, params: (Array.isArray(e.params) ? e.params : []).slice(0, 8).map(v => num(v, 0)), mix: num(e.mix, 1), bypass: !!e.bypass }));
+  return { layers: l.layers.map(x => ({ active: num(x && x.active, -1) | 0, opacity: num(x && x.opacity, 1), bypass: !!(x && x.bypass), fx: fx(x && x.fx) })), fx: fx(l.fx) };
+}
 function scoreFromJSON(j) {
   score.looks = {}; score.on = false; score.tweens = [];
   if (typeof cuesFromJSON === 'function') cuesFromJSON(j && j.cues);   // track scores (cues.js)
+  if (typeof segmentsFromJSON === 'function') segmentsFromJSON(j && j.segments);   // edited segments (segments.js)
   if (!j || typeof j !== 'object') return;
-  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-  const fx = a => (Array.isArray(a) ? a : []).filter(e => e && typeof e.uid === 'string').map(e => ({ uid: e.uid, params: (Array.isArray(e.params) ? e.params : []).slice(0, 8).map(v => num(v, 0)), mix: num(e.mix, 1), bypass: !!e.bypass }));
-  for (const t of LOOK_SLOTS) {
-    const l = j.looks && j.looks[t];
-    if (!l || !Array.isArray(l.layers)) continue;
-    score.looks[t] = { layers: l.layers.map(x => ({ active: num(x && x.active, -1) | 0, opacity: num(x && x.opacity, 1), bypass: !!(x && x.bypass), fx: fx(x && x.fx) })), fx: fx(l.fx) };
-  }
+  for (const t of LOOK_SLOTS) { const l = lookFromJSON(j.looks && j.looks[t]); if (l) score.looks[t] = l; }
   score.on = !!j.on; score.morph = [0, 1, 4, 8].includes(j.morph) ? j.morph : 4;
 }
 
@@ -148,7 +154,8 @@ function buildScore() {
   scoreUI.morph = el('select', { title: 'How long a look takes to glide in', onchange: e => { score.morph = +e.target.value; } },
     ...[[0, 'Instant'], [1, 'Glide 1 beat'], [4, 'Glide 1 bar'], [8, 'Glide 2 bars']].map(([v, n]) => el('option', { value: v, textContent: n, selected: v === score.morph })));
   scoreUI.txt = el('span', { className: 'mixtxt' });
-  return el('div', { className: 'dmix dscore' }, el('b', { textContent: 'Section looks' }), ...slots, scoreUI.morph, scoreUI.on, scoreUI.txt);
+  const editBtn = el('button', { textContent: 'Edit segments...', title: "Move, resize, split or re-label the sections of a deck's track, and choose the visuals for each one", onclick: () => openSegments() });
+  return el('div', { className: 'dmix dscore' }, el('b', { textContent: 'Section looks' }), ...slots, scoreUI.morph, scoreUI.on, editBtn, scoreUI.txt);
 }
 function saveLook(t) {
   score.looks[t] = captureLook();

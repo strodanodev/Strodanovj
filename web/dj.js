@@ -78,8 +78,8 @@ function buildOverview(u) {
     x.fillRect(px, (H - h) / 2, 1, h);
   }
   // song sections as a coloured band along the bottom
-  for (const s of i.sections || []) { x.fillStyle = sectionCol(s.type); x.fillRect(s.t / i.duration * W, H - 4, s.bars * i.barLen / i.duration * W, 4); }
-  u.ovFor = i;
+  for (const s of segmentsOf(u.d) || []) { x.fillStyle = sectionCol(s.type); x.fillRect(s.t / i.duration * W, H - 4, s.bars * i.barLen / i.duration * W, 4); }
+  u.ovFor = i; u.ovVer = seg.ver;   // drawn again when the segments are edited (segments.js)
 }
 const sectionCol = t => (t === 'drop' ? THEME.acc : t === 'build' ? '#d9a531' : t === 'breakdown' ? '#4f86d9' : '#5a5a5a');
 function drawDeck(u) {
@@ -94,7 +94,7 @@ function drawDeck(u) {
     x.fillText(d.state === 'loading' ? 'Reading the file...' : d.state === 'analysing' ? 'Finding the beat...' : d.state === 'error' ? 'Could not read that file' : 'Drop a track here, or press Load', W / 2, H / 2);
     return;
   }
-  if (u.ovFor !== i) buildOverview(u);
+  if (u.ovFor !== i || u.ovVer !== seg.ver) buildOverview(u);
   const pos = deckHeard(d), span = DJ_ZOOM * d.rate, t0 = pos - span / 2, perPx = span * i.fps / W, mid = zh / 2;
   // scrolling waveform
   for (let px = 0; px < W; px++) {
@@ -128,7 +128,7 @@ function drawDeck(u) {
   const cl = i.ok && cuesFor(d);
   if (cl) { x.fillStyle = 'rgba(255,255,255,.75)'; for (const e of cl) { const t = i.grid0 + e.b * i.beatLen; if (t >= t0 && t <= t0 + span) x.fillRect(Math.round((t - t0) / span * W), 0, Math.max(1, dpr), (e.v === undefined ? 10 : 4) * dpr); } }
   // sections under the scrolling waveform, named where each one starts
-  for (const s of i.sections || []) {
+  for (const s of segmentsOf(d) || []) {
     if (s.end < t0 || s.t > t0 + span) continue;
     const a = Math.max(0, (s.t - t0) / span * W), b = Math.min(W, (s.end - t0) / span * W);
     x.fillStyle = sectionCol(s.type); x.fillRect(a, zh - 3 * dpr, b - a, 3 * dpr);
@@ -147,7 +147,7 @@ function tickDJ() {
   const clock = audio.clockDeck;
   if (clock && document.activeElement !== $('bpm')) { const s = comp.bpm.toFixed(1); if ($('bpm').value !== s) $('bpm').value = s; }
   if (!djUI.open) return;
-  tickMixUI(); tickCrate(); tickScoreUI(); tickCuesUI(); tickFollowUI();
+  tickMixUI(); tickCrate(); tickScoreUI(); tickCuesUI(); tickFollowUI(); tickSegmentsUI();
   for (const u of djUI.decks) {
     const d = u.d, i = d.info;
     setText(u.name, d.name || 'Empty');
