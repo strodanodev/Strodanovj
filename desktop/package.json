@@ -15,7 +15,7 @@
     "dist:mac": "electron-builder --mac --publish never"
   },
   "devDependencies": {
-    "electron": "44.11.3",
+    "electron": "43.8.10",
     "electron-builder": "26.18.0"
   },
   "build": {
@@ -85,7 +85,8 @@
       "extendInfo": {
         "NSCameraUsageDescription": "Strodano VJ shows your camera as a clip and follows your hands and movement to drive the visuals.",
         "NSMicrophoneUsageDescription": "Strodano VJ can listen to the music in the room to follow its beat."
-      }
+      },
+      "minimumSystemVersion": "12.0"
     },
     "dmg": {
       "title": "Strodano VJ ${version}"

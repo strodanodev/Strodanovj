@@ -53,6 +53,7 @@ window.addEventListener('load', () => {
   if (typeof syncDisplays === 'function') syncDisplays();
   for (const i of r.vdo || []) if (screens[i] && typeof vdoStart === 'function') vdoStart(i);   // same ID and password: viewers reconnect
   for (const i of r.ndi || []) if (screens[i] && typeof ndiStart === 'function') ndiStart(i);   // same names: receivers stay connected   // and puts them back on their displays (display.js)
+  window.vjRecovered = lost ? 'outputs lost' : 'ok';   // read by the desktop self-test (the status line can be overwritten a moment later)
   setStatus(lost ? 'Recovered after a graphics reset. Click Output to reopen the output window.' : 'Recovered after a graphics reset. The show is running again.');
   ui.gridDirty = ui.propsDirty = true;
 });

@@ -161,9 +161,9 @@ function runSelftest() {
         report.place.ok =report.place.placed && report.place.size[0] === report.place.display[0] && report.place.back[0] < report.place.display[0] && report.place.live === 1;
         await js(`gl.getExtension('WEBGL_lose_context').loseContext(); true`);   // simulated GPU reset: the page reloads itself
       } else {
-        report.recovered = await js(`({ status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
+        report.recovered = await js(`({ recovery: window.vjRecovered || '', status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
         const b = report.boot, o = report.output, r = report.recovered;
-        const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && /Recovered/.test(r.status);
+        const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && r.recovery === 'ok';
         finish(ok, ok ? '' : 'a check failed');
       }
     } catch (e) { finish(false, String(e && e.message || e)); }

@@ -45,6 +45,10 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --${{ matrix.target }} --publish never
+      - name: Runs on the oldest promised macOS (build.mac.minimumSystemVersion)
+        if: matrix.target == 'mac'
+        working-directory: desktop
+        run: node check-macos-min.js dist
       - uses: actions/upload-artifact@v4
         with:
           name: StrodanoVJ-desktop-${{ matrix.target }}
@@ -71,4 +75,4 @@ jobs:
             Strodano VJ desktop app.
 
             - **Windows:** `StrodanoVJ-*-win-x64.exe`. The installer is not code-signed: if SmartScreen warns, choose *More info* > *Run anyway*.
-            - **Mac (Apple Silicon):** `StrodanoVJ-*-mac-arm64.dmg`. **Mac (Intel):** `StrodanoVJ-*-mac-x64.dmg`. Not notarised: the first time, right-click the app > *Open*, or allow it under *System Settings > Privacy & Security*.
+            - **Mac (Apple Silicon):** `StrodanoVJ-*-mac-arm64.dmg`. **Mac (Intel):** `StrodanoVJ-*-mac-x64.dmg`. Needs macOS 12 (Monterey) or later. Not notarised: the first time, right-click the app > *Open*, or allow it under *System Settings > Privacy & Security*.

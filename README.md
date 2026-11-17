@@ -12,6 +12,8 @@ Download the installer for your system from **Releases**:
 - Mac with Apple Silicon (M1 and later): `StrodanoVJ-<version>-mac-arm64.dmg`
 - Mac with Intel: `StrodanoVJ-<version>-mac-x64.dmg`
 
+macOS 12 (Monterey) or later; Windows 10 or later.
+
 The installers are not code-signed. Windows SmartScreen: *More info > Run anyway*. macOS: the first time, right-click the app > *Open*, or allow it under *System Settings > Privacy & Security*. The app asks for camera access the first time you use the camera or hand tracking.
 
 You can also run it without installing: open `web/index.html` in Chrome or Edge.
