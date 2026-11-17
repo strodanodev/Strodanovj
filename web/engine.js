@@ -595,9 +595,10 @@ function drawSlice(sl) {
   gl.uniform1i(meshProg.loc('pattern'), out.testPattern && !sl.mask ? 1 : 0);
   gl.drawArrays(gl.TRIANGLES, 0, TESS * TESS * 6);
 }
-function renderScreen(scr, w, h) {
-  ensureCanvas(w, h);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+// into the canvas' back buffer (bottom-left w x h), or into `target` (an mkFbo, used by the NDI output in ndi.js)
+function renderScreen(scr, w, h, target) {
+  if (target) gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  else { ensureCanvas(w, h); gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
   gl.viewport(0, 0, w, h);
   gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, w, h);
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -612,15 +613,16 @@ function renderScreen(scr, w, h) {
   gl.disable(gl.BLEND);
   gl.bindVertexArray(vao);
 }
-function openOutput(i) {
+// rect = {x, y, w, h} of the display it goes to (display.js), or none for a normal window
+function openOutput(i, rect) {
   const s = screens[i];
-  if (s.win && !s.win.closed) { s.win.focus(); return true; }
-  const w = window.open('', 'strodano_out_' + i, 'width=960,height=540');
+  if (s.win && !s.win.closed) { if (!rect) s.win.focus(); return true; }
+  const w = window.open('', 'strodano_out_' + i, rect ? `left=${rect.x},top=${rect.y},width=${rect.w},height=${rect.h}` : 'width=960,height=540');
   if (!w) { setStatus('The browser blocked the output window. Allow pop-ups for this page.'); return false; }
   w.document.open();
   w.document.write(`<!DOCTYPE html><title>Strodano VJ output</title><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 canvas{width:100vw;height:100vh;display:block}#h{position:fixed;left:12px;bottom:10px;color:#999;font:13px system-ui;transition:opacity 1s}</style>
-<canvas id="c"></canvas><div id="h">Drag this window onto the projector or second display, then double-click for fullscreen.</div>`);
+<canvas id="c"></canvas><div id="h">${rect ? '' : 'Drag this window onto the projector or second display, then double-click for fullscreen.'}</div>`);
   w.document.close();
   w.document.title = s.name + ' - Strodano VJ output';   // set as text: the name can come from a shared .svj file
   const c = w.document.getElementById('c');
@@ -628,12 +630,13 @@ canvas{width:100vw;height:100vh;display:block}#h{position:fixed;left:12px;bottom
   fit();
   w.addEventListener('resize', fit);
   w.addEventListener('dblclick', () => { if (w.document.fullscreenElement) w.document.exitFullscreen(); else w.document.documentElement.requestFullscreen().catch(() => {}); });
+  w.addEventListener('keydown', e => { if (e.key === 'Escape' && typeof outputEscape === 'function') outputEscape(i); });   // off the display, back to a window
   w.document.addEventListener('fullscreenchange', () => { w.document.body.style.cursor = w.document.fullscreenElement ? 'none' : ''; });
   w.setTimeout(() => { const hint = w.document.getElementById('h'); if (hint) hint.style.opacity = 0; }, 6000);
   s.win = w; s.ctx = c.getContext('2d', { alpha: false });
   return true;
 }
-function closeOutput(i) { const s = screens[i]; if (s.win && !s.win.closed) s.win.close(); s.win = null; s.ctx = null; }
+function closeOutput(i) { const s = screens[i]; if (typeof ndiStop === 'function') ndiStop(s); if (s.win && !s.win.closed) s.win.close(); s.win = null; s.ctx = null; s.placedOn = ''; }
 const liveScreens = () => screens.filter(s => s.win && !s.win.closed);
 // Output windows close with the page, except on a GPU-recovery reload (safety.js), where they stay open to be picked up again.
 window.addEventListener('beforeunload', () => { if (!window.vjKeepOutputs) screens.forEach((s, i) => closeOutput(i)); });
@@ -652,7 +655,7 @@ function compToJSON() {
       name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) })),
     })),
-    screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
+    screens: screens.map(s => ({ name: s.name, device: s.device || 'auto', ndiName: s.ndiName || undefined, ndiRes: s.ndiRes || undefined, ndiFps: s.ndiFps || undefined, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
 }
 function loadComp(j) {
@@ -690,7 +693,8 @@ function loadComp(j) {
     screens.forEach((s, i) => closeOutput(i));
     screens.length = 0;
     for (const s of j.screens) {
-      screens.push({ name: String(s.name || 'Screen'), win: null, ctx: null, slices: (s.slices || []).map(q => {
+      screens.push({ name: String(s.name || 'Screen'), device: typeof s.device === 'string' && s.device.length < 200 ? s.device : 'auto', ndiName: typeof s.ndiName === 'string' ? s.ndiName.slice(0, 100) : '',
+        ndiRes: ['1280x720', '960x540', '1920x1080', 'comp'].includes(s.ndiRes) ? s.ndiRes : '1280x720', ndiFps: [25, 30, 50, 60].includes(s.ndiFps) ? s.ndiFps : 30, win: null, ctx: null, slices: (s.slices || []).map(q => {
         const sl = newSlice(String(q.name || 'Slice'), q.mask);
         sl.enabled = q.enabled !== false; sl.feather = num(q.feather, 0); sl.bright = num(q.bright, 1); sl.flipH = !!q.flipH; sl.flipV = !!q.flipV;
         if (Array.isArray(q.in) && q.in.length === 4) sl.in = q.in.map(v => num(v, 0));

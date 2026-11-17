@@ -6,8 +6,9 @@
 // (exit code 0 = all good); CI runs it before packaging (STRODANO_SOFTWARE_GL=1 on Windows runners, which have no GPU;
 // macOS runners have a virtual Metal GPU and SwiftShader does not start there).
 'use strict';
-const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, screen, ipcMain } = require('electron');
 const path = require('path');
+const { setupNdi, stopNdi } = require('./ndi');
 
 const selftest = process.argv.includes('--selftest');
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
@@ -22,12 +23,13 @@ app.commandLine.appendSwitch('force_high_performance_gpu');
 if (process.env.STRODANO_SOFTWARE_GL) { app.commandLine.appendSwitch('use-angle', 'swiftshader'); app.commandLine.appendSwitch('enable-unsafe-swiftshader'); }
 
 let win = null, quitting = false;
+const outputs = new Map();   // output window name ('strodano_out_N') -> BrowserWindow
 const ALLOWED = new Set(['media', 'midi', 'midiSysex', 'fullscreen', 'fileSystem', 'clipboard-sanitized-write', 'window-management', 'pointerLock']);
 
 function createWindow() {
   win = new BrowserWindow({
     width: 1600, height: 1000, minWidth: 1000, minHeight: 640, backgroundColor: '#0a0a0a', title: 'Strodano VJ', show: !selftest,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false, preload: path.join(__dirname, 'preload.js') },
   });
   // Output windows (window.open('', 'strodano_out_N')) open as real windows; other links go to the browser.
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
@@ -37,7 +39,14 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('did-create-window', child => child.setMenuBarVisibility(false));
+  win.webContents.on('did-create-window', (child, d) => {
+    child.setMenuBarVisibility(false);
+    const name = d && d.frameName;
+    if (name && name.startsWith('strodano_out_')) { outputs.set(name, child); child.on('closed', () => { if (outputs.get(name) === child) outputs.delete(name); }); }
+  });
+  // the control window moved to another display: which displays count as "external" changes
+  let movedT = 0;
+  win.on('moved', () => { clearTimeout(movedT); movedT = setTimeout(sendDisplays, 300); });
   win.webContents.on('will-prevent-unload', e => e.preventDefault());   // the page's own "leave?" prompt: the close dialog below asks instead
   win.webContents.on('render-process-gone', (e, d) => { if (d.reason !== 'clean-exit' && win && !win.isDestroyed()) setTimeout(() => win.reload(), 500); });
   win.on('close', e => {
@@ -65,6 +74,54 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ---------- displays (web/display.js) ----------
+// The page decides which output goes where; the main process lists displays, reports hot-plugs and places windows,
+// because only it can put a window fullscreen on a given display without a click.
+function displayList() {
+  const ctl = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()).id : screen.getPrimaryDisplay().id, prim = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().map((d, i) => ({ id: d.id, label: d.label || ('Display ' + (i + 1)), x: d.bounds.x, y: d.bounds.y, w: d.bounds.width, h: d.bounds.height,
+    scale: d.scaleFactor, hz: d.displayFrequency || 0, primary: d.id === prim, control: d.id === ctl, internal: !!d.internal }));
+}
+let dispT = 0;
+function sendDisplays() { if (win && !win.isDestroyed()) win.webContents.send('displays:changed', displayList()); }
+const displaysChanged = () => { clearTimeout(dispT); dispT = setTimeout(sendDisplays, 400); };   // a plug-in fires added + metrics-changed in a burst
+ipcMain.handle('displays:list', () => displayList());
+ipcMain.handle('output:place', (e, { frame, displayId }) => {
+  const child = outputs.get(frame);
+  if (!child || child.isDestroyed()) return false;
+  if (displayId == null) {   // back to a normal window on the control display
+    child.setFullScreen(false); child.setAlwaysOnTop(false);
+    const wa = (win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay()).workArea;
+    child.setBounds({ x: wa.x + Math.round((wa.width - 960) / 2), y: wa.y + Math.round((wa.height - 540) / 2), width: 960, height: 540 });
+    return true;
+  }
+  const d = screen.getAllDisplays().find(x => x.id === displayId);
+  if (!d) return false;
+  if (child.isFullScreen()) child.setFullScreen(false);
+  child.setBounds(d.bounds);   // move first: fullscreen happens on the display the window is on
+  child.setFullScreen(true);
+  child.setAlwaysOnTop(true, 'screen-saver');   // nothing (notifications, other windows) covers the show
+  child.showInactive();   // keep keyboard focus in the control window
+  return true;
+});
+ipcMain.handle('displays:identify', (e, marks) => {
+  for (const m of marks) {
+    const d = screen.getAllDisplays().find(x => x.id === m.id);
+    if (!d) continue;
+    const w = new BrowserWindow({ ...d.bounds, frame: false, transparent: true, alwaysOnTop: true, focusable: false, skipTaskbar: true, resizable: false, hasShadow: false, show: false,
+      webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+    w.setIgnoreMouseEvents(true); w.setAlwaysOnTop(true, 'screen-saver');
+    const esc = String(m.text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const [num, ...rest] = esc.split('\n');
+    w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!DOCTYPE html><body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.55);color:#fff;font-family:system-ui;border:8px solid #ff7a1a;box-sizing:border-box"><div style="font-size:38vh;font-weight:700;line-height:1">${num}</div>
+      <div style="font-size:4vh;opacity:.85">${rest.join('<br>')}</div></body>`));
+    w.once('ready-to-show', () => w.showInactive());
+    setTimeout(() => { if (!w.isDestroyed()) w.close(); }, 3000);
+  }
+  return true;
+});
+
 // ---------- self-test ----------
 function runSelftest() {
   const wc = win.webContents, report = {}, wait = ms => new Promise(r => setTimeout(r, ms));
@@ -88,11 +145,25 @@ function runSelftest() {
         report.output = await js(`(async () => { const ok = openOutput(0); await new Promise(r => setTimeout(r, 1500));
           const s = screens[0]; return { opened: ok, live: !!(s.win && !s.win.closed), size: s.ctx ? [s.ctx.canvas.width, s.ctx.canvas.height] : null }; })()`);
         report.fps = await js(`new Promise(r => setTimeout(() => r(Math.round(window.__fps || 0)), 2500))`);
+        report.displays = await js(`(async () => { const l = await window.strodanoDesktop.displays(); return { count: l.length, bridge: display.desktop, known: display.list.length }; })()`);
+        // output fullscreen on a display (the control one: CI has only one), then Esc puts it back in a window
+        report.place = await js(`(async () => { const d = display.list[0], s = screens[0], w = s.win, nap = ms => new Promise(r => setTimeout(r, ms));
+          s.device = d.key; openOnDisplay(0, d); await nap(2500);
+          const r = { size: [w.innerWidth, w.innerHeight], display: [d.w, d.h], placed: s.placedOn === d.key, label: document.getElementById('outBtn').textContent };
+          outputEscape(0); await nap(2000); r.back = [w.innerWidth, w.innerHeight]; s.device = 'auto'; r.live = liveScreens().length; return r; })()`);
+        // NDI: a network screen sends for 8 s (only checked where an NDI Runtime is installed; CI has none)
+        report.ndi = await js(`(async () => { const st = await ndiStatus(); if (!st.ok) return { available: false, error: st.error };
+          screens.push({ name: 'NDI test', device: 'ndi', ndiName: 'Strodano VJ selftest', ndiRes: '1280x720', ndiFps: 30, win: null, ctx: null, slices: [newSlice('Slice 1')] });
+          const i = screens.length - 1, s = screens[i]; out.testPattern = true; await ndiStart(i); const t0 = performance.now(); await new Promise(r => setTimeout(r, 8000));
+          const n = s.ndiSend || {}, r = { available: true, version: st.version, sent: n.sent, fps: +(n.sent * 1000 / (performance.now() - t0)).toFixed(1), conns: n.conns, dropped: n.dropped, workerMs: n.ms, rttMs: Math.round(n.rtt), readMs: +(n.readMs || 0).toFixed(1), error: n.error || '', label: document.getElementById('outBtn').textContent };
+          closeOutput(i); screens.splice(i, 1); out.testPattern = false; return r; })()`);
+        report.ndi.ok = !report.ndi.available || (report.ndi.sent > 0 && !report.ndi.error);
+        report.place.ok =report.place.placed && report.place.size[0] === report.place.display[0] && report.place.back[0] < report.place.display[0] && report.place.live === 1;
         await js(`gl.getExtension('WEBGL_lose_context').loseContext(); true`);   // simulated GPU reset: the page reloads itself
       } else {
         report.recovered = await js(`({ status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
         const b = report.boot, o = report.output, r = report.recovered;
-        const ok = b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && /Recovered/.test(r.status);
+        const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && /Recovered/.test(r.status);
         finish(ok, ok ? '' : 'a check failed');
       }
     } catch (e) { finish(false, String(e && e.message || e)); }
@@ -105,7 +176,10 @@ app.whenReady().then(() => {
   if (!selftest) powerSaveBlocker.start('prevent-display-sleep');
   buildMenu();
   createWindow();
+  setupNdi(() => win);
+  screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', stopNdi);
 app.on('window-all-closed', () => app.quit());

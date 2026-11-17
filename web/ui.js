@@ -276,14 +276,15 @@ function renderOutPanels() {
     el('div', { className: 'fld' }, el('button', { textContent: 'Remove', onclick: () => { scr.slices.splice(outUI.slice, 1); redo(); } }),
       el('button', { textContent: 'To front', onclick: () => swap(1) }), el('button', { textContent: 'To back', onclick: () => swap(-1) })),
     el('div', { className: 'hint', textContent: 'Later items draw on top.' }));
+  L.append(...displaysList());
 
   const P = $('outProps');
   P.textContent = '';
-  const live = scr.win && !scr.win.closed;
+  const live = !!((scr.win && !scr.win.closed) || scr.ndiSend), isNdi = scr.device === 'ndi';
   P.append(el('h4', { textContent: 'Screen' }),
     el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: scr.name, onchange: e => { scr.name = e.target.value || scr.name; redo(); } })),
-    el('button', { textContent: live ? 'Close output window' : 'Open output window', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOutput(outUI.screen); redo(); } }),
-    el('div', { className: 'hint', textContent: 'Drag the output window onto the projector or second display and double-click it for fullscreen.' }));
+    ...displayPanel(scr, outUI.screen),
+    el('button', { textContent: isNdi ? (live ? 'Stop NDI' : 'Start NDI') : live ? 'Close output' : 'Open output', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOnDisplay(outUI.screen, displayFor(outUI.screen)); syncOutBtn(); redo(); } }));
   const sl = scr.slices[outUI.slice];
   if (!sl) return;
   P.append(el('h4', { textContent: sl.mask ? 'Mask' : 'Slice' }),
@@ -458,7 +459,13 @@ function autosave() {
   try { const s = JSON.stringify(compToJSON()); if (s !== lastSaved) { localStorage.setItem(AUTOSAVE, s); lastSaved = s; } } catch (e) {}
 }
 // keeps the header Output button in step with the output windows (they can be closed from outside the app)
-function syncOutBtn() { const b = $('outBtn'), on = liveScreens().length > 0; if (b && b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } }
+function syncOutBtn() {
+  const b = $('outBtn'), on = liveScreens().length + ndiLive().length > 0;
+  if (!b) return;
+  if (b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
+  const where = on ? outputWhere() : '', t = 'Output' + (where ? ' > ' + where : '');
+  if (b.lastChild.textContent !== t) b.lastChild.textContent = t;
+}
 function initMenu() {
   const acts = {
     new: () => { demoComp(); sel.l = 0; sel.c = -1; },
@@ -478,7 +485,7 @@ function initMenu() {
     agent: () => toggleAgentPanel(!agUI.open),
     keys: () => toggleKeysHelp(),
     // header Output button: open every screen's output window, or close them all when any is live
-    outWin: () => { if (liveScreens().length) screens.forEach((s, i) => closeOutput(i)); else screens.forEach((s, i) => openOutput(i)); syncOutBtn(); ui.propsDirty = true; },
+    outWin: () => { if (liveScreens().length || ndiLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => openOnDisplay(i, t[i])); } syncOutBtn(); ui.propsDirty = true; },
   };
   const onAct = e => { const b = e.target.closest && e.target.closest('[data-act]'), a = b && b.dataset.act; if (a && acts[a]) acts[a](); };
   $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
@@ -490,6 +497,7 @@ function initMenu() {
     if (!f) return;
     try { setStatus(loadComp(JSON.parse(await f.text())) ? 'Opened ' + f.name : 'That file is not a Strodano VJ composition'); } catch (err) { setStatus('Could not read that file'); }
     syncTransport(); e.target.value = '';
+    if (display.autoOut) syncDisplays(display.list.map(d => d.key));   // the new composition's screens go to their displays
   });
   // Files dropped anywhere outside a clip slot go to the media pool (and relink missing clips).
   window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
@@ -537,6 +545,7 @@ function frame() {
     vjTick(realDt);   // blackout fade, clip in / out / beat sync, snapshot on the bar (safety.js, clipopts.js, snapshots.js)
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
+    ndiTick(t0);   // NDI screens: render, async read-back, send (ndi.js)
     if (!document.hidden) {
       const mw = 480, mh = Math.round(480 * comp.h / comp.w);
       for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
@@ -552,7 +561,7 @@ function frame() {
   if (t0 - fpsT >= 500) {
     const fps = fpsN * 1000 / (t0 - fpsT), el2 = $('fps');
     syncOutBtn();
-    el2.textContent = `${liveScreens().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
+    el2.textContent = `${liveScreens().length || ndiLive().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
     el2.className = fps < 29 ? 'bad' : '';
     window.__fps = fps; fpsN = 0; costSum = 0; fpsT = t0;
   }
@@ -615,10 +624,11 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initShaderEditor(); initMidi(); initDJ(); buildAgentPanel(); initKeys();
+  initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); initDJ(); buildAgentPanel(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) demoComp();
+  initNdi();
   syncTransport();
   initMediaFolder();
   setInterval(autosave, 2000);

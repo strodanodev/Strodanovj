@@ -25,7 +25,7 @@ See [`web/README.md`](web/README.md) for the full feature guide. In short:
 - **Effects**: built-in, camera-reactive "smart" effects, custom GLSL and ISF shaders with a live editor. Any slider can follow a beat LFO, the music, the camera, your hands or a MIDI knob.
 - **Control**: MIDI learn, keyboard shortcuts, **hand gestures** (MediaPipe), 8 **snapshots** (F1-F8), tap tempo.
 - **DJ mode**: two decks with automatic tempo and beat-grid analysis; the visuals follow the music.
-- **Output**: multiple screens and slices, corner-pin and mesh warping, masks, soft edges.
+- **Output**: multiple screens and slices, corner-pin and mesh warping, masks, soft edges. Each screen goes fullscreen on a display of your choice (it opens by itself when a projector is plugged in), or over the network as **NDI** (Wi-Fi or cable, desktop app; needs the free NDI Tools or NDI Runtime).
 - **Show safety**: blackout (Shift+B), automatic recovery when the graphics driver resets, the display never sleeps, quitting asks first, autosave.
 
 ## Run and build from source
@@ -34,7 +34,7 @@ See [`web/README.md`](web/README.md) for the full feature guide. In short:
 cd desktop
 npm install
 npm start                 # run the app
-npm run selftest          # boot, shaders, output window, GPU-reset recovery; prints a JSON report
+npm run selftest          # boot, shaders, output window, display placement, NDI (if installed), GPU-reset recovery; JSON report
 npm run dist:win          # or dist:mac: installers in desktop/dist
 ```
 

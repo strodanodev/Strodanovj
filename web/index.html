@@ -319,7 +319,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <span class="sep"></span>
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
     <span class="sep"></span>
-    <button id="outBtn" data-act="outWin" title="Open the output window (drag it onto the projector). Click again to close it." aria-pressed="false"><i></i>Output</button>
+    <button id="outBtn" data-act="outWin" title="Open the outputs (fullscreen on their displays, see Advanced Output). Click again to close them." aria-pressed="false"><i></i>Output</button>
     <span id="status"></span>
     <div id="themes" role="radiogroup" aria-label="Colour theme"></div>
   </div>
@@ -391,6 +391,8 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="hands.js"></script>
 <script src="inputs.js"></script>
 <script src="safety.js"></script>
+<script src="display.js"></script>
+<script src="ndi.js"></script>
 <script src="clipopts.js"></script>
 <script src="snapshots.js"></script>
 <script src="preview.js"></script>

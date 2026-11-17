@@ -22,15 +22,62 @@
     "appId": "dev.strodano.vj",
     "productName": "Strodano VJ",
     "copyright": "GPL-3.0. Uses three.js (MIT) and MediaPipe (Apache-2.0).",
-    "directories": { "output": "dist", "buildResources": "res" },
-    "files": ["main.js", "package.json"],
-    "extraResources": [{ "from": "../web", "to": "web", "filter": ["**/*", "!**/*.md"] }],
+    "directories": {
+      "output": "dist",
+      "buildResources": "res"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ndi.js",
+      "ndi-worker.js",
+      "package.json",
+      "!node_modules/koffi/{src,vendor,doc}/**",
+      "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**"
+    ],
+    "asarUnpack": [
+      "ndi-worker.js",
+      "node_modules/koffi/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../web",
+        "to": "web",
+        "filter": [
+          "**/*",
+          "!**/*.md"
+        ]
+      }
+    ],
     "artifactName": "StrodanoVJ-${version}-${os}-${arch}.${ext}",
     "afterPack": "afterpack.js",
-    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "res/icon.png" },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "shortcutName": "Strodano VJ" },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "res/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Strodano VJ"
+    },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "category": "public.app-category.entertainment",
       "icon": "res/icon.png",
       "identity": null,
@@ -40,7 +87,12 @@
         "NSMicrophoneUsageDescription": "Strodano VJ can listen to the music in the room to follow its beat."
       }
     },
-    "dmg": { "title": "Strodano VJ ${version}" },
+    "dmg": {
+      "title": "Strodano VJ ${version}"
+    },
     "publish": null
+  },
+  "dependencies": {
+    "koffi": "^2.16.4"
   }
 }
