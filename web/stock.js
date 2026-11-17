@@ -50,7 +50,7 @@ function stock3d(scene, hue, speed) {
 const HUE = { magenta: 0.86, cyan: 0.5, yellow: 0.15, violet: 0.75, blue: 0.62 };
 
 // The show. Columns: 1-2 Calm, 3-4 Groove, 5-6 Peak, 7-8 Drop.
-//   STRODANO video  picture   the mid-section video for the calmer parts, the top-section video for the peaks
+//   STRODANO video  picture   the mid-section video for builds, the top-section video for the drops
 //   3D FX           picture   three.js scenes added on top (Add blend), calm ones first, the busiest on the drops
 //   Strobe          effect    Beat Flash, Drop columns only
 //   Artist          overlay   the duo and the Audius logo, in the calm parts
@@ -68,17 +68,18 @@ function stockComp() {
   Object.assign(LG, { name: 'STRODANO logo', agentRole: 'overlay', fit: 1, scale: 0.34, y: -0.3, trans: 4 });
   const mid = 'strodano-mid.mov', top = 'strodano-top.mp4';
   const put = (L, ci, c) => { if (c) L.clips[ci] = c; };
-  [mid, null, mid, top, top, mid, top, top].forEach((f, ci) => f && put(V, ci, stockClip(f)));
+  // each stock file is in the grid once (every copy would be another full video decoder)
+  put(V, 2, stockClip(mid)); put(V, 6, stockClip(top));
   [['waves', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['knot', HUE.magenta, 0.35], ['wire', HUE.cyan, 0.4],
     ['tunnel', HUE.magenta, 0.55], ['rings', HUE.yellow, 0.5], ['particles', HUE.magenta, 0.7], ['crystals', HUE.cyan, 0.65]]
     .forEach(([k, h, s], ci) => put(D, ci, stock3d(k, h, s)));
   put(S, 6, genClip('Beat Flash')); put(S, 7, genClip('Beat Flash'));
-  put(A, 0, stockClip('strodano-duo.webp')); put(A, 1, stockClip('audius-logo.webp')); put(A, 2, stockClip('strodano-duo.webp'));
+  put(A, 0, stockClip('strodano-duo.webp')); put(A, 1, stockClip('audius-logo.webp'));
   put(LG, 0, stockClip('strodano-logo.webp')); put(LG, 1, stockClip('strodano-logo-glow.webp'));
   comp.agentTags = { 0: 'Calm', 1: 'Calm', 2: 'Groove', 3: 'Groove', 4: 'Peak', 5: 'Peak', 6: 'Drop', 7: 'Drop' };
   // what shows before the music starts: the calm column, with the logo
-  if (V.clips[0]) trigger(0, 0); else if (D.clips[0]) trigger(1, 0);
   if (D.clips[0]) trigger(1, 0);
+  if (A.clips[0]) trigger(3, 0);
   trigger(4, 0);
   LG.locked = true;
   if (typeof plDirty === 'function') plDirty();

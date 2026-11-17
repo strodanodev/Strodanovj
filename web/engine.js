@@ -366,7 +366,14 @@ function setClip(li, ci, clip) {
   L.clips[ci] = clip;
   ui.gridDirty = ui.propsDirty = true;
 }
-const pauseClip = c => { if (c && c.video) c.video.pause(); };
+// A video switched away from is paused and parked at its in point at once, so triggering it again needs no seek: a
+// seek in long-GOP footage takes ~0.5 s before the first frame, which showed as a late start.
+const pauseClip = c => {
+  if (!c || !c.video) return;
+  c.video.pause();
+  const start = typeof clipStart === 'function' ? clipStart(c) : 0;
+  if (Math.abs(c.video.currentTime - start) > 0.05) { try { c.video.currentTime = start; } catch (e) {} }
+};
 function eject(li) {
   const L = comp.layers[li];
   if (!L) return;

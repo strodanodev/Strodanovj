@@ -249,6 +249,18 @@ function draw3d(f) {
   if (c.wantThumb && comp.time - c.bornAt > 0.5) { c.wantThumb = false; c.thumb = texThumb(f.tex); ui.gridDirty = true; }
   return true;
 }
+// A 3D clip's grid thumbnail before it is ever played: one frame, half a second into the scene, rendered into a
+// spare target (the front end calls it from its frame tick for clips that have none, one per frame).
+let thumbFbo3 = null;
+function thumb3d(c) {
+  c.wantThumb = false;
+  if (!three() || !SCENES3D[c.scene]) return;
+  if (!thumbFbo3 || thumbFbo3.w !== comp.w || thumbFbo3.h !== comp.h) { if (thumbFbo3) freeFbo(thumbFbo3); thumbFbo3 = mkFbo(comp.w, comp.h); thumbFbo3.w = comp.w; thumbFbo3.h = comp.h; }
+  if (!c.inst) c.inst = SCENES3D[c.scene].build();
+  for (let k = 0; k < 5; k++) c.inst.update(modParams(c.params, c.mod), 0.1);
+  c.lastT = comp.time;
+  if (draw3d.call(c, thumbFbo3)) { c.thumb = texThumb(thumbFbo3.tex); ui.gridDirty = true; }
+}
 function clip3d(scene, o = {}) {
   const d = SCENES3D[scene];
   if (!d) return null;

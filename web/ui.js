@@ -601,7 +601,10 @@ let pointerHeld = false;
 ['pointerdown', 'pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, () => { pointerHeld = t === 'pointerdown'; }, true));
 const holding = id => { const a = document.activeElement; return pointerHeld && a && a.type === 'range' && $(id).contains(a); };
 function tickUI() {
-  outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
+  outer: for (const L of comp.layers) for (const c of L.clips) {
+    if (c && c.needThumb) { genThumbFor(c); break outer; }
+    if (c && c.type === '3d' && c.wantThumb && !c.thumb && typeof thumb3d === 'function') { thumb3d(c); break outer; }
+  }
   if (ui.gridDirty && !holding('grid')) { ui.gridDirty = false; renderGrid(); }
   if (ui.propsDirty && !holding('props')) { ui.propsDirty = false; renderProps(); }
   tickLfoMeters(); tickCamMeters(); tickHandMeters();
