@@ -24,7 +24,7 @@ const copy = (rel, from = path.join(WEB, rel)) => { if (!existsSync(from)) fail(
 // 1. the app
 const html = readFileSync(path.join(WEB, 'mobile.html'), 'utf8');
 const refs = [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map(m => m[1]).filter(r => !r.startsWith('/'));
-const extra = ['mobile.html', 'sw.js', 'vendor/vdoninja-sdk.min.js', 'vendor/vdoninja-LICENSE-MPL-2.0.txt', 'vendor/qrcode-LICENSE.txt', 'vendor/three-LICENSE.txt',
+const extra = ['mobile.html', 'watch.html', 'sw.js', 'vendor/vdoninja-sdk.min.js', 'vendor/vdoninja-LICENSE-MPL-2.0.txt', 'vendor/qrcode-LICENSE.txt', 'vendor/three-LICENSE.txt',
   ...readdirSync(path.join(WEB, 'icons')).map(f => 'icons/' + f)];
 const files = [...new Set([...refs, ...extra])];
 files.forEach(f => copy(f));
@@ -70,8 +70,10 @@ writeFileSync(path.join(OUT, '.nojekyll'), '');
 // Vercel: plain static files; the service worker and the page are always revalidated so an update reaches phones at once
 writeFileSync(path.join(OUT, 'vercel.json'), JSON.stringify({
   cleanUrls: false, trailingSlash: false,
+  // the branded web link viewer: <site>/live/<name>#<password>
+  rewrites: [{ source: '/live/:name', destination: '/watch.html' }],
   headers: [
-    { source: '/(sw.js|mobile.html|index.html|manifest.webmanifest)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(sw.js|mobile.html|watch.html|index.html|manifest.webmanifest)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     { source: '/starter/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=86400' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }] },
   ],

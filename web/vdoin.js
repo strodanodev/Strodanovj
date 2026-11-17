@@ -14,7 +14,10 @@ function parseVdoLink(text) {
   if (/^[A-Za-z0-9_]{4,64}$/.test(t)) return { id: t, pw: '' };
   let u;
   try { u = new URL(t.includes('://') ? t : 'https://' + t); } catch (e) { return null; }
-  const q = u.searchParams, id = q.get('view') || q.get('v') || q.get('push') || '', pw = q.get('password') || q.get('pw') || q.get('p') || '';
+  // our branded viewer: <site>/live/<name>#<password>[&clean]
+  const lv = u.pathname.match(/\/live\/([A-Za-z0-9_]{4,64})\/?$/), frag = u.hash.slice(1).split('&')[0];
+  const q = u.searchParams, id = (lv && lv[1]) || q.get('view') || q.get('v') || q.get('push') || '';
+  const pw = (lv && frag && !frag.includes('=') ? frag : '') || q.get('password') || q.get('pw') || q.get('p') || q.get('k') || '';
   if (!/^[A-Za-z0-9_]{4,64}$/.test(id) || (pw && !/^[A-Za-z0-9]{1,64}$/.test(pw))) return null;
   return { id, pw };
 }

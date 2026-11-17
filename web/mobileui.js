@@ -506,8 +506,15 @@ function renderBroadcast(v) {
     el('li', null, el('b', { textContent: 'OBS: ' }), 'add a Browser Source with the link (or open it in any browser, full screen).'),
     el('li', null, el('b', { textContent: 'NDI: ' }), 'in Strodano VJ desktop, Sources > Web link input, paste the link, Show on a layer.'),
     el('li', null, 'Then in Advanced Output set a screen\'s display to NDI: every NDI app on that network sees your phone.'))));
-  v.append(h3('Link'), btn('Make a new link', e => armThen(e.currentTarget, 'make a new link (the old one stops working)', () => { s.vdoId = ''; s.vdoPw = ''; vdoEnsureIds(s); vdoRestart(VDO_SCREEN); M.dirty = true; }), 'danger'),
-    hint('The link includes its password: share it only with people who should watch. Keep this app open and the screen on while you are live.'));
+  const name = el('input', { type: 'text', value: s.vdoId, spellcheck: false, autocapitalize: 'off', placeholder: 'e.g. strodano_ade' });
+  const rename = () => { const err = vdoRename(VDO_SCREEN, name.value); setStatus(err || 'Your link is now ' + vdoLink(s)); M.dirty = true; };
+  name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
+  name.addEventListener('change', rename);
+  v.append(h3('Link name', el('span', { className: 'x hint', textContent: VDO_SITE.replace(/^https:\/\//, '') + '/live/…' })),
+    el('div', { className: 'row' }, name, btn('Save', rename, 'shrink')),
+    hint('Letters, digits and _ only. Pick something only you would use (your artist or event name). Renaming makes the old link stop working.'),
+    h3('Link'), btn('Make a new private link', e => armThen(e.currentTarget, 'make a new link (the old one stops working)', () => { s.vdoId = ''; s.vdoPw = ''; vdoEnsureIds(s); vdoRestart(VDO_SCREEN); M.dirty = true; }), 'danger'),
+    hint('The link includes its password (after the #): share it only with people who should watch. Keep this app open and the screen on while you are live.'));
 }
 
 // ---------- the view ----------
