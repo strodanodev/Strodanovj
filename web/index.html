@@ -221,6 +221,21 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .amore .ar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0} .amore label{color:var(--dim);white-space:nowrap} .amore .mixprog{flex:1 1 80px;height:4px;border-radius:2px;background:var(--ctl);overflow:hidden} .amore .mixprog i{display:block;height:100%;width:0;background:var(--acc)} .amore .mixprog[hidden]{display:none}
 /* Agent playlist (playlist.js): shown instead of the clip grid while the Agent panel is open */
 #playlist{flex:1 1 auto;min-height:140px;overflow:auto;padding:var(--s) var(--m);border-bottom:1px solid var(--line)} #playlist[hidden]{display:none} #playlist.collapsed{flex:0 0 auto;min-height:0;overflow:visible;padding-bottom:0;border-bottom:0} .pll[hidden]{display:none}
+/* Panel title bars and resize handles (panels.js) */
+.pbar{flex:0 0 22px;display:flex;align-items:center;gap:6px;padding:0 var(--m);background:var(--top);border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.pbar[hidden]{display:none} .pbar:hover{background:var(--surface-hover)} .pbar .pname{flex:1;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.pbar.on .pname{color:var(--txt)} .pbar .preset{padding:0 6px;font-size:12px;line-height:16px;border:0;background:transparent;color:var(--dim)} .pbar .preset:hover{color:var(--acc)} .pbar .preset[hidden]{display:none}
+.pchev{width:20px;height:18px;padding:0;display:inline-grid;place-items:center;border:0;background:transparent;color:var(--dim);flex:0 0 auto}
+.pchev svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s;pointer-events:none}
+.pbar.on .pchev svg,.pchev.on svg{transform:rotate(-90deg)} .pchev:hover{color:var(--acc)}
+.psplit{flex:0 0 6px;margin-top:-3px;margin-bottom:-3px;position:relative;z-index:3;cursor:row-resize;touch-action:none}
+.psplit::after{content:"";position:absolute;left:0;right:0;top:2px;height:2px;background:transparent;transition:background .1s}
+.psplit:hover::after,.psplit.drag::after{background:var(--acc)} .psplit[hidden]{display:none}
+#dj.pmin,#agent.pmin,#grid.pmin{display:none!important}
+#playlist.pmin{flex:0 0 auto!important;min-height:0;overflow:visible;padding-bottom:0} #playlist.pmin .pll{display:none!important}
+#main>.amore{flex:0 1 auto;min-height:0;overflow:auto;margin:var(--s) var(--m) 0;border-radius:var(--r-card)} #main>.amore[hidden]{display:none} #main>.amore:not([open]){flex-shrink:0} #agent{flex-shrink:0}
+#main>.amore>summary{position:sticky;top:-4px;background:var(--card);z-index:1}
+#dj.pmore,#agent.pmore,#grid.pmore,#playlist.pmore,#main>.amore.pmore{box-shadow:inset 0 -14px 12px -12px rgba(0,0,0,.85)}
 #playlist.over,#playlist .plr.dropb{box-shadow:inset 0 2px 0 var(--acc)} #playlist .plr.dropa{box-shadow:inset 0 -2px 0 var(--acc)}
 .plh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;position:sticky;top:calc(-1 * var(--s));background:var(--bg);z-index:2;padding:2px 0}
 .plh .seg{display:inline-flex;margin-left:auto} .plh .seg button{border-radius:0} .plh .seg button:first-child{border-radius:var(--r-ctl) 0 0 var(--r-ctl)} .plh .seg button:last-child{border-radius:0 var(--r-ctl) var(--r-ctl) 0}
@@ -366,6 +381,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="record.js"></script>
 <script src="agentui.js"></script>
 <script src="playlist.js"></script>
+<script src="panels.js"></script>
 <script src="keys.js"></script>
 <script src="motion.js"></script>
 <script src="camera.js"></script>

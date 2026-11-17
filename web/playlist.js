@@ -209,6 +209,11 @@ function renderPlHead() {
   h.textContent = '';
   const tab = (v, label, title) => el('button', { textContent: label, title, className: pl.view === v ? 'on' : '', onclick: () => plSetView(v) });
   pl.locks = el('span', { className: 'pllocks' });
+  // minimise (panels.js): only while the song list shows; the header keeps the tabs and locks on screen
+  const mini = typeof setPanelMin === 'function' && pl.view === 'playlist'
+    ? el('button', { id: 'plMinBtn', className: 'pchev' + (pnl.min.playlist ? ' on' : ''), innerHTML: CHEV, ariaLabel: 'Minimise the song list', title: pnl.min.playlist ? 'Show the song list' : 'Minimise the song list', onclick: () => setPanelMin('playlist', !pnl.min.playlist) })
+    : null;
+  if (mini) h.append(mini);
   h.append(el('b', { textContent: 'Playlist' }),
     el('button', { textContent: 'Add songs...', title: 'Add songs to the end of the playlist (or drop them anywhere on it)', onclick: addTracksPicker }),
     el('span', { className: 'plleg' }, ...['intro', 'build', 'drop', 'breakdown'].map(s => el('i', { className: 'sec-' + s, textContent: SECTION_NAMES[s] }))),
