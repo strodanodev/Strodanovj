@@ -65,7 +65,7 @@ async function audiusFile(t) {
 // Load a source into the track list / playlist. reorder: put the set in order once its songs are analysed.
 async function audiusLoad(src = audius.src, reorder = true) {
   if (audius.busy) { setStatus('Audius: still loading the last set'); return; }
-  audius.busy = true; audius.done = 0; audius.total = 0;
+  audius.busy = true; audius.done = 0; audius.total = 0; audius.pending = new Set();   // only this load's songs are put in order
   if (src !== audius.src) { audius.src = src; audius.ordered = false; audiusSave(); }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
   try {

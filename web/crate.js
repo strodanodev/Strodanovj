@@ -18,7 +18,7 @@ function trackDB(op, key, value) {
     };
   });
 }
-const ANALYSIS_VERSION = 4;   // raise when analyseTrack changes what it returns, so old results are worked out again
+const ANALYSIS_VERSION = 5;   // raise when analyseTrack changes what it returns, so old results are worked out again
 async function cachedAnalysis(file) {
   try { const v = await trackDB('get', fileKey(file)); return v && v.v === ANALYSIS_VERSION ? v.info : null; } catch (e) { return null; }
 }
@@ -28,6 +28,7 @@ function storeAnalysis(file, info) { trackDB('put', fileKey(file), { v: ANALYSIS
 async function crateInfo(file, buf) {
   let t = crate.tracks.find(x => x.key === fileKey(file));
   if (t && t.info) return t.info;
+  if (t && t.busy) return t.busy;   // the list is analysing it right now: wait for that result instead of a second analysis
   let info = await cachedAnalysis(file);
   if (!info) { info = await analyseAsync(monoOf(buf), buf.sampleRate); storeAnalysis(file, info); }
   if (!t) { t = newTrack(file); crate.tracks.push(t); }
@@ -56,6 +57,7 @@ async function analyseQueue() {
   try {
     for (let t; (t = crate.tracks.find(x => x.state === 'queued'));) {
       t.state = 'analysing'; crateDirty();
+      let done; t.busy = new Promise(r => { done = r; });
       try {
         let info = await cachedAnalysis(t.file);
         if (!info) {
@@ -66,6 +68,7 @@ async function analyseQueue() {
         }
         t.info = info; t.state = 'ready';
       } catch (e) { t.state = 'error'; }
+      done(t.info); t.busy = null;
       rankEnergy(); crateDirty();
     }
   } finally { crate.busy = false; }
@@ -74,7 +77,7 @@ async function analyseQueue() {
 // stretched over 1..10 only when the tracks really differ: two near-identical tracks both land near the middle.
 function rankEnergy() {
   const r = crate.tracks.filter(t => t.info);
-  const raw = t => t.info.loudDb / 3 + Math.log2(1 + t.info.flux) * 2;   // 9 dB louder or drums twice as busy: about +3
+  const raw = t => (t.info.loudDb ?? -60) / 3 + Math.log2(1 + (t.info.flux || 0)) * 2;   // ?? : results cached before every field had a default   // 9 dB louder or drums twice as busy: about +3
   const vs = r.map(raw), lo = Math.min(...vs), hi = Math.max(...vs), mid = (lo + hi) / 2, span = Math.max(hi - lo, 3);
   for (const t of r) t.energy = Math.min(10, Math.max(1, Math.round(5.5 + 9 * (raw(t) - mid) / span)));
 }

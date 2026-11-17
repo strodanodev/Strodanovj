@@ -286,7 +286,7 @@ function tickFeatures(now) {
   // a gap of silence followed by music is the plainest sign of a new song
   if (silent) { if (!live.silentSince) live.silentSince = now; }
   else {
-    if (live.silentSince && now - live.silentSince > 1.2 && now - live.lastSong > 20) songChange('gap', now);
+    if (live.src !== 'dj' && live.silentSince && now - live.silentSince > 1.2 && now - live.lastSong > 20) songChange('gap', now);
     live.silentSince = 0;
   }
   if (silent || tot < 1e-4) return;

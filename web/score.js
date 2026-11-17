@@ -43,7 +43,9 @@ function dropAhead(d) {
   for (let k = now.index + 1; k < L.length; k++) if (L[k].type === 'drop') return L[k].bar - bar;
   return null;
 }
-const scoreActive = () => score.on;
+// Auto-score takes the clips from the Agent only when it has a look to recall (on with nothing saved, the Agent used to
+// let go of every layer while nothing replaced it).
+const scoreActive = () => score.on && (Object.keys(score.looks).length > 0 || (typeof seg !== 'undefined' && Object.values(seg.edits).some(es => es.some(s => s.lookMode && s.lookMode !== 'type'))));
 // An auto-mix brings its own look (if one is saved); when it ends, the new track's current section look comes back.
 function scoreMixStart() { score.mixing = true; if (score.on && score.looks.mix) recallLook(score.looks.mix); }
 function scoreMixEnd() { score.mixing = false; score.idx = -1; }
