@@ -48,7 +48,11 @@ function dropOnCell(li, ci, e) {
   if (!drag) return;
   if (drag.kind === 'media') setClip(li, ci, mediaClip(drag.m));
   else if (drag.kind === 'gen') setClip(li, ci, genClip(drag.name));
-  else if (drag.kind === 'make') setClip(li, ci, drag.make());   // camera / text / 3D sources
+  else if (drag.kind === 'make') { const c = drag.make(); if (c) setClip(li, ci, c); }   // camera / text / 3D / web link sources (null = nothing to place)
+  else if (drag.kind === 'fx') {   // an effect dropped on a clip goes on that clip only
+    const c = comp.layers[li].clips[ci], e = c && mkEffect(drag.name);
+    if (e) { (c.fx || (c.fx = [])).push(e); sel.l = li; sel.c = ci; propTab = 'clip'; ui.gridDirty = ui.propsDirty = true; }
+  }
   else if (drag.kind === 'clip' && (drag.l !== li || drag.c !== ci)) {
     const A = comp.layers[drag.l], B = comp.layers[li];
     if (A.active === drag.c || A.pendingCol === drag.c) eject(drag.l);
@@ -119,7 +123,7 @@ function renderGrid() {
       }
       cell.addEventListener('click', () => { sel.l = li; sel.c = ci; if (c) { trigger(li, ci); propTab = 'clip'; } ui.gridDirty = ui.propsDirty = true; });
       cell.addEventListener('contextmenu', e => { e.preventDefault(); if (c) setClip(li, ci, null); });
-      dropTarget(cell, e => hasFiles(e) || (drag && drag.kind !== 'fx'), e => dropOnCell(li, ci, e));
+      dropTarget(cell, e => hasFiles(e) || (drag && (drag.kind !== 'fx' || c)), e => dropOnCell(li, ci, e));
       cellEls[li][ci] = cell;
       row.append(cell);
     }
@@ -128,8 +132,8 @@ function renderGrid() {
 }
 
 // ---------- properties ----------
-function chainUI(chain) {
-  const box = el('div', null, el('h4', { textContent: 'Effects' }));
+function chainUI(chain, title = 'Effects') {
+  const box = el('div', null, el('h4', { textContent: title }));
   chain.forEach((e, i) => {
     const d = DEFS.fx.get(e.def);
     const move = dir => { const j = i + dir; if (j >= 0 && j < chain.length) { [chain[i], chain[j]] = [chain[j], chain[i]]; ui.propsDirty = true; } };
@@ -156,6 +160,7 @@ function renderProps() {
   p.textContent = '';
   posSlider = null; lfoMeters.length = 0;
   sel.l = Math.min(comp.layers.length - 1, Math.max(0, sel.l));
+    if (!c.missing) p.append(clipLookUI(c), chainUI(c.fx || (c.fx = []), 'Effects on this clip'));   // clipopts.js
   const L = comp.layers[sel.l];
   p.append(tabs([['comp', 'Composition'], ['layer', 'Layer'], ['clip', 'Clip']], propTab, t => { propTab = t; ui.propsDirty = true; }));
   if (propTab === 'comp') {
@@ -234,9 +239,9 @@ function renderBrowser() {
     });
     if (!media.length && !missing.size) list.append(el('div', { className: 'hint', textContent: 'No media loaded yet.' }));
   } else if (browserTab === 'fx') {
-    b.append(el('div', { className: 'hint', textContent: 'Drag onto a layer or an effects list. Double-click adds to the selected layer.' }));
+    b.append(el('div', { className: 'hint', textContent: 'Drag onto a layer, a clip or an effects list. Double-click adds to the selected layer, or to the selected clip while the Clip tab is open.' }));
     for (const d of DEFS.fx.values()) {
-      const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const e = mkEffect(d.name); if (e) { comp.layers[sel.l].fx.push(e); propTab = 'layer'; ui.propsDirty = true; } } });
+      const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const e = mkEffect(d.name), c = propTab === 'clip' && comp.layers[sel.l].clips[sel.c]; if (!e) return; if (c && !c.missing) (c.fx || (c.fx = [])).push(e); else { comp.layers[sel.l].fx.push(e); propTab = 'layer'; } ui.propsDirty = true; } });
       draggable(n, { kind: 'fx', name: d.name });
       list.append(n);
     }
@@ -386,7 +391,7 @@ function initOutput() {
 const shUI = { cur: -1, timer: 0 };
 function refsTo(name, fn) {
   comp.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); });
-  comp.layers.forEach(L => { L.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); }); L.clips.forEach(c => { if (c && c.type === 'gen' && c.gen === name) fn(c, 'gen'); }); });
+  comp.layers.forEach(L => { L.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); }); L.clips.forEach(c => { if (c && c.type === 'gen' && c.gen === name) fn(c, 'gen'); if (c && c.fx) c.fx.forEach(e => { if (e.def === name) fn(e, 'fx'); }); }); });
 }
 function compileCustom(s) {
   let d, err = '';

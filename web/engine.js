@@ -207,6 +207,11 @@ const srcProg = mkProg(HEAD + `uniform sampler2D tex; uniform vec2 scl; uniform 
 void main(){ vec2 s = (uv - 0.5 - off) / scl + 0.5;
  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) { o = vec4(0.0); return; }
  o = texture(tex, s); }`);
+// The same with a crop: inset = how much of the picture is cut off at the left, bottom, right and top (fractions of its size).
+const cropProg = mkProg(HEAD + `uniform sampler2D tex; uniform vec2 scl; uniform vec2 off; uniform vec4 inset; in vec2 uv; out vec4 o;
+void main(){ vec2 s = (uv - 0.5 - off) / scl + 0.5;
+ if (s.x < inset.x || s.x > 1.0 - inset.z || s.y < inset.y || s.y > 1.0 - inset.w) { o = vec4(0.0); return; }
+ o = texture(tex, s); }`);
 const blendProg = mkProg(HEAD + `uniform sampler2D base; uniform sampler2D top; uniform float opacity; uniform int mode; in vec2 uv; out vec4 o;
 void main(){ vec4 b = texture(base, uv); vec4 t = texture(top, uv); float a = t.a * opacity; vec3 r;
  if (mode == 1) r = b.rgb + t.rgb; else if (mode == 2) r = b.rgb - t.rgb; else if (mode == 3) r = b.rgb * t.rgb;
@@ -441,8 +446,34 @@ function update(dt, beatDt = dt) {
     }
   }
 }
+// Clip settings (clipopts.js): c.tr = { s, w, h, x, y, cl, cr, ct, cb } - size (s times w / h), position and crop of this
+// one clip - and c.fx, the clip's own effects. Order: crop, effects, then size and position, then the layer's own scale and
+// position, so an effect works on the whole picture before it is made smaller or moved (picture in picture).
+let clipRT = null;   // scratch for clips with effects or a transform, shared: one clip is drawn at a time
+const clipMedia = c => !c.draw && c.type !== 'gen';   // video, image, camera, web link: a texture drawn with the layer's fit
+function drawClip(L, c, f) {
+  const t = c.tr, fx = c.fx && c.fx.some(e => !e.bypass) ? c.fx : null, media = clipMedia(c);
+  // a video or image with no effects is drawn in one pass straight from its own pixels, whatever its size and crop
+  if (!fx && (!t || media)) return drawSource(L, c, f);
+  if (!clipRT || clipRT.f[0].w !== comp.w || clipRT.f[0].h !== comp.h) { freeRT(clipRT); clipRT = mkRT(comp.w, comp.h); }
+  clipRT.cur = 0;
+  if (!drawSource(L, c, rtDst(clipRT), true)) return false;
+  rtSwap(clipRT);
+  if (fx) applyChain(fx, clipRT);
+  const ls = media ? L.scale : 1, s = t ? t.s : 1;   // generators, text and 3D ignore the layer's scale and position
+  clearFbo(f);
+  gl.useProgram(cropProg.p);
+  bindTex(0, rtSrc(clipRT).tex);
+  gl.uniform1i(cropProg.loc('tex'), 0);
+  gl.uniform2f(cropProg.loc('scl'), s * (t ? t.w : 1) * ls, s * (t ? t.h : 1) * ls);
+  gl.uniform2f(cropProg.loc('off'), (t ? t.x : 0) * ls + (media ? L.x : 0), (t ? t.y : 0) * ls + (media ? L.y : 0));
+  if (t && !media) gl.uniform4f(cropProg.loc('inset'), t.cl, t.cb, t.cr, t.ct); else gl.uniform4f(cropProg.loc('inset'), 0, 0, 0, 0);
+  tri();
+  return true;
+}
 // Draw clip c (generator, video or image, with the layer's fit / scale / position) into framebuffer f. False if it has no picture yet.
-function drawSource(L, c, f) {
+// flat: fill the frame only (fit and crop); drawClip adds the size and position after the clip's effects.
+function drawSource(L, c, f, flat) {
   if (c.draw) return c.draw(f, L);   // camera / text / 3D clips (CLIP_TYPES)
   if (c.type === 'gen') {
     const d = DEFS.gen.get(c.gen), prog = d && defProg(d);
@@ -456,12 +487,14 @@ function drawSource(L, c, f) {
   let sx = 1, sy = 1;
   if (L.fit === 0) { if (va > ca) sx = va / ca; else sy = ca / va; }
   else if (L.fit === 1) { if (va > ca) sy = ca / va; else sx = va / ca; }
+  const t = c.tr, ls = flat ? 1 : L.scale, ts = t && !flat ? t.s : 1;
   clearFbo(f);
-  gl.useProgram(srcProg.p);
+  gl.useProgram(cropProg.p);
   bindTex(0, c.tex);
-  gl.uniform1i(srcProg.loc('tex'), 0);
-  gl.uniform2f(srcProg.loc('scl'), sx * L.scale, sy * L.scale);
-  gl.uniform2f(srcProg.loc('off'), L.x, L.y);
+  gl.uniform1i(cropProg.loc('tex'), 0);
+  gl.uniform2f(cropProg.loc('scl'), sx * ls * ts * (t && !flat ? t.w : 1), sy * ls * ts * (t && !flat ? t.h : 1));
+  gl.uniform2f(cropProg.loc('off'), flat ? 0 : (t ? t.x : 0) * ls + L.x, flat ? 0 : (t ? t.y : 0) * ls + L.y);
+  if (t) gl.uniform4f(cropProg.loc('inset'), t.cl, t.cb, t.cr, t.ct); else gl.uniform4f(cropProg.loc('inset'), 0, 0, 0, 0);
   tri();
   return true;
 }
@@ -472,7 +505,7 @@ function applyTransition(L) {
   const t = L.transDur > 0 ? (comp.time - L.transT0) / L.transDur : 1;
   if (t >= 1) { endTransition(L); return; }
   if (!L.tf) L.tf = mkFbo(comp.w, comp.h);
-  if (!drawSource(L, fc, L.tf)) return;
+  if (!drawClip(L, fc, L.tf)) return;
   bindFbo(rtDst(L.rt));
   gl.useProgram(transProg.p);
   bindTex(0, rtSrc(L.rt).tex); bindTex(1, L.tf.tex);
@@ -488,7 +521,7 @@ function renderComp() {
     const c = L.clips[L.active];
     if (!c || L.bypass || (anySolo && !L.solo)) { L.outTex = null; continue; }
     L.rt.cur = 0;
-    if (!drawSource(L, c, rtDst(L.rt))) { L.outTex = null; continue; }
+    if (!drawClip(L, c, rtDst(L.rt))) { L.outTex = null; continue; }
     rtSwap(L.rt);
     applyTransition(L);
     applyChain(L.fx, L.rt);
@@ -660,7 +693,8 @@ function compToJSON() {
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
     layers: comp.layers.map(L => ({
       name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   /* your level, not the Agent's fade */ blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) })),
+      clips: L.clips.map(c => c && Object.assign(CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) },
+        typeof clipLookJSON === 'function' ? clipLookJSON(c, fxJ) : null)),   // this clip's size, position, crop and effects (clipopts.js)
     })),
     screens: screens.map(s => ({ name: s.name, device: s.device || 'auto', ndiName: s.ndiName || undefined, ndiRes: s.ndiRes || undefined, ndiFps: s.ndiFps || undefined,
       vdoId: s.vdoId || undefined, vdoPw: s.vdoPw || undefined, vdoRes: s.vdoRes || undefined, vdoFps: s.vdoFps || undefined, vdoKbps: s.vdoKbps || undefined, vdoAudio: s.vdoAudio || undefined, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
@@ -695,6 +729,7 @@ function loadComp(j) {
         n.name = c.name || c.fileName; n.speed = num(c.speed, 1); if (typeof clipOptsFrom === 'function') clipOptsFrom(n, c); L.clips[ci] = n;
       }
     });
+    if (typeof clipLookFrom === 'function') (l.clips || []).slice(0, comp.columns).forEach((c, ci) => { if (c && L.clips[ci]) clipLookFrom(L.clips[ci], c, fxL); });
   }
   if (!comp.layers.length) addLayer();
   if (Array.isArray(j.screens) && j.screens.length) {

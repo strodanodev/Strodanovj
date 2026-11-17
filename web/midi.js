@@ -11,7 +11,7 @@ try { midi.map = JSON.parse(localStorage.getItem(MIDI_KEY) || '{}') || {}; } cat
 function saveMidiMap() { try { localStorage.setItem(MIDI_KEY, JSON.stringify(midi.map)); } catch (e) {} }
 
 function findFx(uid) {
-  for (const [owner, chain] of [['Composition', comp.fx], ...comp.layers.map(L => [L.name, L.fx])]) {
+  for (const [owner, chain] of [['Composition', comp.fx], ...comp.layers.map(L => [L.name, L.fx]), ...(typeof clipChains === 'function' ? clipChains() : [])]) {   // clip effects: clipopts.js
     const e = chain.find(x => x.uid === uid);
     if (e) return { e, owner };
   }
