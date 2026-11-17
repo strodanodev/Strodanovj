@@ -54,6 +54,9 @@ function ptFrame(mat, camera, k) {
 // The camera input, when on and no hand is tracked: where you are, -0.5..0.5 (0 otherwise).
 const camX = () => camOn() && !handOn() ? camFeat.x - 0.5 : 0, camY = () => camOn() && !handOn() ? camFeat.y - 0.5 : 0;
 const attr = (a, k) => new THREE.BufferAttribute(a, k);
+// True while the deck driving the visuals is playing a track with analysed sections (score.js), so scenes can follow its
+// structure instead of a bar cycle. (The live listener only reports drops, so it does not count.)
+const songSections = () => typeof sectionNow === 'function' && typeof audio !== 'undefined' && !!audio.clockDeck && audio.clockDeck.playing && !!sectionNow(audio.clockDeck);
 
 const SCENES3D = {
   wire: { name: 'Wire Sphere', params: [P('Speed', 0.3), P('Hue', 0.55), P('Kick pulse', 0.6), P('Size', 0.5), P('Camera spin', 0.5)],
@@ -164,7 +167,7 @@ const SCENES3D = {
         knot.scale.setScalar(1 + p[3] * (0.25 * audioFeat.kick + 0.1 * Math.pow(1 - beatFrac(), 4)));
       } };
     } },
-  stars: { name: 'Star Warp', params: [P('Speed', 0.4), P('Hue', 0.6), P('Star size', 0.4), P('Bass boost', 0.6), P('Steer (hand / camera)', 0.6)],
+  stars: { name: 'Star Warp', trail: 0.15, params: [P('Speed', 0.4), P('Hue', 0.6), P('Star size', 0.4), P('Bass boost', 0.6), P('Steer (hand / camera)', 0.6)],
     // Flying through a star field at the tempo. The stars' flight is in the vertex shader (z = start + distance travelled,
     // wrapped), so there are many more of them; they fade in far away, brighten as they pass, and the near ones stretch
     // into short streaks of points along the line of flight when the speed is up.
@@ -256,7 +259,7 @@ const SCENES3D = {
         blob.rotation.y += dt * (0.1 + p[0]); blob.rotation.x += dt * 0.05;
       } };
     } },
-  comet: { name: 'Hand Comet', params: [P('Tail length', 0.5), P('Hue', 0.95), P('Size', 0.5), P('Sparkle', 0.5), P('Follow hand', 1)],
+  comet: { name: 'Hand Comet', trail: 0.35, params: [P('Tail length', 0.5), P('Hue', 0.95), P('Size', 0.5), P('Sparkle', 0.5), P('Follow hand', 1)],
     // A comet whose head follows your hand (a figure eight when no hand is seen). Particles are born at the head with a
     // random velocity; only the newborn ones are written each frame (birth place, velocity, birth time), and their flight,
     // fade and colour (white-hot when young, then the hue) are worked out from their age in the vertex shader.
@@ -377,7 +380,7 @@ const SCENES3D = {
         camera.position.x += (tx - camera.position.x) * 0.1; camera.position.y += (ty - camera.position.y) * 0.1; camera.lookAt(0, 0, 0);
       } };
     } },
-  picture: { name: 'Picture Particles', sources: true, params: [P('Orbit', 0.3), P('Depth', 0.5), P('Music scatter', 0.5), P('Dark cut', 0.15),
+  picture: { name: 'Picture Particles', sources: ['below', 'camera'], params: [P('Orbit', 0.3), P('Depth', 0.5), P('Music scatter', 0.5), P('Dark cut', 0.15),
     P('Size', 0.45), P('Hand pull / camera follow', 0.6)],
     // A grid of points that takes its colour from a picture: the layer below this one, or the camera input (c.src).
     // Brightness pushes a point towards the viewer, so any video, text or generator becomes a relief of particles.
@@ -438,7 +441,7 @@ const SCENES3D = {
         camera.position.set(Math.sin(ax) * 6, Math.sin(ay) * 6, Math.cos(ax) * Math.cos(ay) * 6); camera.lookAt(0, 0, 0);
       } };
     } },
-  fireworks: { name: 'Beat Fireworks', params: [P('Bursts per beat', 0.45), P('Hue', 0.08), P('Colour mix', 0.6), P('Size', 0.4), P('Gravity', 0.5),
+  fireworks: { name: 'Beat Fireworks', trail: 0.25, params: [P('Bursts per beat', 0.45), P('Hue', 0.08), P('Colour mix', 0.6), P('Size', 0.4), P('Gravity', 0.5),
     P('Music react', 0.6), P('Hand launch (pinch)', 0.8)],
     // 16 bursts in turn, each a shell of points. A launch only writes the burst's origin, start time and hue into
     // uniforms; the flight (drag, gravity, fade, end sparkle) is a function of age in the vertex shader.
@@ -488,7 +491,7 @@ const SCENES3D = {
         camera.position.x += (camX() * 3 - camera.position.x) * 0.1; camera.position.y += (camY() * 2 - camera.position.y) * 0.1; camera.lookAt(0, 0.5, 0);
       } };
     } },
-  vortex: { name: 'Vortex', params: [P('Speed', 0.3), P('Hue', 0.58), P('Tilt', 0.45), P('Jets', 0.5), P('Size', 0.4), P('Music react', 0.6),
+  vortex: { name: 'Vortex', trail: 0.2, params: [P('Speed', 0.3), P('Hue', 0.58), P('Tilt', 0.45), P('Jets', 0.5), P('Size', 0.4), P('Music react', 0.6),
     P('Hand pull / camera follow', 0.6)],
     // A spiral disc falling into its centre, polar jets above and below. Each point keeps its arm angle and falls inwards
     // at a fixed rate; its angle is a0 + 8 / sqrt(r), so it turns faster as it falls (about r^-1.5, like an orbit), and it
@@ -587,7 +590,7 @@ const SCENES3D = {
         camera.position.y += (hy * 2.5 * p[6] - camera.position.y) * 0.06; camera.lookAt(0, 0, -4);
       } };
     } },
-  attractor: { name: 'Strange Attractor', params: [P('Speed', 0.4), P('Hue', 0.55), P('Shape (Lorenz / Aizawa / Thomas / Halvorsen / every 16 beats)', 0.1),
+  attractor: { name: 'Strange Attractor', trail: 0.3, params: [P('Speed', 0.4), P('Hue', 0.55), P('Shape (Lorenz / Aizawa / Thomas / Halvorsen / every 16 beats)', 0.1),
     P('Size', 0.35), P('Music react', 0.6), P('Spin', 0.3), P('Hand pull / camera follow', 0.6)],
     // Points flowing along a chaotic attractor, integrated on the CPU (cheap at this count) and coloured by how fast they move.
     // Each attractor lives at its own scale, so the cloud is re-centred and re-scaled smoothly from its own spread every frame;
@@ -646,6 +649,218 @@ const SCENES3D = {
         camera.position.x += (camX() * 4 * p[6] - camera.position.x) * 0.1; camera.position.y += (camY() * 3 * p[6] - camera.position.y) * 0.1; camera.lookAt(0, 0, 0);
       } };
     } },
+  supernova: { name: 'Drop Supernova', params: [P('Speed', 0.3), P('Hue', 0.7), P('Cycle without song structure (4, 8, 16, 32 bars)', 0.35), P('Blast', 0.55),
+    P('Size', 0.4), P('Music react', 0.6), P('Hand (fist gathers, open hand explodes)', 0.7)],
+    // A nebula that gathers into a white-hot core through a build-up and explodes on the drop, then drifts back into a cloud.
+    // The charge follows the song structure when there is one (musicFeat.build, the bang when musicFeat.drop starts), else a
+    // cycle of N bars that bangs on its first beat, or your hand (close it to gather, open it to explode). The shader only
+    // gets the charge, the charge at the bang and the time since it, so the whole flight is a function of those three.
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100); camera.position.z = 7;
+      const n = window.VJ_MOBILE ? 20000 : 60000, R = Math.random, pos = new Float32Array(n * 3), seed = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const u = R() * 2 - 1, a = R() * Math.PI * 2, q = Math.sqrt(1 - u * u), r = 0.6 + Math.pow(R(), 0.7) * 2.6;
+        pos[i * 3] = Math.cos(a) * q * r; pos[i * 3 + 1] = u * r * 0.55; pos[i * 3 + 2] = Math.sin(a) * q * r; seed[i] = R();
+      }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', attr(pos, 3)); geo.setAttribute('aSeed', attr(seed, 1));
+      const mat = pointsMat({ uT: { value: 0 }, uSpin: { value: 0 }, uCharge: { value: 0 }, uBangC: { value: 0 }, uAge: { value: 99 }, uBlast: { value: 4 },
+        uKick: { value: 0 }, uHue: { value: 0.7 }, uSize: { value: 0.03 } },
+        `attribute float aSeed; uniform float uT, uSpin, uCharge, uBangC, uAge, uBlast, uKick, uHue, uSize;
+        vec3 rotY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x * c - v.z * s, v.y, v.x * s + v.z * c); }
+        vec3 gather(vec3 q, float r, float c) { float c2 = c * c; return rotY(q * (1.0 - 0.95 * c2), c2 * 5.0 / (0.3 + r)); }   // in and spinning up`,
+        `vec3 h = position; float r = length(h);
+        vec3 p0 = rotY(h, uSpin * (0.3 + 0.7 / (0.4 + r))) + flow(h * 0.5 + aSeed * 3.0, uT * 0.5) * 0.12;   // the nebula, inner parts turning faster
+        bool ring = aSeed > 0.9;   // one in ten: a flat shock ring that only shows in the blast
+        vec3 dir = ring ? normalize(vec3(h.x, 0.0, h.z) + 0.0001) * 2.4 : normalize(h + 0.0001) * (0.4 + aSeed * aSeed * 1.8);
+        vec3 blast = gather(p0, r, uBangC) + dir * uBlast * (1.0 - exp(-uAge * 2.2));
+        float settle = smoothstep(2.0, 9.0, uAge);
+        p = mix(blast, gather(p0, r, uCharge), settle);
+        p += normalize(h + 0.0001) * uKick * uCharge * 0.1 * sin(aSeed * 80.0 + uT * 40.0);   // the charged core trembles on the kicks
+        float flash = exp(-uAge * 3.0) * (1.0 - settle), heat = clamp(uCharge * uCharge + flash, 0.0, 1.0);
+        float dense = 1.0 - 0.95 * mix(uBangC, uCharge, settle) * mix(uBangC, uCharge, settle);   // the same light spread over a smaller ball: dim each point
+        float a = ring ? (1.0 - settle) * exp(-uAge * 0.8) : (0.5 + flash * 0.4) * mix(0.12, 1.0, min(1.0, dense * dense * 4.0 + uAge * 0.6));
+        vCol = vec4(hsl(uHue + aSeed * 0.1 - heat * 0.1 + (ring ? 0.5 : 0.0), 0.85 - heat * 0.5, 0.42 + heat * 0.45), a);
+        sz = uSize * (0.5 + aSeed) * (1.0 + flash);`);
+      const g = new THREE.Group(); g.rotation.x = 0.45; g.add(ptMesh(geo, mat)); scene.add(g);   // tilted, so the shock ring reads as a ring
+      let t = 0, spin = 0, age = 99, bangC = 0, charge = 0, prevDrop = 0, lastCycle = null, kick = 0;
+      return { scene, camera, update(p, dt) {
+        t += dt; age += dt; spin += dt * (0.1 + p[0] * 1.2) * (1 + charge * 3);
+        const mf = typeof musicFeat !== 'undefined' ? musicFeat : null, bang = () => { bangC = charge; age = 0; };
+        let c;
+        if (handOn() && p[6] > 0) {
+          c = Math.min(1, (1 - handFeat.open) * 1.25) * p[6];
+          if (charge > 0.5 && c < 0.2) bang();   // the hand opened while charged
+        } else if (mf && (mf.build > 0 || mf.drop > 0 || songSections())) {
+          c = mf.build;   // a track with sections: rest as a nebula until a build-up (no bar cycle, so no bang mid-breakdown)
+          if (mf.drop > 0 && prevDrop === 0) bang();
+        } else {
+          const len = [4, 8, 16, 32][Math.min(3, Math.floor(p[2] * 4))] * 4, k = Math.floor(comp.beats / len);
+          c = Math.pow((comp.beats - k * len) / len, 1.6);
+          if (lastCycle !== null && k !== lastCycle) bang();
+          lastCycle = k;
+        }
+        prevDrop = mf ? mf.drop : 0;
+        charge = age < 0.05 ? c : charge + (c - charge) * Math.min(1, dt * 8);
+        kick = Math.max(kick * Math.exp(-dt * 8), audioFeat.kick * p[5]);
+        const U = mat.uniforms; U.uT.value = t; U.uSpin.value = spin; U.uCharge.value = charge; U.uBangC.value = bangC; U.uAge.value = age;
+        U.uBlast.value = 0.8 + p[3] * 3.2; U.uKick.value = kick; U.uHue.value = p[1]; U.uSize.value = 0.012 + p[4] * 0.06;
+        ptFrame(mat, camera, 0);
+        const shake = kick * charge * 0.06;
+        camera.position.set(camX() * 3 + (Math.random() - 0.5) * shake, camY() * 2 + (Math.random() - 0.5) * shake, 7 - charge * 1.5); camera.lookAt(0, 0, 0);
+      } };
+    } },
+  terrain: { name: 'Audio History Terrain', params: [P('Speed (2, 4, 8, 16 rows per beat)', 0.45), P('Hue', 0.78), P('Height', 0.5), P('Ridges', 0.4),
+    P('Size', 0.4), P('Camera height', 0.35), P('Steer (hand / camera)', 0.5)],
+    // The last few beats of the music as a landscape you fly over: every row of points is one moment (bass in the middle,
+    // mids either side, highs at the edges), the newest at the front, and a kick lights its whole row. The rows are a
+    // vec4 uHist[96] uniform (bass, mid, high, kick) shifted by one at the row rate; uFrac slides them between shifts.
+    // With no sound it rolls gentle hills, so it never sits flat.
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 100);
+      const ROWS = 96, cols = window.VJ_MOBILE ? 120 : 220, n = ROWS * cols, pos = new Float32Array(n * 3), hist = new Float32Array(ROWS * 4);
+      for (let r = 0, i = 0; r < ROWS; r++) for (let k = 0; k < cols; k++, i++) { pos[i * 3] = k / (cols - 1) * 2 - 1; pos[i * 3 + 1] = Math.random(); pos[i * 3 + 2] = r; }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', attr(pos, 3));
+      const mat = pointsMat({ uHist: { value: hist }, uFrac: { value: 0 }, uHue: { value: 0.78 }, uHeight: { value: 1 }, uRidge: { value: 0.4 }, uSize: { value: 0.03 } },
+        `uniform vec4 uHist[96]; uniform float uFrac, uHue, uHeight, uRidge, uSize;`,
+        `int r = int(position.z + 0.5); vec4 h = uHist[r];
+        float x = position.x, ax = abs(x), far = float(r) / 95.0;
+        float lvl = h.x * exp(-ax * ax * 12.0) * 1.3 + h.y * exp(-pow((ax - 0.45) * 5.0, 2.0)) + h.z * exp(-pow((ax - 0.85) * 5.0, 2.0)) * 0.9;
+        float ridge = 0.5 + 0.5 * sin(x * 37.0 + sin(x * 13.0) * 2.0);   // ridges along the flight, like lines on an old plot
+        float y = uHeight * lvl * (1.0 - uRidge + uRidge * ridge * 1.6);
+        p = vec3(x * 6.5, y * 2.5, -(float(r) + uFrac) * 0.16);
+        vCol = vec4(hsl(uHue + y * 0.15 - far * 0.12, 0.85, 0.3 + y * 0.35 + h.w * 0.3), (1.0 - smoothstep(0.55, 1.0, far)) * smoothstep(0.0, 0.03, far + uFrac / 95.0) * (0.4 + y * 0.5 + h.w * 0.4));
+        sz = uSize * (0.7 + y);`);
+      scene.add(ptMesh(geo, mat));
+      let acc = 0, t = 0, kpk = 0, sx = 0, sy = 0;
+      return { scene, camera, update(p, dt) {
+        t += dt;
+        // the newest row follows the music live; with no sound, gentle made-up hills
+        const quiet = Math.max(0, 1 - audioFeat.level * 20);
+        const live = [audioFeat.bass, audioFeat.mid, audioFeat.high];
+        const idle = [0.35 + 0.25 * Math.sin(t * 1.3), 0.3 + 0.2 * Math.sin(t * 2.1 + 1), 0.25 + 0.15 * Math.sin(t * 3.7 + 2)];
+        for (let k = 0; k < 3; k++) hist[k] += (live[k] * (1 - quiet) + idle[k] * quiet - hist[k]) * 0.5;
+        kpk = Math.max(kpk, audioFeat.kick); hist[3] = kpk;
+        acc += dt * (comp.bpm / 60) * [2, 4, 8, 16][Math.min(3, Math.floor(p[0] * 4))];
+        if (acc >= 1) { const s = Math.min(ROWS - 1, Math.floor(acc)); hist.copyWithin(s * 4, 0, (ROWS - s) * 4); acc -= s; kpk = 0; }
+        const U = mat.uniforms; U.uFrac.value = acc; U.uHue.value = p[1]; U.uHeight.value = 0.2 + p[2] * 1.6; U.uRidge.value = p[3]; U.uSize.value = 0.012 + p[4] * 0.06;
+        ptFrame(mat, camera, 0);
+        const hx = handOn() ? handFeat.x - 0.5 : camX(), hy = handOn() ? handFeat.y - 0.5 : camY();
+        sx += (hx * 6 * p[6] - sx) * 0.08; sy += (hy * 2 * p[6] - sy) * 0.08;
+        camera.position.set(sx, 0.6 + p[5] * 3 + sy, 2.6); camera.lookAt(sx * 0.4, 0, -9);
+      } };
+    } },
+  shatter: { name: 'Text Shatter', sources: ['below', 'camera', 'text'], ownText: true,
+    params: [P('Shatter every (off, 1, 2, 4, 8, 16 beats)', 0.6), P('Force', 0.5), P('Reassemble (beats)', 0.4), P('Shard size', 0.5), P('Size', 0.5),
+      P('Music react (kicks shatter)', 0.5), P('Hand (pinch shatters there)', 0.7)],
+    // A picture made of points that breaks into tumbling shards and pulls itself back together. The picture is the layer
+    // below (a text clip, a logo, a video...), the camera, or the clip's own text when nothing plays below. At rest it lines
+    // up with the frame exactly; each shard (a cell of the grid) flies off along its own direction and spins on its own axis.
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100); camera.position.z = 6;
+      const gx = window.VJ_MOBILE ? 256 : 400, gy = Math.round(gx * 9 / 16), n = gx * gy, uv = new Float32Array(n * 3), FH = 2 * Math.tan(25 * Math.PI / 180) * 6;
+      for (let y = 0, i = 0; y < gy; y++) for (let x = 0; x < gx; x++, i++) { uv[i * 3] = (x + 0.5) / gx; uv[i * 3 + 1] = (y + 0.5) / gy; uv[i * 3 + 2] = Math.random(); }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', attr(uv, 3));
+      const ext = { isExternalTexture: true, sourceTexture: null, version: 0 };   // an engine texture handed to three.js as it is (see Picture Particles)
+      const mat = pointsMat({ uTex: { value: ext }, uAspect: { value: 16 / 9 }, uH: { value: FH }, uAmt: { value: 0 }, uForce: { value: 3 }, uCells: { value: 12 },
+        uT: { value: 0 }, uSize: { value: 0.03 }, uOrigin: { value: new THREE.Vector2(0.5, 0.5) } },
+        `uniform sampler2D uTex; uniform float uAspect, uH, uAmt, uForce, uCells, uT, uSize; uniform vec2 uOrigin;`,
+        `vec2 uv = position.xy; vec4 tx = texture(uTex, uv); float l = max(tx.r, max(tx.g, tx.b));
+        if (l < 0.08) vCol = vec4(0.0);
+        else {
+          vec2 cells = vec2(floor(uCells * uAspect), uCells), cell = floor(uv * cells), cc = (cell + 0.5) / cells;
+          float s = hash(cell.x * 17.0 + cell.y * 131.0 + 0.5);
+          vec2 sc = vec2(uH * uAspect, uH);
+          vec3 base = vec3((uv - 0.5) * sc, 0.0), ctr = vec3((cc - 0.5) * sc, 0.0);
+          vec3 dir = normalize(vec3((cc - uOrigin) * vec2(uAspect, 1.0) * 2.0 + (vec2(hash(s * 7.1), hash(s * 3.3)) - 0.5) * 0.8, 0.4 + hash(s * 5.7) * 1.2));
+          vec3 k = normalize(vec3(hash(s * 1.3), hash(s * 2.9), hash(s * 4.1)) - 0.5 + 0.001);
+          float ang = (s - 0.5) * 8.0 * uAmt, ca = cos(ang), sa = sin(ang);
+          vec3 lp = base - ctr; lp = lp * ca + cross(k, lp) * sa + k * dot(k, lp) * (1.0 - ca);   // the shard turns about its own axis
+          p = ctr + lp + dir * uForce * uAmt * (0.4 + s) + flow(base + s, uT) * 0.08 * uAmt;
+          vCol = vec4(tx.rgb * (0.9 + uAmt * 0.6), 1.0);
+          sz = uSize;
+        }`);
+      scene.add(ptMesh(geo, mat));
+      // the clip's own text, drawn into a texture of its own (redrawn only when the text changes)
+      const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+      let own = null, ownKey = null;
+      const ownTex = text => {
+        if (own && text === ownKey) return own;
+        const x = cv.getContext('2d'), lines = String(text || ' ').split(/\n|\|/).slice(0, 6);
+        x.clearRect(0, 0, 1280, 720);
+        let s = 260; x.font = `900 ${s}px Inter, Arial, sans-serif`;
+        const w = Math.max(1, ...lines.map(l => x.measureText(l).width));
+        s = Math.max(20, Math.min(s * 1100 / w, 560 / lines.length)); x.font = `900 ${s}px Inter, Arial, sans-serif`;
+        const g = x.createLinearGradient(100, 0, 1180, 0); g.addColorStop(0, '#2ee6ff'); g.addColorStop(1, '#ff3df0');
+        x.fillStyle = g; x.textAlign = 'center'; x.textBaseline = 'middle';
+        lines.forEach((l, i) => x.fillText(l, 640, 360 + (i - (lines.length - 1) / 2) * s * 1.05));
+        if (!own) own = mkTex(0, 0);
+        gl.bindTexture(gl.TEXTURE_2D, own); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        ownKey = text; return own;
+      };
+      let t = 0, hitT = -99, amt0 = 0, amt = 0, lastB = null, armed = true, pinched = false;
+      const origin = mat.uniforms.uOrigin.value;
+      const hit = (ox = 0.5, oy = 0.5) => { amt0 = amt; hitT = t; origin.set(ox, oy); };
+      return { scene, camera, dispose() { if (own) gl.deleteTexture(own); own = null; }, update(p, dt, L, c) {
+        t += dt;
+        const mode = (c && c.src) || 'below', li = L ? comp.layers.indexOf(L) : -1;
+        let tex = mode === 'below' && li > 0 ? comp.layers[li - 1].outTex : null;
+        if (!tex && mode === 'camera' && camOn() && camState.tex) tex = camState.tex;
+        if (!tex) tex = ownTex(c && typeof c.text === 'string' ? c.text : 'STRODANO VJ');
+        mat.uniforms.uTex.value.sourceTexture = tex;
+        const every = [0, 1, 2, 4, 8, 16][Math.min(5, Math.floor(p[0] * 6))];
+        if (every) { const bi = Math.floor(comp.beats / every); if (lastB !== null && bi !== lastB) hit(0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4); lastB = bi; }
+        if (audioFeat.kick > 0.6 && armed && Math.random() < p[5]) { armed = false; hit(0.5, 0.5); }
+        if (audioFeat.kick < 0.3) armed = true;
+        const pin = handOn() && p[6] > 0 && handFeat.pinch > 0.75;
+        if (pin && !pinched) hit(handFeat.x, handFeat.y);   // break it where your fingers meet
+        pinched = pin;
+        // out fast (from wherever it was), then back over the Reassemble time, eased
+        const age = t - hitT, ret = (0.5 + p[2] * 3.5) * 60 / comp.bpm, back = Math.min(1, Math.max(0, (age - 0.15) / ret));
+        amt = (amt0 + (1 - amt0) * (1 - Math.exp(-age * 12))) * (1 - back * back * (3 - 2 * back));
+        const U = mat.uniforms; U.uAmt.value = amt; U.uT.value = t; U.uForce.value = 1 + p[1] * 5; U.uCells.value = Math.round(4 + (1 - p[3]) * 28);
+        U.uAspect.value = comp.w / comp.h; U.uSize.value = (FH / gy) * (0.8 + p[4] * 1.6);
+        ptFrame(mat, camera, 0);
+      } };
+    } },
+  harmono: { name: 'Harmonograph', trail: 0.3, params: [P('Speed', 0.3), P('Hue', 0.5), P('Change every (1, 2, 4, 8 bars)', 0.35), P('Damping', 0.35),
+    P('Pen (draw on each bar)', 0.3), P('Size', 0.35), P('Music react', 0.6), P('Turn (hand / camera)', 0.5)],
+    // A 3D harmonograph: one long curve, sin(a u + pa), sin(b u + pb), sin(c u + pc), dying away along u (Damping). The
+    // frequency ratios change on the bar (a morph between the old and the new set over a beat and a half), the phases drift
+    // (Speed) so the figure keeps turning over, and a bright pen runs along it once per bar (Pen: only what it has drawn shows).
+    build() {
+      const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100); camera.position.z = 7;
+      const n = window.VJ_MOBILE ? 25000 : 60000, pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { pos[i * 3] = i / n; pos[i * 3 + 1] = Math.random(); }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', attr(pos, 3));
+      const SETS = [[1, 2, 3], [2, 3, 4], [3, 4, 5], [3, 2, 5], [1, 3, 5], [4, 5, 6], [2, 5, 3], [5, 4, 3], [1, 4, 3], [3, 5, 7]];
+      const pick = k => SETS[((k * 7) % SETS.length + SETS.length) % SETS.length];   // step 7 of 10: every set before a repeat
+      const mat = pointsMat({ uFA: { value: new THREE.Vector3(1, 2, 3) }, uFB: { value: new THREE.Vector3(1, 2, 3) }, uPh: { value: new THREE.Vector3(0, 1, 2) },
+        uMorph: { value: 1 }, uDamp: { value: 0.02 }, uPen: { value: 0 }, uPenAmt: { value: 0 }, uHue: { value: 0.5 }, uSize: { value: 0.02 }, uKick: { value: 0 }, uLen: { value: 50 } },
+        `uniform vec3 uFA, uFB, uPh; uniform float uMorph, uDamp, uPen, uPenAmt, uHue, uSize, uKick, uLen;
+        vec3 curve(vec3 f, float u) { return vec3(sin(f.x * u + uPh.x), sin(f.y * u + uPh.y), sin(f.z * u + uPh.z)) * exp(-uDamp * u); }`,
+        `float un = position.x, u = un * uLen, m = smoothstep(0.0, 1.0, uMorph);
+        p = mix(curve(uFA, u), curve(uFB, u), m) * vec3(2.7, 2.1, 1.6) * (1.0 + uKick * 0.15 * sin(u * 3.0 + position.y * 6.0));
+        p += (vec3(hash(position.y * 9.1), hash(position.y * 4.7), hash(position.y * 2.3)) - 0.5) * 0.02;   // a little thickness
+        float head = exp(-pow((un - uPen) * 120.0, 2.0)), vis = mix(1.0, step(un, uPen), uPenAmt);
+        vCol = vec4(hsl(uHue + un * 0.35, 0.8, 0.5 + head * 0.4 + uKick * 0.15), (0.35 + head) * vis * (0.45 + 0.55 * exp(-uDamp * u * 0.5)));
+        sz = uSize * (1.0 + head * 2.0);`);
+      const g = new THREE.Group(); g.add(ptMesh(geo, mat)); scene.add(g);
+      let cur = null, kick = 0, t = 0;
+      const ph = mat.uniforms.uPh.value;
+      return { scene, camera, update(p, dt) {
+        t += dt;
+        const per = [1, 2, 4, 8][Math.min(3, Math.floor(p[2] * 4))] * 4, k = Math.floor(comp.beats / per);
+        if (k !== cur) { cur = k; mat.uniforms.uFA.value.fromArray(pick(k - 1)); mat.uniforms.uFB.value.fromArray(pick(k)); }
+        const sp = dt * (0.05 + p[0] * 0.6); ph.x += sp; ph.y += sp * 1.31; ph.z += sp * 0.73;
+        kick = Math.max(kick * Math.exp(-dt * 7), audioFeat.kick * p[6]);
+        const U = mat.uniforms; U.uMorph.value = Math.min(1, (comp.beats - k * per) / 1.5); U.uDamp.value = p[3] * 0.06;
+        U.uPen.value = (((comp.beats / 4) % 1) + 1) % 1 * 1.02; U.uPenAmt.value = p[4]; U.uHue.value = p[1]; U.uSize.value = 0.008 + p[5] * 0.05; U.uKick.value = kick;
+        ptFrame(mat, camera, 0);
+        const hx = handOn() ? handFeat.x - 0.5 : camX(), hy = handOn() ? handFeat.y - 0.5 : camY();
+        g.rotation.y += ((hx * 3 * p[7] + t * 0.05) - g.rotation.y) * 0.08; g.rotation.x += (hy * 2 * p[7] - g.rotation.x) * 0.08;
+      } };
+    } },
 };
 
 function texThumb(tex) {
@@ -654,21 +869,44 @@ function texThumb(tex) {
   grab(cv.getContext('2d'), 160, 90);
   return cv.toDataURL('image/jpeg', 0.7);
 }
+// Trails (c.trail 0..1): each frame is laid over a fading copy of the clip's previous frames, kept per clip in its own
+// pair of targets (made on first use, freed when Trails goes back to 0). max() rather than a sum, so long trails cannot
+// pile up into white; a small subtraction makes the faint end really reach black (an 8-bit fade alone gets stuck at 1-2/255).
+// The fade is per second, so the trail length does not depend on the frame rate. A clip that was not drawn for a moment
+// (re-triggered) starts clean.
+const trailProg = mkProg(HEAD + `uniform sampler2D prev; uniform sampler2D cur; uniform float fade; in vec2 uv; out vec4 o;
+void main(){ vec4 p = max(texture(prev, uv) * fade - 1.5 / 255.0, 0.0); o = max(p, texture(cur, uv)); }`);
+function trail3d(c, tex, fresh, dt) {
+  const k = c.trail || 0;
+  if (k <= 0.001) { if (c.tr3) { freeRT(c.tr3); c.tr3 = null; } return tex; }
+  if (!c.tr3 || c.tr3.f[0].w !== comp.w || c.tr3.f[0].h !== comp.h) { freeRT(c.tr3); c.tr3 = mkRT(comp.w, comp.h); fresh = true; }
+  if (fresh) clearFbo(rtSrc(c.tr3));
+  const tau = 0.04 + k * k * 3;   // seconds for the trail to fade to about a third: 0.07 s at 0.1, 0.8 s at 0.5, 3 s at 1
+  bindFbo(rtDst(c.tr3));
+  gl.disable(gl.BLEND);
+  gl.useProgram(trailProg.p);
+  bindTex(0, rtSrc(c.tr3).tex); bindTex(1, tex);
+  gl.uniform1i(trailProg.loc('prev'), 0); gl.uniform1i(trailProg.loc('cur'), 1); gl.uniform1f(trailProg.loc('fade'), dt > 0 ? Math.exp(-dt / tau) : 1);
+  tri(); rtSwap(c.tr3);
+  return rtSrc(c.tr3).tex;
+}
 function draw3d(f, L) {
   const c = this, R = three();
   if (!R) return false;
   if (!c.inst) c.inst = SCENES3D[c.scene].build();
   if (!rt3 || rt3.width !== comp.w || rt3.height !== comp.h) { if (rt3) rt3.dispose(); rt3 = new THREE.WebGLRenderTarget(comp.w, comp.h, { samples: window.VJ_MOBILE ? 2 : 4 }); }   // phones: 2x MSAA (the resolve costs bandwidth they do not have)
-  const dt = Math.min(0.1, Math.max(0, comp.time - (c.lastT ?? comp.time))); c.lastT = comp.time;
+  const gap = comp.time - (c.lastT ?? -1), dt = Math.min(0.1, Math.max(0, comp.time - (c.lastT ?? comp.time))); c.lastT = comp.time;   // a gap = (re)triggered
   const cam = c.inst.camera;
   if (cam.aspect !== comp.w / comp.h) { cam.aspect = comp.w / comp.h; cam.updateProjectionMatrix(); }
   c.inst.update(modParams(c.params, c.mod), dt, L, c);
   R.resetState();
   R.setRenderTarget(rt3); R.setClearColor(0x000000, 0); R.clear(); R.render(c.inst.scene, cam); R.setRenderTarget(null);
   R.resetState();
+  let out = R.properties.get(rt3.texture).__webglTexture;
+  out = trail3d(c, out, gap > 0.25, dt);
   bindFbo(f);
   gl.useProgram(srcProg.p);
-  bindTex(0, R.properties.get(rt3.texture).__webglTexture);
+  bindTex(0, out);
   gl.uniform1i(srcProg.loc('tex'), 0); gl.uniform2f(srcProg.loc('scl'), 1, 1); gl.uniform2f(srcProg.loc('off'), 0, 0);
   tri();
   if (c.wantThumb && comp.time - c.bornAt > 0.5) { c.wantThumb = false; c.thumb = texThumb(f.tex); ui.gridDirty = true; }
@@ -691,7 +929,9 @@ function clip3d(scene, o = {}) {
   if (!d) return null;
   const c = { uid: newUid(), type: '3d', name: d.name, scene, params: d.params.map(x => x.def), speed: 1, thumb: null, wantThumb: true, bornAt: comp.time };
   if (typeof o.name === 'string' && o.name) c.name = o.name;
-  if (d.sources && o.src === 'camera') c.src = 'camera';   // picture scenes: the layer below (default) or the camera input
+  if (d.sources && o.src !== 'below' && d.sources.includes(o.src)) c.src = o.src;   // picture scenes: the layer below (default), the camera, own text
+  if (d.ownText) c.text = typeof o.text === 'string' ? o.text.slice(0, 200) : 'STRODANO VJ';
+  c.trail = typeof o.trail === 'number' && isFinite(o.trail) ? Math.min(1, Math.max(0, o.trail)) : o.uid ? 0 : d.trail || 0;   // Trails
   if (Array.isArray(o.params)) o.params.forEach((v, i) => { if (i < c.params.length && typeof v === 'number' && isFinite(v)) c.params[i] = Math.min(1, Math.max(0, v)); });
   c.draw = draw3d;
   warm3d(c);
@@ -705,22 +945,29 @@ function warm3d(c) {
   c.inst = SCENES3D[c.scene].build();
   try { R.resetState(); const p = R.compileAsync(c.inst.scene, c.inst.camera); R.resetState(); if (p) p.catch(() => {}); } catch (e) { R.resetState(); }
 }
+const SRC3D_LABELS = { below: 'Layer below', camera: 'Camera input', text: 'Own text' };
 CLIP_TYPES['3d'] = {
-  toJSON: c => ({ type: '3d', uid: c.uid, name: c.name, scene: c.scene, params: c.params, mod: c.mod, src: c.src }),
+  toJSON: c => ({ type: '3d', uid: c.uid, name: c.name, scene: c.scene, params: c.params, mod: c.mod, src: c.src, text: c.text, trail: c.trail || undefined }),
   fromJSON: j => clip3d(j.scene, j),
-  free: c => { if (c.inst) c.inst.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); c.inst = null; },
+  free: c => { if (c.tr3) { freeRT(c.tr3); c.tr3 = null; } if (c.inst && c.inst.dispose) c.inst.dispose(); if (c.inst) c.inst.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); c.inst = null; },
   props: (c, p) => {
     p.append(el('div', { className: 'hint', textContent: '3D generator (three.js). Follows the beat and the music; camera sliders work once the camera input is on (Sources tab).' }));
-    if (SCENES3D[c.scene].sources) p.append(el('label', { className: 'row', textContent: 'Picture ' },
-      el('select', { onchange: e => { if (e.target.value === 'camera') c.src = 'camera'; else delete c.src; } },
-        el('option', { value: 'below', textContent: 'Layer below (else the camera)', selected: c.src !== 'camera' }),
-        el('option', { value: 'camera', textContent: 'Camera input', selected: c.src === 'camera' }))),
+    const d = SCENES3D[c.scene];
+    if (d.sources) p.append(el('label', { className: 'row', textContent: 'Picture ' },
+      el('select', { onchange: e => { if (e.target.value === 'below') delete c.src; else c.src = e.target.value; } },
+        ...d.sources.map(v => el('option', { value: v, textContent: SRC3D_LABELS[v], selected: (c.src || 'below') === v })))),
       el('div', { className: 'hint', textContent: 'Tip: put the picture on the layer below and set that layer to 0 opacity to see only the particles.' }));
+    if (d.ownText) p.append(el('label', { className: 'row', textContent: 'Own text ' },
+      el('input', { type: 'text', value: c.text, maxLength: 200, title: 'Shown when nothing plays on the layer below. | starts a new line.', oninput: e => { c.text = e.target.value; } })));
     SCENES3D[c.scene].params.forEach((pd, k) => {
       const f = fld(pd.name, 0, 1, 0.001, () => c.params[k], v => { c.params[k] = v; });
       f.slider.dataset.midi = 'gen:' + c.uid + ':' + k;
       p.append(...lfoControls(c, k, f));
     });
+    const tf = fld('Trails', 0, 1, 0.001, () => c.trail || 0, v => { c.trail = v; });
+    tf.slider.dataset.midi = 'gen:' + c.uid + ':trail';
+    tf.title = 'Light trails: each frame stays behind and fades (0 = off, 1 = about 3 seconds)';
+    p.append(tf);
   },
 };
 SOURCE_PANELS.push(() => {

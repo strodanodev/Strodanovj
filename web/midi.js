@@ -31,7 +31,7 @@ function midiTarget(id) {
     if (c === 'bypass') return { fire: () => { f.e.bypass = !f.e.bypass; ui.propsDirty = true; } };
     return { set: v => { f.e.params[+c] = v; } };
   }
-  if (a === 'gen') { const g = findGenClip(b); return g ? { set: v => { g.c.params[+c] = v; } } : null; }
+  if (a === 'gen') { const g = findGenClip(b); return g ? { set: v => { if (c === 'trail') g.c.trail = v; else g.c.params[+c] = v; } } : null; }   // 'trail': a 3D clip's Trails
   if (a === 'master') return { set: v => { comp.master = v; } };
   if (a === 'crossfade') return { set: v => { comp.crossfade = v; } };
   if (a === 'tap' || a === 'resync') return { fire: () => $(a).click() };
@@ -56,7 +56,7 @@ function midiLabel(id) {
     if (!f) return 'Effect not in this composition';
     return f.owner + ' > ' + f.e.def + ' > ' + (c === 'mix' ? 'Mix' : c === 'bypass' ? 'On/off' : pname(DEFS.fx.get(f.e.def), c));
   }
-  if (a === 'gen') { const g = findGenClip(b); return g ? g.owner + ' > ' + g.c.name + ' > ' + pname(DEFS.gen.get(g.c.gen), c) : 'Generator clip not in this composition'; }
+  if (a === 'gen') { const g = findGenClip(b); return g ? g.owner + ' > ' + g.c.name + ' > ' + (c === 'trail' ? 'Trails' : g.c.type === '3d' && SCENES3D[g.c.scene] ? (SCENES3D[g.c.scene].params[+c] || {}).name || 'parameter ' + (+c + 1) : pname(DEFS.gen.get(g.c.gen), c)) : 'Generator clip not in this composition'; }
   if (a === 'master') return 'Master';
   if (a === 'crossfade') return 'Crossfader';
   if (a === 'tap') return 'Tap tempo';
