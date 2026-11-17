@@ -468,7 +468,7 @@ function syncOutBtn() {
 }
 function initMenu() {
   const acts = {
-    new: () => { demoComp(); sel.l = 0; sel.c = -1; },
+    new: () => { stockComp(); sel.l = 0; sel.c = -1; },
     open: () => $('compInput').click(),
     save: () => {
       const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(compToJSON(), null, 1)], { type: 'application/json' })), download: 'composition.svj' });
@@ -628,10 +628,10 @@ function tickUI() {
   initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); initDJ(); buildAgentPanel(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
-  if (!restored) demoComp();
+  if (!restored) stockComp(); else stockRelink();   // the STRODANO stock show (stock.js) is the default
   initNdi();
   syncTransport();
-  initMediaFolder();
+  initMediaFolder().then(initAudius, initAudius);   // then STRODANO's set from Audius when the track list is empty
   setInterval(autosave, 2000);
   schedule();
 })();

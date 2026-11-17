@@ -216,6 +216,8 @@ function renderPlHead() {
   if (mini) h.append(mini);
   h.append(el('b', { textContent: 'Playlist' }),
     el('button', { textContent: 'Add songs...', title: 'Add songs to the end of the playlist (or drop them anywhere on it)', onclick: addTracksPicker }),
+    audiusMenu(),
+    el('button', { textContent: 'STRODANO show', title: 'Replace the layers with the STRODANO stock show (videos, 3D, strobe, locked logo)', onclick: e => armThen(e.currentTarget, 'replace your layers with the STRODANO stock show', () => { stockComp(); setStatus('STRODANO stock show loaded: the logo layer is locked (unlock it to change it)'); }) }),
     el('span', { className: 'plleg' }, ...['intro', 'build', 'drop', 'breakdown'].map(s => el('i', { className: 'sec-' + s, textContent: SECTION_NAMES[s] }))),
     pl.locks,
     el('span', { className: 'seg' }, tab('playlist', 'Playlist', 'Songs in play order, with transitions and planned visuals'), tab('layers', 'Layers', 'The clip grid')));
@@ -368,6 +370,7 @@ function drawPlWave(r) {
 
 // ---------- per frame ----------
 function tickPlaylist() {
+  if (typeof tickAudius === 'function') tickAudius();
   // warm one planned scene per frame (playing and next songs first, then the rest)
   if (pl.warmQ.length) warmScene(pl.warmQ.shift());
   // you changed the grid (clips, locks, tags): plan the songs again from what is there now
