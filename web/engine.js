@@ -389,7 +389,7 @@ function trigger(li, ci) {
   if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
   if (c.video) {
     const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // clipopts.js: the clip's in point
-    try { c.video.currentTime = start; } catch (e) {}
+    if (L.active === ci || Math.abs(c.video.currentTime - start) > 0.05) { try { c.video.currentTime = start; } catch (e) {} }   // already at its start (agent.js preroll): no seek, so it shows at once
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
     if (c.speed > 0) c.video.play().catch(() => {});
     if (L.active === ci) return;
@@ -640,7 +640,7 @@ window.addEventListener('beforeunload', () => { if (!window.vjKeepOutputs) scree
 
 // ---------- save / load ----------
 function compToJSON() {
-  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: e.mix, bypass: e.bypass, mod: e.mod }));
+  const fxJ = ch => ch.map(e => ({ uid: e.uid, def: e.def, params: e.params, mix: typeof agentFxMix === 'function' ? agentFxMix(e) : e.mix, bypass: e.bypass, mod: e.mod }));   // your mix, not the Agent's drop gate
   return {
     app: 'Strodano VJ', version: 2, w: comp.w, h: comp.h, columns: comp.columns, master: comp.master, crossfade: comp.crossfade, bpm: comp.bpm,
     shaders: customShaders.map(s => ({ name: s.name, kind: s.kind, code: s.code })),
@@ -649,7 +649,7 @@ function compToJSON() {
     snapshots: typeof snapsToJSON === 'function' ? snapsToJSON() : undefined,   // snapshots.js
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
     layers: comp.layers.map(L => ({
-      name: L.name, locked: L.locked || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
+      name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) })),
     })),
     screens: screens.map(s => ({ name: s.name, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
@@ -671,7 +671,7 @@ function loadComp(j) {
   for (const l of j.layers) {
     addLayer();
     const L = comp.layers[comp.layers.length - 1];
-    Object.assign(L, { name: String(l.name || L.name), locked: !!l.locked, opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
+    Object.assign(L, { name: String(l.name || L.name), locked: !!l.locked, agentRole: ['main', 'overlay', 'fx'].includes(l.agentRole) ? l.agentRole : '', opacity: num(l.opacity, 1), blend: Math.min(7, Math.max(0, num(l.blend, 0) | 0)), bypass: !!l.bypass, solo: !!l.solo,
       xfade: Math.min(2, Math.max(0, num(l.xfade, 0) | 0)), scale: num(l.scale, 1), x: num(l.x, 0), y: num(l.y, 0), fit: Math.min(2, Math.max(0, num(l.fit, 0) | 0)), trans: Math.min(16, Math.max(0, num(l.trans, 0))), transType: Math.min(TRANSITION_TYPES.length - 1, Math.max(0, num(l.transType, 0) | 0)) });
     L.fx = fxL(l.fx);
     (l.clips || []).slice(0, comp.columns).forEach((c, ci) => {

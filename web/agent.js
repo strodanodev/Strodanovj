@@ -13,10 +13,12 @@
 'use strict';
 const AGENT_KEY = 'strodano-vj-agent';
 const agent = {
-  on: false, onSong: true, vary: 16, hold: false, vibe: 'club',
+  on: false, onSong: true, vary: 16, hold: false, vibe: 'club', strobe: 32,   // strobe: beats of flashes per drop (0 off, -1 the whole drop)
   scene: null, lookBeat: 0, history: [], pending: null, holdUntil: -1, snap: '', mixLookBeat: -1e9, lastB: undefined,
   base: new Map(), vis: new Map(), fades: new Map(), written: new Map(),   // per layer object: your level, shown 0..1, fade, last opacity written
   dim: 1, build: 0, empty: false, scored: false,
+  seenPlan: null, prerolled: null, fxGate: 0, gateB: undefined, dropBeat: -1e9, manualDrop: -1e9, wasDrop: false,
+  fxBase: new Map(), fxWritten: new Map(),   // per flash effect (Strobe) in a chain: your mix, last mix written
 };
 // Vibes: one choice that sets everything a newcomer should not have to think about. shift moves every scene one energy
 // band down (-1) or up (+1); mix / bars are the auto-mix's style and length (mix.js).
@@ -25,9 +27,9 @@ const AGENT_VIBES = {
   club: { label: 'Club', title: 'Balanced: layers follow the energy of the music; bass-swap mixes', vary: 16, shift: 0, mix: 'bass', bars: 8 },
   festival: { label: 'Festival', title: 'High energy: more layers up, frequent changes; quicker mixes', vary: 8, shift: 1, mix: 'bass', bars: 4 },
 };
-try { const s = JSON.parse(localStorage.getItem(AGENT_KEY) || '{}'); for (const k of ['onSong', 'vary', 'vibe']) if (k in s) agent[k] = s[k]; } catch (e) {}
+try { const s = JSON.parse(localStorage.getItem(AGENT_KEY) || '{}'); for (const k of ['onSong', 'vary', 'vibe', 'strobe']) if (k in s) agent[k] = s[k]; } catch (e) {}
 if (!AGENT_VIBES[agent.vibe]) agent.vibe = 'club';
-function saveAgent() { try { localStorage.setItem(AGENT_KEY, JSON.stringify({ onSong: agent.onSong, vary: agent.vary, vibe: agent.vibe })); } catch (e) {} }
+function saveAgent() { try { localStorage.setItem(AGENT_KEY, JSON.stringify({ onSong: agent.onSong, vary: agent.vary, vibe: agent.vibe, strobe: agent.strobe })); } catch (e) {} }
 function setVibe(v) {
   const p = AGENT_VIBES[v];
   if (!p) return;
@@ -62,17 +64,42 @@ function taggedColumn(band, drop, avoid) {
   const other = c.filter(ci => ci !== avoid);
   return pick(other.length ? other : c);
 }
+// ---------- layer roles ----------
+// What a layer is for, so scenes never pile everything up at once:
+//   main    - the picture: videos, generators, 3D, camera. At most two are up together.
+//   overlay - logos, text, still images. At most one, never during a drop.
+//   fx      - flashes and strobes (Beat Flash clips). Only on drops, for the first FX_BEATS of each drop.
+// Each layer's role can be set in the Agent panel (L.agentRole, saved with the composition). On Auto, a layer named
+// "Logo" / "Text" / "Overlay" or "FX" / "Strobe" / "Flash" takes that role; otherwise it is worked out from its clips. Strobe effects in your layer and master effect chains are held off outside drops the same way.
+const FX_GENS = new Set(['Beat Flash']);
+const FLASH_FX = new Set(['Strobe']);
+const FX_BEATS = 32;   // a Drop! button press opens the effects for this long when no drop is playing
+// How long effects strobe on each drop (agent.strobe, beats); after it they fade out over a bar.
+const STROBE_LENS = [[16, '4 bars'], [32, '8 bars'], [-1, 'Whole drop'], [0, 'Off']];
+const AGENT_ROLES = [['', 'Auto'], ['main', 'Picture'], ['overlay', 'Logo / overlay'], ['fx', 'Effect (drops only)']];
+const clipRole = c => (c.type === 'gen' && FX_GENS.has(c.gen) ? 'fx' : c.type === 'image' || c.type === 'text' ? 'overlay' : 'main');
+function layerRole(li) {
+  const L = comp.layers[li], n = (L.name || '').toLowerCase();
+  if (L.agentRole === 'main' || L.agentRole === 'overlay' || L.agentRole === 'fx') return L.agentRole;
+  if (/\b(fx|effects?|strobes?|flash(es)?)\b/.test(n)) return 'fx';
+  if (/\b(logos?|text|titles?|overlays?|brand)\b/.test(n)) return 'overlay';
+  const rs = new Set(L.clips.filter(playable).map(clipRole));
+  return rs.size === 1 ? [...rs][0] : 'main';
+}
+const MAX_MAIN = 2;
 // A clip for layer li: from untagged columns or columns tagged for this band, not the one it plays now when possible.
-function pickClip(li, band, avoid) {
+// Picture layers skip flash clips unless it is a drop.
+function pickClipFor(li, band, avoid, drop) {
   const cs = [];
-  comp.layers[li].clips.forEach((c, ci) => { if (playable(c)) cs.push(ci); });
+  comp.layers[li].clips.forEach((c, ci) => { if (playable(c) && (drop || clipRole(c) !== 'fx')) cs.push(ci); });
+  if (!cs.length) return undefined;
   const fit = cs.filter(ci => !colTag(ci) || TAG_BAND[colTag(ci)] === band);
   const pool = fit.length ? fit : cs, fresh = pool.filter(ci => ci !== avoid);
   return pick(fresh.length ? fresh : pool);
 }
-const layersFor = (band, n) => (band === 'calm' ? Math.max(1, Math.round(n * 0.34)) : band === 'groove' ? Math.max(1, Math.round(n * 0.67)) : n);
-// A scene for this band. prev: the scene it follows (so the next one differs).
-function makeScene(band, drop, prev) {
+// A scene for this band. prev: the scene it follows (so the next one differs). opts.logo: bring an overlay in (a new
+// song); otherwise calm scenes show one, and a third of the others.
+function makeScene(band, drop, prev, opts) {
   const lis = agentLayers();
   if (!lis.length) return null;
   const sc = { band, drop: !!drop, col: -1, show: {} };
@@ -82,22 +109,56 @@ function makeScene(band, drop, prev) {
     sc.col = col;
     return sc;
   }
-  const [base, ...upper] = lis;
-  for (const li of [base, ...shuffle(upper).slice(0, layersFor(band, lis.length) - 1)]) sc.show[li] = pickClip(li, band, prev && prev.show[li]);
+  const role = {}; for (const li of lis) role[li] = layerRole(li);
+  let mains = lis.filter(li => role[li] === 'main');
+  const overs = lis.filter(li => role[li] === 'overlay'), fxs = lis.filter(li => role[li] === 'fx');
+  if (!mains.length) mains = overs.length ? [overs.shift()] : [];
+  const nMain = band === 'calm' ? 1 : band === 'groove' ? (Math.random() < 0.5 ? 2 : 1) : MAX_MAIN;
+  const put = li => { const ci = pickClipFor(li, band, prev && prev.show[li], drop); if (ci !== undefined) sc.show[li] = ci; };
+  if (mains.length) [mains[0], ...shuffle(mains.slice(1)).slice(0, nMain - 1)].forEach(put);
+  if (drop) { if (fxs.length) put(pick(fxs)); }
+  else if (overs.length && ((opts && opts.logo) || band === 'calm' || Math.random() < 0.33)) put(pick(overs));
+  if (!Object.keys(sc.show).length) { if (fxs.length && drop) put(fxs[0]); else return null; }
   return sc;
 }
-// A variation: another column of the same kind, one layer on a different clip, or one layer swapped for another.
+const pickClip = (li, band, avoid) => pickClipFor(li, band, avoid, false);
+// A variation: another column of the same kind, one picture layer on a different clip or swapped for another, or the
+// overlay in or out.
 function varyScene(prev) {
   if (prev.col >= 0) { const c = taggedColumn(prev.band, prev.drop, prev.col); if (c >= 0 && c !== prev.col) return makeScene(prev.band, prev.drop, prev); }
-  const lis = agentLayers(), sc = { band: prev.band, drop: false, col: -1, show: {} };
+  const lis = agentLayers(), sc = { band: prev.band, drop: !!prev.drop, col: -1, show: {} };
   for (const li of lis) if (prev.show[li] !== undefined && playable(comp.layers[li].clips[prev.show[li]])) sc.show[li] = prev.show[li];
-  const shown = Object.keys(sc.show).map(Number), hidden = lis.filter(li => sc.show[li] === undefined);
-  if (!shown.length) return makeScene(prev.band, false, prev);
-  if (Math.random() < 0.35 && hidden.length && shown.length > 1) {   // a different upper layer joins instead of one that was up
-    const out = pick(shown.filter(li => li !== lis[0])), inn = pick(hidden);
-    delete sc.show[out]; sc.show[inn] = pickClip(inn, sc.band);
-  } else { const li = pick(shown); sc.show[li] = pickClip(li, sc.band, sc.show[li]); }
+  const role = {}; for (const li of lis) role[li] = layerRole(li);
+  const shown = Object.keys(sc.show).map(Number), mainsUp = shown.filter(li => role[li] === 'main');
+  if (!mainsUp.length) return makeScene(prev.band, prev.drop, prev);
+  const mainsDown = lis.filter(li => role[li] === 'main' && sc.show[li] === undefined), overs = lis.filter(li => role[li] === 'overlay');
+  const r = Math.random();
+  if (r < 0.25 && !sc.drop && overs.length) {   // the overlay comes in or goes out
+    const up = shown.filter(li => role[li] === 'overlay');
+    if (up.length) up.forEach(li => delete sc.show[li]);
+    else { const li = pick(overs), ci = pickClip(li, sc.band); if (ci !== undefined) sc.show[li] = ci; }
+  } else if (r < 0.55 && mainsDown.length && mainsUp.length > 1) {   // a different upper picture layer instead
+    const out = pick(mainsUp.filter(li => li !== lis[0])), inn = pick(mainsDown), ci = pickClipFor(inn, sc.band, undefined, sc.drop);
+    if (ci !== undefined) { delete sc.show[out]; sc.show[inn] = ci; }
+  } else { const li = pick(mainsUp), ci = pickClipFor(li, sc.band, sc.show[li], sc.drop); if (ci !== undefined) sc.show[li] = ci; }
   return sc;
+}
+// The limits every scene is shown with (planned, tagged and older ones too): no flashes outside a drop, no overlay on
+// top of a drop's flashes, at most MAX_MAIN picture layers outside tagged columns.
+function tame(sc) {
+  const out = { ...sc, show: {}, src: sc.src || sc };
+  const ks = Object.keys(sc.show).map(Number).sort((a, b) => a - b);
+  const role = {}; for (const li of ks) role[li] = layerRole(li);
+  const flash = li => role[li] === 'fx' || clipRole(comp.layers[li].clips[sc.show[li]]) === 'fx';
+  const hasFx = sc.drop && ks.some(flash);
+  let mains = 0;
+  for (const li of ks) {
+    if (flash(li)) { if (sc.drop) out.show[li] = sc.show[li]; continue; }
+    if (role[li] === 'overlay') { if (!hasFx) out.show[li] = sc.show[li]; continue; }
+    if (sc.col < 0 && ++mains > MAX_MAIN) continue;
+    out.show[li] = sc.show[li];
+  }
+  return Object.keys(out.show).length ? out : sc;
 }
 // Drop entries that no longer exist (a layer locked or a clip removed since the scene was planned).
 function validScene(sc) {
@@ -132,6 +193,7 @@ function fadeTo(L, to, beats) {
 }
 function applyScene(sc, beats) {
   agentClockSync();
+  sc = tame(sc);
   for (const li of agentLayers()) {
     const L = comp.layers[li], ci = sc.show[li];
     baseOf(L);   // its level and whether it is up, taken before the Agent first changes it
@@ -147,15 +209,28 @@ function applyScene(sc, beats) {
 // One decision. reason: song | drop | breakdown | section | band | vary | next
 // A playlist song's planned scene for the section playing now (playlist.js) wins, except for variations and the
 // New look button, which always bring something new.
+// Fade lengths in beats. Changes land on the downbeat they belong to and finish within a bar, so the picture turns
+// with the music rather than after it (the new clip starts at once; the fade only blends the levels).
+const FADE = { drop: 0, section: 2, next: 2, song: 4, breakdown: 4, band: 4, vary: 4 };
 function change(reason) {
-  const drop = reason === 'drop', band = vibeBand(drop ? 'peak' : reason === 'breakdown' ? 'calm' : live.band);
-  const beats = drop ? 0 : reason === 'song' ? 8 : reason === 'breakdown' ? 16 : 4;
-  const planned = reason !== 'vary' && reason !== 'next' && typeof plannedScene === 'function' ? validScene(plannedScene()) : null;
+  const drop = reason === 'drop', inDrop = drop || agentInDrop();
+  const band = vibeBand(inDrop ? 'peak' : reason === 'breakdown' ? 'calm' : live.band);
+  const beats = FADE[reason] !== undefined ? FADE[reason] : 4;
+  const now = typeof plannedScene === 'function' ? plannedScene() : null;
+  const planned = reason !== 'vary' && reason !== 'next' ? validScene(now) : null;
   let sc = planned;
-  if (!sc && reason === 'vary' && agent.scene && agent.scene.band === band) sc = varyScene(agent.scene);
-  if (!sc) sc = makeScene(band, drop, agent.scene);
+  if (!sc && reason === 'vary' && agent.scene && agent.scene.band === band) sc = varyScene({ ...agent.scene, drop: inDrop });
+  if (!sc) sc = makeScene(band, inDrop, agent.scene, { logo: reason === 'song' });
+  agent.seenPlan = now;   // the planned part this decision answers (variations included): the next part brings a change
   if (!sc) { if (!agent.empty) { agent.empty = true; if (typeof agentUIDirty === 'function') agentUIDirty(); } return; }
+  if (drop) agent.dropBeat = comp.beats;
   applyScene(sc, sc.drop && drop ? 0 : beats);
+}
+// In a drop now: the analysed section of the playing song, else the live listener's last drop (score.js).
+function agentInDrop() {
+  const d = live.src === 'dj' ? audio.clockDeck : null;
+  if (d && typeof sectionNow === 'function' && sectionNow(d)) return dropAhead(d) === 0;
+  return typeof score !== 'undefined' && !!score.liveDrop;
 }
 // An auto-mix has started (mix.js): bring in the incoming song's first planned scene, timed by the playlist's visual
 // transition for this junction: 'mix' fades over the whole mix, 'quick' over a bar, 'cut' cuts.
@@ -169,12 +244,14 @@ function agentMixStart(m) {
   agent.pending = null;
   applyScene(sc, vis === 'cut' ? 0 : vis === 'quick' ? 4 : Math.max(4, m.lenBeats || 8));
   agent.mixLookBeat = comp.beats;
+  agent.seenPlan = sc.src;   // the incoming song's first part: when the mix ends, its next part follows on time
 }
-// Changes wait for the next bar (drops do not), so the visuals turn over on the downbeat.
+// Changes land on a downbeat (drops at once). A call in the first half beat of a bar belongs to that bar's downbeat and
+// goes now: section changes arrive just after the downbeat they start on, and used to wait a whole bar for the next.
 function agentSchedule(reason) {   // (not 'schedule': ui.js owns that name)
   if (agent.hold || comp.beats < agent.holdUntil) return;
   if (reason === 'drop') { agent.pending = null; change('drop'); return; }
-  const at = 4 * Math.ceil((comp.beats + 0.05) / 4);
+  const at = 4 * Math.ceil((comp.beats - 0.5) / 4);
   const rank = { song: 4, breakdown: 3, section: 3, band: 2, vary: 1, next: 5 };
   if (agent.pending && rank[agent.pending.reason] >= rank[reason]) return;
   agent.pending = { at, reason };
@@ -182,10 +259,10 @@ function agentSchedule(reason) {   // (not 'schedule': ui.js owns that name)
 onMusic((type, d) => {
   if (!agent.on) return;
   agentClockSync();
-  // A playlist song with planned scenes: every section change brings its own scene (a mix that just brought in the
-  // new song's scene is left to finish first).
+  // A playlist song with planned scenes: every section change brings its own scene. During an auto-mix the sections
+  // are the outgoing song's: the incoming one's scene is already up, and agentTick catches its next part when the mix ends.
   if (d.source === 'deck' && typeof plannedScene === 'function' && (type === 'section' || type === 'breakdown') && plannedScene()) {
-    if (comp.beats - agent.mixLookBeat > 32) agentSchedule('section');
+    if (!(typeof mixer !== 'undefined' && mixer.m)) agentSchedule('section');
     return;
   }
   if (type === 'song') { if (agent.onSong) agentSchedule('song'); }
@@ -212,7 +289,37 @@ function agentRelease(L) {
   if (agent.base.has(L)) { L.opacity = agent.base.get(L); if (typeof reflectMidi === 'function') reflectMidi('layer:' + comp.layers.indexOf(L) + ':opacity', L.opacity); }
   agent.base.delete(L); agent.vis.delete(L); agent.fades.delete(L); agent.written.delete(L);
 }
-const agentReleaseAll = () => [...agent.base.keys()].forEach(agentRelease);
+// Flash effects (Strobe) in a chain follow the drop gate: your mix during a drop's first bars, off otherwise.
+function gateFlashFx(chain) {
+  for (const e of chain) {
+    if (!FLASH_FX.has(e.def)) continue;
+    const w = agent.fxWritten.get(e);
+    if (!agent.fxBase.has(e) || (w !== undefined && Math.abs(e.mix - w) > 0.004)) agent.fxBase.set(e, e.mix);   // you set its mix
+    e.mix = agent.fxBase.get(e) * agent.fxGate;
+    agent.fxWritten.set(e, e.mix);
+  }
+}
+function releaseFlashFx(chain) { for (const e of chain) if (agent.fxBase.has(e)) { e.mix = agent.fxBase.get(e); agent.fxBase.delete(e); agent.fxWritten.delete(e); } }
+// The mix to save for effect e (engine.js compToJSON): yours, not the gate's.
+const agentFxMix = e => (agent.fxBase.has(e) ? agent.fxBase.get(e) : e.mix);
+const agentReleaseAll = () => { [...agent.base.keys()].forEach(agentRelease); releaseFlashFx(comp.fx); comp.layers.forEach(L => releaseFlashFx(L.fx)); };
+// Just before a planned section starts, rewind the paused videos it will play, so they show on the downbeat instead of
+// a seek later (engine.js trigger skips the seek for a video already at its in point).
+function prerollNext() {
+  const d = live.src === 'dj' ? audio.clockDeck : null;
+  if (!d || !d.playing || !d.info || typeof sectionAhead !== 'function' || typeof plannedSceneAt !== 'function') return;
+  const a = sectionAhead(d);
+  if (!a || a.bars > 0.5 || a.bars <= 0) return;
+  const sc = plannedSceneAt(d, deckHeard(d) + a.bars * d.info.barLen + 0.06);
+  if (!sc || sc === agent.prerolled) return;
+  agent.prerolled = sc;
+  for (const li in sc.show) {
+    const L = comp.layers[+li], c = L && L.clips[sc.show[li]];
+    if (!c || !c.video || L.active === sc.show[li] || !c.video.paused) continue;
+    const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // the clip's in point (clipopts.js), where trigger() starts it
+    if (Math.abs(c.video.currentTime - start) > 0.05) { try { c.video.currentTime = start; } catch (e) {} }
+  }
+}
 
 // The beat count jumps when another deck takes over the clock (a song starts, a mix ends), on Resync or a seek: move
 // every beat stamp with it, or the Agent would wait for the old count to come round again (or think a scene is old).
@@ -243,15 +350,37 @@ function agentTick() {
   if (s !== agent.snap) {
     const was = agent.snap.split(',');
     agent.snap = s;
-    comp.layers.forEach((L, li) => { if (!L.locked && String(layerClip(L)) !== was[li] && layerClip(L) >= 0) { baseOf(L); fadeTo(L, 1, 1); } });
-    agent.holdUntil = b + 32; agent.pending = null;
-    if (typeof agentUIDirty === 'function') agentUIDirty();
+    // a clip the Agent started that could not play (a video that failed to load falls back to the clip before it) is
+    // not you playing: no 8-bar wait for that
+    const failed = (L, li) => { const c = L.clips[+was[li]]; return !!(c && (c.error || c.missing)); };
+    const yours = comp.layers.map((L, li) => li).filter(li => { const L = comp.layers[li]; return !L.locked && String(layerClip(L)) !== was[li] && !failed(L, li); });
+    if (yours.length) {
+      yours.forEach(li => { const L = comp.layers[li]; if (layerClip(L) >= 0) { baseOf(L); fadeTo(L, 1, 1); } });
+      agent.holdUntil = b + 32; agent.pending = null;
+      if (typeof agentUIDirty === 'function') agentUIDirty();
+    }
   }
   if (!agent.scene && !agent.hold && b >= agent.holdUntil) change('song');   // first scene as soon as the Agent starts
   // Variations every agent.vary bars, counted on comp.beats itself: it always runs (music clock, MIDI clock, live beat or
   // just the tapped tempo), so the picture keeps moving with no music playing too. The change lands on the next bar.
   if (agent.vary && agent.scene && !agent.pending && !agent.hold && b >= agent.holdUntil && b - agent.lookBeat >= agent.vary * 4 - 0.5) agentSchedule('vary');
+  // The playing song has moved into another planned part without a section event reaching the Agent (it was mixing,
+  // holding for you, or the part began during a mix): catch up on the next downbeat instead of a whole section late.
+  if (agent.scene && !agent.pending && !agent.hold && b >= agent.holdUntil && !(typeof mixer !== 'undefined' && mixer.m) && typeof plannedScene === 'function') {
+    const p = plannedScene();
+    if (p && p !== agent.seenPlan) agentSchedule('section');
+  }
   if (agent.pending && b >= agent.pending.at - 0.02) { const r = agent.pending.reason; agent.pending = null; change(r); }
+  prerollNext();
+  // Effects gate: 1 from the moment a drop lands, for FX_BEATS, then down over a bar; 0 otherwise.
+  const inDrop = agentInDrop() || b - agent.manualDrop < FX_BEATS;
+  if (inDrop && !agent.wasDrop && b - agent.dropBeat > 1) agent.dropBeat = b;   // a drop that came without a 'drop' change
+  agent.wasDrop = inDrop;
+  const len = agent.strobe < 0 ? Infinity : agent.strobe;
+  const gt = inDrop && b - agent.dropBeat < len ? 1 : 0, step = Math.max(0, b - (agent.gateB === undefined ? b : agent.gateB));
+  agent.gateB = b;
+  agent.fxGate = gt >= agent.fxGate ? gt : Math.max(0, agent.fxGate - step / 4);
+  gateFlashFx(comp.fx);
   // Build-up into a drop (analysed deck songs, score.js): the picture goes nearly black for the last two beats, so the
   // cut to the drop scene lands on the drop.
   const d = live.src === 'dj' ? audio.clockDeck : null;
@@ -261,7 +390,8 @@ function agentTick() {
   agent.build = d && typeof musicFeat !== 'undefined' ? musicFeat.build : 0; agent.dim = dim;
   // layer levels: fades (smoothstep, in beats) between 0 and your level
   comp.layers.forEach((L, li) => {
-    if (L.locked) { if (agent.base.has(L)) agentRelease(L); return; }
+    if (L.locked) { if (agent.base.has(L)) agentRelease(L); releaseFlashFx(L.fx); return; }
+    gateFlashFx(L.fx);
     if (!agent.base.has(L) && !agent.fades.has(L)) return;   // a layer the Agent has not touched yet keeps its own level
     const base = baseOf(L), w = agent.written.get(L);
     if (w !== undefined && Math.abs(L.opacity - w) > 0.004) {   // you moved its fader: that is its level from now on
@@ -276,7 +406,8 @@ function agentTick() {
       if (p >= 1) { agent.fades.delete(L); if (f.to === 0 && (L.active >= 0 || L.pendingCol >= 0)) { eject(li); agent.snap = userSnap(); } }   // a layer faded out stops playing
       agent.vis.set(L, v);
     }
-    const o = base * v * dim;
+    const flash = L.active >= 0 && L.clips[L.active] && (layerRole(li) === 'fx' || clipRole(L.clips[L.active]) === 'fx');
+    const o = base * v * dim * (flash ? agent.fxGate : 1);
     if (Math.abs(o - L.opacity) > 1e-4) { L.opacity = o; if (typeof reflectMidi === 'function' && Math.abs(o - (agent.written.get(L) || 0)) > 0.01) reflectMidi('layer:' + li + ':opacity', o); }
     agent.written.set(L, L.opacity);
   });
@@ -287,13 +418,14 @@ function setAgent(on) {
   if (on) {
     audioCtx();
     agent.scene = null; agent.pending = null; agent.holdUntil = -1; agent.lastB = undefined; agent.scored = false; agent.empty = false;
+    agent.seenPlan = null; agent.prerolled = null; agent.fxGate = 0; agent.gateB = undefined; agent.dropBeat = agent.manualDrop = -1e9; agent.wasDrop = false;
     agent.snap = userSnap();
     setStatus(agentLayers().length ? 'Agent on: it plays your layers with the music' : 'Agent on, but there is nothing to play: add clips to your layers (or unlock them)');
   } else { agentReleaseAll(); setStatus('Agent off: your layers are back as you set them'); }
   if (typeof agentUIDirty === 'function') agentUIDirty();
 }
 function agentNext() { if (!agent.on) return setAgent(true); agent.hold = false; agent.holdUntil = -1; agentSchedule('next'); }
-function agentDrop() { if (!agent.on) return; agent.hold = false; agent.holdUntil = -1; change('drop'); }
+function agentDrop() { if (!agent.on) return; agent.hold = false; agent.holdUntil = -1; agent.manualDrop = comp.beats; change('drop'); }
 function agentHold(v) { agent.hold = v === undefined ? !agent.hold : v; agent.pending = null; if (typeof agentUIDirty === 'function') agentUIDirty(); }
 // Nothing to play yet: put starter clips in YOUR grid (generators, columns tagged by energy), so the Agent has a
 // composition to work with and you can change any of it.

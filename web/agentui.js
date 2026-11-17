@@ -87,6 +87,7 @@ function buildAgentPanel() {
     else $('agentFileInput').click();
   });
   u.tags = el('div', { className: 'atags' });
+  u.roles = el('div', { className: 'atags' });
   const fmt = recFormat();
   u.rprog = el('span', { className: 'mixprog' }, el('i'));
   u.renderFile = el('button', { textContent: 'Render music file', title: 'Play the open music file from the start with the Agent directing, and save it all as a video', onclick: () => renderMix('file') });
@@ -97,6 +98,9 @@ function buildAgentPanel() {
         el('h4', { textContent: 'Changes' }),
         el('div', { className: 'ar' }, el('span', { textContent: 'Vary every' }), sel('A small change (another clip, another layer) this often. The Vibe sets this too.', [[8, '8 bars'], [16, '16 bars'], [32, '32 bars'], [0, 'never']], () => agent.vary, v => { agent.vary = +v; }),
           chk('New scene on each song', 'Change the scene when the song changes (microphone / music file)', () => agent.onSong, v => { agent.onSong = v; }))),
+      el('div', null, el('h4', { textContent: 'Drops and layers' }),
+        el('div', { className: 'ar' }, el('span', { textContent: 'Strobe on drops' }), sel('How long effect layers and Strobe effects flash when the beat drops. They never show outside drops.', STROBE_LENS, () => agent.strobe, v => { agent.strobe = +v; })),
+        el('div', { className: 'hint', textContent: 'What each layer is for. Up to two Picture layers show at once, one Logo / overlay outside drops, and Effect layers only on drops. Auto works it out from the layer name and its clips.' }), u.roles),
       el('div', null, el('h4', { textContent: 'Column energy (optional)' }),
         el('div', { className: 'hint', textContent: 'The Agent plays the clips on your layers. Tag a column and it becomes a finished look the Agent plays as you built it, when the music fits: Calm, Groove, Peak, or Drop for the drops. Untagged clips are combined by the Agent.' }), u.tags),
       el('div', null, el('h4', { textContent: 'Record and render' }),
@@ -130,12 +134,24 @@ function renderTags() {
         ...COL_TAGS.map(t => el('option', { value: t, textContent: t || 'Any', selected: colTag(ci) === t })))));
   }
 }
+// One role choice per layer; Auto shows what it was worked out as.
+function renderRoles() {
+  const box = agUI.roles, names = { main: 'Picture', overlay: 'Logo / overlay', fx: 'Effect' };
+  box.textContent = '';
+  comp.layers.forEach((L, li) => {
+    box.append(el('label', null, L.name + ' ',
+      el('select', { onchange: e => { L.agentRole = e.target.value; agUI.roleKey = ''; } },
+        ...AGENT_ROLES.map(([v, t]) => el('option', { value: v, textContent: v ? t : 'Auto (' + names[layerRole(li)] + ')', selected: (L.agentRole || '') === v })))));
+  });
+}
+const roleKey = () => comp.layers.map((L, li) => L.name + ':' + (L.agentRole || '') + ':' + layerRole(li)).join('|');
 let agTagCols = -1;
 function tickAgentUI() {
   if (typeof tickPlaylist === 'function') tickPlaylist();   // also warms planned looks while the panel is closed
   if (!agUI.open) return;
   const u = agUI;
   if (agUI.dirty || agTagCols !== comp.columns) { agUI.dirty = false; agTagCols = comp.columns; renderTags(); u.src.refresh(); u.vibe.refresh(); }
+  if (u.more.open && (comp.frame & 15) === 0) { const k = roleKey(); if (k !== u.roleKey) { u.roleKey = k; renderRoles(); } }
   setText(u.on, agent.on ? '■  Stop' : '▶  Start');
   u.on.classList.toggle('on', agent.on);
   u.hold.classList.toggle('on', agent.hold);

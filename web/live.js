@@ -93,11 +93,38 @@ async function useFile(file) {
   live.elNode.connect(audio.master);
   v.addEventListener('ended', () => emitMusic('ended', {}));
   v.addEventListener('error', () => setStatus('This browser cannot play ' + file.name));
+  startAhead(v);
   live.src = 'file'; resetTracker();
   setStatus('Loaded ' + file.name + ' - press Play');
   return true;
 }
+// Song changes in a music file are heard AHEAD_S early: a second, silent copy of the file plays that far ahead into its
+// own analyser, and the song-change detector listens to it. The detector needs about that long to be sure, so it calls
+// the change as the main playback reaches it instead of seconds after. Tempo, drops and levels still come from what
+// you hear.
+const AHEAD_S = 9;   // measured: the detector calls a change about 9.5 s after it starts hearing it
+function startAhead(v) {
+  const a = live.ahead = new Audio();
+  a.preload = 'auto'; a.src = live.fileUrl;
+  live.aheadNode = audio.ctx.createMediaElementSource(a);
+  const an = live.aheadAn = audio.ctx.createAnalyser();
+  an.fftSize = 16384; an.smoothingTimeConstant = 0;
+  live.aheadNode.connect(an);   // into the analyser only: never heard
+  const sync = live.aheadSync = () => {
+    if (live.ahead !== a) return;
+    const t = v.currentTime + AHEAD_S, d = fileDur();
+    if (v.paused || !d || t >= d - 0.1) { if (!a.paused) a.pause(); return; }
+    if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate;
+    if (Math.abs(a.currentTime - t) > 0.25) { try { a.currentTime = t; } catch (e) {} }
+    if (a.paused) a.play().catch(() => {});
+  };
+  ['play', 'pause', 'seeked', 'ratechange'].forEach(e => v.addEventListener(e, sync));
+}
+// The analyser the song-change detector reads: the look-ahead copy while it is playing, else what you hear.
+const featAn = () => (live.src === 'file' && live.ahead && !live.ahead.paused && live.ahead.readyState >= 2 ? live.aheadAn : live.chromaAn);
 function stopInputs() {
+  if (live.ahead) { live.ahead.pause(); live.ahead.removeAttribute('src'); live.ahead.load(); live.ahead = null; }
+  if (live.aheadNode) { live.aheadNode.disconnect(); live.aheadNode = null; live.aheadAn = null; }
   if (live.stream) { live.stream.getTracks().forEach(t => t.stop()); live.stream = null; }
   if (live.micNode) { live.micNode.disconnect(); live.micNode = null; }
   if (live.el) { live.el.pause(); live.el.removeAttribute('src'); live.el.load(); live.el = null; }
@@ -240,8 +267,9 @@ function keyOfChroma(ch) {
 }
 // Every 250 ms: chroma and brightness, short (~6 s) and long (~40 s) averages; a lasting gap between them is a new song.
 function tickFeatures(now) {
-  const an = live.chromaAn, c = audio.ctx;
+  const an = featAn(), c = audio.ctx;
   if (!an || now - live.featT < 0.25) return;
+  if (live.aheadSync && ((now * 4) | 0) % 4 === 0) live.aheadSync();   // about once a second: keep the look-ahead copy in step
   const dt = live.featT ? now - live.featT : 0.25;
   live.featT = now;
   an.getFloatFrequencyData(live.chromaBuf);
