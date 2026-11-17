@@ -47,7 +47,7 @@ function displayTargets() {
   const t = screens.map(() => null), used = new Set();
   screens.forEach((s, i) => {
     const dev = screenDevice(s);
-    if (dev === 'auto' || dev === 'window' || dev === 'ndi') return;
+    if (dev === 'auto' || dev === 'window' || dev === 'ndi' || dev === 'vdo') return;
     const lab = dev.slice(0, dev.lastIndexOf('@'));
     const d = display.list.find(x => x.key === dev) || display.list.find(x => x.label === lab && !used.has(x.key));
     if (d) { t[i] = d; used.add(d.key); }
@@ -73,6 +73,7 @@ function placeOutput(i, d) {
 function openOnDisplay(i, d) {
   const s = screens[i];
   if (screenDevice(s) === 'ndi') { if (typeof ndiStart === 'function') ndiStart(i); return true; }   // network output (ndi.js)
+  if (screenDevice(s) === 'vdo') { if (typeof vdoStart === 'function') vdoStart(i); return true; }   // web link output (vdo.js)
   if (!(s.win && !s.win.closed)) {
     if (!openOutput(i, d ? { x: d.x, y: d.y, w: d.w, h: d.h } : null)) return false;
   }
@@ -151,23 +152,27 @@ function identifyDisplays() {
 }
 // Advanced Output: the "Display" block of the selected screen, and the list of displays
 function displayPanel(scr, i) {
-  const t = displayTargets()[i], live = !!((scr.win && !scr.win.closed) || scr.ndiSend);
+  const t = displayTargets()[i], live = !!((scr.win && !scr.win.closed) || scr.ndiSend || scr.vdoSend);
   const sel = el('select', { onchange: e => {
     const was = screenDevice(scr);
     scr.device = e.target.value;
     if (was === 'ndi' && scr.device !== 'ndi') ndiStop(scr);
+    if (was === 'vdo' && scr.device !== 'vdo') vdoStop(scr);
+    if (scr.device === 'vdo') { if (scr.win && !scr.win.closed) closeOutput(i); if (live) vdoStart(i); renderOutPanels(); syncOutBtn(); return; }   // starts only from a click: it goes on the internet
     if (scr.device === 'ndi') { if (scr.win && !scr.win.closed) closeOutput(i); if (live || display.autoOut) ndiStart(i); renderOutPanels(); syncOutBtn(); return; }
     const d = displayFor(i);
     if (d && (live || display.autoOut)) openOnDisplay(i, d); else if (live) placeOutput(i, null);
     renderOutPanels(); syncOutBtn();
   } });
   sel.append(el('option', { value: 'auto', textContent: 'Auto (next external display)' }), el('option', { value: 'window', textContent: 'Window (drag it yourself)' }),
-    el('option', { value: 'ndi', textContent: 'NDI (network, Wi-Fi)' + (ndi.api ? '' : ' - desktop app only'), disabled: !ndi.api && screenDevice(scr) !== 'ndi' }));
+    el('option', { value: 'ndi', textContent: 'NDI (network, Wi-Fi)' + (ndi.api ? '' : ' - desktop app only'), disabled: !ndi.api && screenDevice(scr) !== 'ndi' }),
+    el('option', { value: 'vdo', textContent: 'Web link (internet, vdo.ninja)' }));
   for (const d of display.list) sel.append(el('option', { value: d.key, textContent: displayName(d) + ' - ' + displayInfo(d) }));
   const dev = screenDevice(scr);
-  if (dev !== 'auto' && dev !== 'window' && dev !== 'ndi' && !display.list.some(d => d.key === dev)) sel.append(el('option', { value: dev, textContent: dev.slice(0, dev.lastIndexOf('@')) + ' (not connected)' }));
+  if (dev !== 'auto' && dev !== 'window' && dev !== 'ndi' && dev !== 'vdo' && !display.list.some(d => d.key === dev)) sel.append(el('option', { value: dev, textContent: dev.slice(0, dev.lastIndexOf('@')) + ' (not connected)' }));
   sel.value = dev;
   if (dev === 'ndi') return [el('div', { className: 'fld' }, el('label', { textContent: 'Display' }), sel), ...ndiPanel(scr, i)];
+  if (dev === 'vdo') return [el('div', { className: 'fld' }, el('label', { textContent: 'Display' }), sel), ...vdoPanel(scr, i)];
   const where = t ? 'Goes to ' + displayName(t) + (live && scr.placedOn === t.key ? ' (live, fullscreen)' : '') : dev === 'window' ? 'Opens as a window' : dev === 'auto' ? 'No external display: opens as a window' : 'That display is not connected';
   return [el('div', { className: 'fld' }, el('label', { textContent: 'Display' }), sel), el('div', { className: 'hint', textContent: where + (t && t.control ? '. This is the control display: Esc in the output returns it to a window.' : '') })];
 }
@@ -186,7 +191,7 @@ function displaysList() {
 }
 // header Output button label: where the output is
 function outputWhere() {
-  const t = displayTargets(), on = screens.map((s, i) => (s.ndiSend ? 'NDI' : s.win && !s.win.closed && t[i] && s.placedOn === t[i].key ? 'Display ' + t[i].num : '')).filter(Boolean);
+  const t = displayTargets(), on = screens.map((s, i) => (s.ndiSend ? 'NDI' : s.vdoSend ? 'Web link' : s.win && !s.win.closed && t[i] && s.placedOn === t[i].key ? 'Display ' + t[i].num : '')).filter(Boolean);
   return on.length ? on.join(' + ') : '';
 }
 // Esc in an output window that covers a display: back to a window (the way out when it landed on the wrong screen)

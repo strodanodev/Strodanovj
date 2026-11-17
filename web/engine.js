@@ -595,7 +595,7 @@ function drawSlice(sl) {
   gl.uniform1i(meshProg.loc('pattern'), out.testPattern && !sl.mask ? 1 : 0);
   gl.drawArrays(gl.TRIANGLES, 0, TESS * TESS * 6);
 }
-// into the canvas' back buffer (bottom-left w x h), or into `target` (an mkFbo, used by the NDI output in ndi.js)
+// into the canvas' back buffer (bottom-left w x h; also used by the web link output, vdo.js), or into `target` (an mkFbo, used by the NDI output in ndi.js)
 function renderScreen(scr, w, h, target) {
   if (target) gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
   else { ensureCanvas(w, h); gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
@@ -636,7 +636,7 @@ canvas{width:100vw;height:100vh;display:block}#h{position:fixed;left:12px;bottom
   s.win = w; s.ctx = c.getContext('2d', { alpha: false });
   return true;
 }
-function closeOutput(i) { const s = screens[i]; if (typeof ndiStop === 'function') ndiStop(s); if (s.win && !s.win.closed) s.win.close(); s.win = null; s.ctx = null; s.placedOn = ''; }
+function closeOutput(i) { const s = screens[i]; if (typeof ndiStop === 'function') ndiStop(s); if (typeof vdoStop === 'function') vdoStop(s); if (s.win && !s.win.closed) s.win.close(); s.win = null; s.ctx = null; s.placedOn = ''; }
 const liveScreens = () => screens.filter(s => s.win && !s.win.closed);
 // Output windows close with the page, except on a GPU-recovery reload (safety.js), where they stay open to be picked up again.
 window.addEventListener('beforeunload', () => { if (!window.vjKeepOutputs) screens.forEach((s, i) => closeOutput(i)); });
@@ -655,7 +655,8 @@ function compToJSON() {
       name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   // your level, not the Agent's fade blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && (CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) })),
     })),
-    screens: screens.map(s => ({ name: s.name, device: s.device || 'auto', ndiName: s.ndiName || undefined, ndiRes: s.ndiRes || undefined, ndiFps: s.ndiFps || undefined, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
+    screens: screens.map(s => ({ name: s.name, device: s.device || 'auto', ndiName: s.ndiName || undefined, ndiRes: s.ndiRes || undefined, ndiFps: s.ndiFps || undefined,
+      vdoId: s.vdoId || undefined, vdoPw: s.vdoPw || undefined, vdoRes: s.vdoRes || undefined, vdoFps: s.vdoFps || undefined, vdoKbps: s.vdoKbps || undefined, vdoAudio: s.vdoAudio || undefined, slices: s.slices.map(sl => ({ ...sl, c: sl.c.map(q => [...q]), in: [...sl.in], warp: [...sl.warp] })) })),
   };
 }
 function loadComp(j) {
@@ -694,7 +695,10 @@ function loadComp(j) {
     screens.length = 0;
     for (const s of j.screens) {
       screens.push({ name: String(s.name || 'Screen'), device: typeof s.device === 'string' && s.device.length < 200 ? s.device : 'auto', ndiName: typeof s.ndiName === 'string' ? s.ndiName.slice(0, 100) : '',
-        ndiRes: ['1280x720', '960x540', '1920x1080', 'comp'].includes(s.ndiRes) ? s.ndiRes : '1280x720', ndiFps: [25, 30, 50, 60].includes(s.ndiFps) ? s.ndiFps : 30, win: null, ctx: null, slices: (s.slices || []).map(q => {
+        ndiRes: ['1280x720', '960x540', '1920x1080', 'comp'].includes(s.ndiRes) ? s.ndiRes : '1280x720', ndiFps: [25, 30, 50, 60].includes(s.ndiFps) ? s.ndiFps : 30,
+        vdoId: typeof s.vdoId === 'string' && /^[A-Za-z0-9_]{4,64}$/.test(s.vdoId) ? s.vdoId : '', vdoPw: typeof s.vdoPw === 'string' && /^[A-Za-z0-9]{6,64}$/.test(s.vdoPw) ? s.vdoPw : '',
+        vdoRes: ['1280x720', '960x540', '1920x1080', 'comp'].includes(s.vdoRes) ? s.vdoRes : '1280x720', vdoFps: [25, 30, 60].includes(s.vdoFps) ? s.vdoFps : 30,
+        vdoKbps: [1500, 2500, 4000, 6000, 10000].includes(s.vdoKbps) ? s.vdoKbps : 2500, vdoAudio: !!s.vdoAudio, win: null, ctx: null, slices: (s.slices || []).map(q => {
         const sl = newSlice(String(q.name || 'Slice'), q.mask);
         sl.enabled = q.enabled !== false; sl.feather = num(q.feather, 0); sl.bright = num(q.bright, 1); sl.flipH = !!q.flipH; sl.flipV = !!q.flipV;
         if (Array.isArray(q.in) && q.in.length === 4) sl.in = q.in.map(v => num(v, 0));

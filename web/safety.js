@@ -33,7 +33,7 @@ glc.addEventListener('webglcontextlost', e => {
   try { autosave(); } catch (err) {}
   try {
     sessionStorage.setItem(RECOVER_KEY, JSON.stringify({
-      active: comp.layers.map(L => L.active), black: safety.black, outputs: screens.map((s, i) => (s.win && !s.win.closed ? i : -1)).filter(i => i >= 0), ndi: screens.map((s, i) => (s.ndiSend ? i : -1)).filter(i => i >= 0), sel: [sel.l, sel.c] }));
+      active: comp.layers.map(L => L.active), black: safety.black, outputs: screens.map((s, i) => (s.win && !s.win.closed ? i : -1)).filter(i => i >= 0), ndi: screens.map((s, i) => (s.ndiSend ? i : -1)).filter(i => i >= 0), vdo: screens.map((s, i) => (s.vdoSend ? i : -1)).filter(i => i >= 0), sel: [sel.l, sel.c] }));
   } catch (err) {}
   window.vjKeepOutputs = true;   // engine.js leaves the output windows open through the reload
   setTimeout(() => location.reload(), 250);
@@ -51,6 +51,7 @@ window.addEventListener('load', () => {
   let lost = 0;
   for (const i of r.outputs || []) if (screens[i] && !openOutput(i)) lost++;   // the windows are still open; this picks them up again
   if (typeof syncDisplays === 'function') syncDisplays();
+  for (const i of r.vdo || []) if (screens[i] && typeof vdoStart === 'function') vdoStart(i);   // same ID and password: viewers reconnect
   for (const i of r.ndi || []) if (screens[i] && typeof ndiStart === 'function') ndiStart(i);   // same names: receivers stay connected   // and puts them back on their displays (display.js)
   setStatus(lost ? 'Recovered after a graphics reset. Click Output to reopen the output window.' : 'Recovered after a graphics reset. The show is running again.');
   ui.gridDirty = ui.propsDirty = true;
@@ -65,7 +66,7 @@ async function keepAwake() {
 document.addEventListener('visibilitychange', keepAwake);
 window.addEventListener('beforeunload', e => {
   if (window.vjKeepOutputs || isElectron) return;   // recovery reload; the desktop app asks in its own dialog
-  if (liveScreens().length || (typeof ndiLive === 'function' && ndiLive().length)) { e.preventDefault(); e.returnValue = ''; }   // an output window is live: ask before ending the show
+  if (liveScreens().length || (typeof ndiLive === 'function' && ndiLive().length) || (typeof vdoLive === 'function' && vdoLive().length)) { e.preventDefault(); e.returnValue = ''; }   // an output window is live: ask before ending the show
 });
 
 // The BLACK button sits in the transport bar, before the frame-rate readout (added once ui.js has defined el / $).

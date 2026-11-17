@@ -280,11 +280,11 @@ function renderOutPanels() {
 
   const P = $('outProps');
   P.textContent = '';
-  const live = !!((scr.win && !scr.win.closed) || scr.ndiSend), isNdi = scr.device === 'ndi';
+  const live = !!((scr.win && !scr.win.closed) || scr.ndiSend || scr.vdoSend), isNdi = scr.device === 'ndi', isVdo = scr.device === 'vdo';
   P.append(el('h4', { textContent: 'Screen' }),
     el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: scr.name, onchange: e => { scr.name = e.target.value || scr.name; redo(); } })),
     ...displayPanel(scr, outUI.screen),
-    el('button', { textContent: isNdi ? (live ? 'Stop NDI' : 'Start NDI') : live ? 'Close output' : 'Open output', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOnDisplay(outUI.screen, displayFor(outUI.screen)); syncOutBtn(); redo(); } }));
+    el('button', { textContent: isNdi ? (live ? 'Stop NDI' : 'Start NDI') : isVdo ? (live ? 'Stop web link' : 'Start web link') : live ? 'Close output' : 'Open output', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOnDisplay(outUI.screen, displayFor(outUI.screen)); syncOutBtn(); redo(); } }));
   const sl = scr.slices[outUI.slice];
   if (!sl) return;
   P.append(el('h4', { textContent: sl.mask ? 'Mask' : 'Slice' }),
@@ -460,7 +460,7 @@ function autosave() {
 }
 // keeps the header Output button in step with the output windows (they can be closed from outside the app)
 function syncOutBtn() {
-  const b = $('outBtn'), on = liveScreens().length + ndiLive().length > 0;
+  const b = $('outBtn'), on = liveScreens().length + ndiLive().length + vdoLive().length > 0;
   if (!b) return;
   if (b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
   const where = on ? outputWhere() : '', t = 'Output' + (where ? ' > ' + where : '');
@@ -485,7 +485,7 @@ function initMenu() {
     agent: () => toggleAgentPanel(!agUI.open),
     keys: () => toggleKeysHelp(),
     // header Output button: open every screen's output window, or close them all when any is live
-    outWin: () => { if (liveScreens().length || ndiLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => openOnDisplay(i, t[i])); } syncOutBtn(); ui.propsDirty = true; },
+    outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => openOnDisplay(i, t[i])); } syncOutBtn(); ui.propsDirty = true; },
   };
   const onAct = e => { const b = e.target.closest && e.target.closest('[data-act]'), a = b && b.dataset.act; if (a && acts[a]) acts[a](); };
   $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
@@ -546,6 +546,7 @@ function frame() {
     renderComp();
     for (const s of liveScreens()) { const c = s.ctx.canvas; renderScreen(s, c.width, c.height); s.ctx.drawImage(glc, 0, glc.height - c.height, c.width, c.height, 0, 0, c.width, c.height); }
     ndiTick(t0);   // NDI screens: render, async read-back, send (ndi.js)
+    vdoTick(t0);   // web link screens: render into the published canvas (vdo.js)
     if (!document.hidden) {
       const mw = 480, mh = Math.round(480 * comp.h / comp.w);
       for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
@@ -561,7 +562,7 @@ function frame() {
   if (t0 - fpsT >= 500) {
     const fps = fpsN * 1000 / (t0 - fpsT), el2 = $('fps');
     syncOutBtn();
-    el2.textContent = `${liveScreens().length || ndiLive().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
+    el2.textContent = `${liveScreens().length || ndiLive().length || vdoLive().length ? 'OUTPUT LIVE' : 'output closed'}   ${fps.toFixed(0)} fps   ${(costSum / fpsN).toFixed(1)} ms`;
     el2.className = fps < 29 ? 'bad' : '';
     window.__fps = fps; fpsN = 0; costSum = 0; fpsT = t0;
   }
