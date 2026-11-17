@@ -271,7 +271,7 @@ function mediaClip(m) {
   if (m.kind === 'video') {
     const v = document.createElement('video');
     Object.assign(v, { muted: true, loop: true, playsInline: true, preload: 'auto' });
-    v.addEventListener('loadeddata', () => { c.w = v.videoWidth; c.h = v.videoHeight; c.thumb = thumbOf(v, c.w, c.h); ui.gridDirty = true; }, { once: true });
+    v.addEventListener('loadeddata', () => { c.w = v.videoWidth; c.h = v.videoHeight; c.thumb = thumbOf(v, c.w, c.h); ui.gridDirty = true; posterClip(c); }, { once: true });
     v.addEventListener('error', () => { c.error = true; setStatus('This browser cannot play ' + m.name); ui.gridDirty = true; });
     v.src = m.url;
     c.video = v;
@@ -319,7 +319,21 @@ function uploadClip(c) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   c.ready = true;
+  c.texAt = c.video ? c.video.currentTime : 0;   // which video frame the texture holds (posterClip / trigger)
 }
+// Poster frame: a video clip that is not playing keeps the frame at its in point in its texture, so a trigger can switch
+// the layer at once and show it while the video starts. Starting a decoder can take a moment (a second or more on a Mac),
+// which used to show as "nothing happens" after a click; the first GPU upload of a clip is also paid here, at import.
+function posterClip(c) {
+  const v = c && c.video;
+  if (!v || c.type !== 'video' || c.error || !v.paused) return;   // media files only (camera clips are live)
+  const start = typeof clipStart === 'function' ? clipStart(c) : 0;
+  const grab = () => { if (c.video === v && v.paused && v.readyState >= 2 && Math.abs(v.currentTime - start) < 0.05) { uploadClip(c); c.w = v.videoWidth; c.h = v.videoHeight; } };
+  if (Math.abs(v.currentTime - start) > 0.05) { v.addEventListener('seeked', grab, { once: true }); try { v.currentTime = start; } catch (e) {} }
+  else if (v.readyState >= 2) grab();
+  else v.addEventListener('loadeddata', grab, { once: true });
+}
+const posterReady = (c, start) => !!(c.ready && c.texAt !== undefined && Math.abs(c.texAt - start) < 0.05);
 
 // ---------- composition ----------
 const comp = { w: 1920, h: 1080, columns: 8, layers: [], fx: [], master: 1, crossfade: 0.5, bpm: 120, beats: 0, time: 0, frame: 0, rt: null, outTex: null };
@@ -366,7 +380,9 @@ function setClip(li, ci, clip) {
   L.clips[ci] = clip;
   ui.gridDirty = ui.propsDirty = true;
 }
-const pauseClip = c => { if (c && c.video) c.video.pause(); };
+// A video switched away from is paused and parked at its in point with that frame in its texture (posterClip), so
+// triggering it again needs no seek and shows at once.
+const pauseClip = c => { if (c && c.video) { c.video.pause(); posterClip(c); } };
 function eject(li) {
   const L = comp.layers[li];
   if (!L) return;
@@ -389,11 +405,13 @@ function trigger(li, ci) {
   if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
   if (c.video) {
     const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // clipopts.js: the clip's in point
+    const poster = L.active !== ci && posterReady(c, start);   // its in-point frame is already on the GPU
     if (L.active === ci || Math.abs(c.video.currentTime - start) > 0.05) { try { c.video.currentTime = start; } catch (e) {} }   // already at its start (agent.js preroll): no seek, so it shows at once
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
     if (c.speed > 0) c.video.play().catch(() => {});
     if (L.active === ci) return;
-    L.pendingCol = ci;   // the old clip keeps playing until this one has a frame
+    if (poster) switchActive(L, ci);   // on screen now, showing the in-point frame until the video's own frames arrive
+    else L.pendingCol = ci;   // no frame yet: the old clip keeps playing until this one has one
   } else switchActive(L, ci);
 }
 function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) trigger(li, ci); }); }
