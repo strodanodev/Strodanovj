@@ -53,8 +53,12 @@ function plDirty() { pl.dirty = true; }
 function plJunction(d) { const t = trackOf(d); return { style: (t && t.jStyle) || 'auto', vis: (t && t.jVis) || 'mix' }; }
 
 // ---------- planned scenes ----------
-// The parts of a song the plan follows: its analysed sections, or the whole song as one part.
-const planParts = t => (t.info.ok && t.info.sections && t.info.sections.length ? t.info.sections : [{ type: 'whole', t: 0, end: t.info.duration, bar: 0, bars: 1e9 }]);
+// A song's sections as the artist has them: edited in the segment editor (segments.js sectionsFor), else analysed.
+const partsOf = t => (typeof sectionsFor === 'function' ? sectionsFor(t.info, t.file) : t.info.sections);
+// Changes when the sections are moved, resized, split, merged or re-labelled, so plans and waveforms follow the edit.
+const secSig = t => (partsOf(t) || []).map(s => s.type + s.bar + ':' + s.bars).join(',');
+// The parts of a song the plan follows: its sections, or the whole song as one part.
+const planParts = t => { const s = partsOf(t); return t.info.ok && s && s.length ? s : [{ type: 'whole', t: 0, end: t.info.duration, bar: 0, bars: 1e9 }]; };
 // Energy band for a part: from the section type, nudged by the song's energy in the list and by the vibe.
 function partBand(t, type) {
   let b = SECTION_BAND[type] || (t.energy >= 7 ? 'peak' : t.energy <= 3 ? 'calm' : 'groove');
@@ -76,12 +80,12 @@ function planTrack(t) {
     if (sc) { byType[s.type] = sc; prev = sc; }
     return { s, sc };
   });
-  t.planFor = t.info; t.planSig = pl.sig;
+  t.planFor = t.info; t.planSig = pl.sig; t.planSecs = secSig(t);
   pl.warmQ.push(...t.plan.map(p => p.sc));
   pl.dirty = true;
 }
 function plReplanAll() { pl.sig = compSig(); for (const t of crate.tracks) if (t.info) planTrack(t); }
-const ensurePlan = t => { if (t && t.info && (t.planFor !== t.info || t.planSig !== pl.sig)) planTrack(t); return t && t.plan; };
+const ensurePlan = t => { if (t && t.info && (t.planFor !== t.info || t.planSig !== pl.sig || t.planSecs !== secSig(t))) planTrack(t); return t && t.plan; };
 // The part of song t at position pos (seconds).
 function partAt(t, pos) {
   const parts = ensurePlan(t);
@@ -335,8 +339,9 @@ function plJunctionRow(t) {
 function drawPlWave(r) {
   const t = r.t, i = t.info, cv = r.cv, dpr = window.devicePixelRatio || 1;
   const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
-  if (!W || !H || (r.drawn === W && r.drawnFor === i)) return;
-  cv.width = W; cv.height = H; r.drawn = W; r.drawnFor = i;
+  const ss = i ? secSig(t) : '';
+  if (!W || !H || (r.drawn === W && r.drawnFor === i && r.drawnSec === ss)) return;
+  cv.width = W; cv.height = H; r.drawn = W; r.drawnFor = i; r.drawnSec = ss;
   const x = cv.getContext('2d');
   x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
   if (!i) {
@@ -353,7 +358,7 @@ function drawPlWave(r) {
     x.fillStyle = waveCol(n ? lo / n : 0);
     x.fillRect(px, mid - h / 2, 1, h);
   }
-  for (const s of i.sections || []) { x.fillStyle = sectionCol(s.type); x.fillRect(s.t / i.duration * W, H - sh, Math.max(1, s.bars * i.barLen / i.duration * W - dpr), sh); }
+  for (const s of partsOf(t) || []) { x.fillStyle = sectionCol(s.type); x.fillRect(s.t / i.duration * W, H - sh, Math.max(1, s.bars * i.barLen / i.duration * W - dpr), sh); }
 }
 
 // ---------- per frame ----------
@@ -379,6 +384,7 @@ function tickPlaylist() {
     r.root.classList.toggle('next', !playing && t === next);
     r.root.classList.toggle('played', !playing && t.played);
     if (!i) continue;
+    if (t.plan && t.planSecs !== secSig(t)) planTrack(t);   // sections edited in the segment editor: plan the new parts
     const pos = d ? deckHeard(d) : 0, f = d ? Math.min(1, Math.max(0, pos / i.duration)) : 0;
     r.head.hidden = !d; r.done.hidden = !d;
     if (d) { r.head.style.left = (f * 100).toFixed(2) + '%'; r.done.style.width = (f * 100).toFixed(2) + '%'; }
