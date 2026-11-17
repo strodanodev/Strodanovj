@@ -56,7 +56,7 @@ function plJunction(d) { const t = trackOf(d); return { style: (t && t.jStyle) |
 // A song's sections as the artist has them: edited in the segment editor (segments.js sectionsFor), else analysed.
 const partsOf = t => (typeof sectionsFor === 'function' ? sectionsFor(t.info, t.file) : t.info.sections);
 // Changes when the sections are moved, resized, split, merged or re-labelled, so plans and waveforms follow the edit.
-const secSig = t => (partsOf(t) || []).map(s => s.type + s.bar + ':' + s.bars).join(',');
+const secSig = t => (partsOf(t) || []).map(s => s.type + s.bar + ':' + s.bars + (s.vis ? JSON.stringify(s.vis) : '')).join(',');   // .vis: the part's own visuals (plsegs.js)
 // The parts of a song the plan follows: its sections, or the whole song as one part.
 const planParts = t => { const s = partsOf(t); return t.info.ok && s && s.length ? s : [{ type: 'whole', t: 0, end: t.info.duration, bar: 0, bars: 1e9 }]; };
 // Energy band for a part: from the section type, nudged by the song's energy in the list and by the vibe.
@@ -76,6 +76,9 @@ function planTrack(t) {
   let prev = null;
   t.plan = planParts(t).map(s => {
     const band = partBand(t, s.type), drop = s.type === 'drop';
+    // a part with its own visuals (plsegs.js) plays them; the rest the Agent plans
+    const own = s.vis && typeof sceneFromVis === 'function' ? sceneFromVis(s, band, drop) : null;
+    if (own) { if (!own.keep) { prev = own; if (typeof remember === 'function') remember(own); } return { s, sc: own }; }
     let sc = byType[s.type] && byType[s.type].band === band ? varyScene(byType[s.type]) : makeScene(band, drop, prev);
     if (sc) { byType[s.type] = sc; prev = sc; if (typeof remember === 'function') remember(sc); }   // agent.js: later parts and songs use other clips
     return { s, sc };
@@ -128,7 +131,7 @@ function warmScene(sc) {
   }
 }
 // Short label for a planned scene: the clips that are up, bottom layer first.
-const sceneShort = sc => (sc ? (sc.col >= 0 ? 'Col ' + (sc.col + 1) + ': ' : '') + Object.keys(sc.show).map(Number).sort((a, b) => a - b).map(li => clipName(li, sc.show[li])).join(' + ') : 'nothing to play');
+const sceneShort = sc => (sc && sc.keep ? 'Keep' : sc ? (sc.col >= 0 ? 'Col ' + (sc.col + 1) + ': ' : '') + Object.keys(sc.show).map(Number).sort((a, b) => a - b).map(li => clipName(li, sc.show[li])).join(' + ') : 'nothing to play');
 
 // ---------- view ----------
 const plShowing = () => agUI.open && pl.view === 'playlist';
@@ -300,7 +303,8 @@ function plRow(t, i) {
       deckSeek(d, (e.clientX - b.left) / b.width * d.buffer.duration);
     });
   }
-  if (inf && ensurePlan(t)) {
+  if (typeof plSegStrip === 'function') plSegStrip(t, r, wv);   // editable parts (plsegs.js)
+  else if (inf && ensurePlan(t)) {
     t.plan.forEach((p, k) => {
       const a = p.s.t / inf.duration, w = (Math.min(inf.duration, p.s.end) - p.s.t) / inf.duration;
       const c = el('button', { className: 'plchip band-' + (p.sc ? p.sc.band : 'calm') + ' sec-' + p.s.type, style: { left: (a * 100).toFixed(3) + '%', width: 'calc(' + (w * 100).toFixed(3) + '% - 2px)' },

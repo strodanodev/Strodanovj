@@ -88,6 +88,8 @@ function segmentsFromJSON(j) {
     const L = j[k].filter(s => s && SECTION_TYPES.includes(s.type)).map(s => {
       const o = { type: s.type, bar: Math.max(0, num(s.bar, 0) | 0), bars: Math.max(1, num(s.bars, 1) | 0), lookMode: LOOK_SLOTS.includes(s.lookMode) || ['type', 'own', 'keep'].includes(s.lookMode) ? s.lookMode : 'type' };
       if (o.lookMode === 'own') { const l = lookFromJSON(s.look); if (l) o.look = l; else o.lookMode = 'type'; }
+      const vis = typeof visFromJSON === 'function' ? visFromJSON(s.vis) : undefined;   // the part's own visuals (plsegs.js)
+      if (vis) o.vis = vis;
       return o;
     }).sort((a, b) => a.bar - b.bar);
     for (let n = 1; n < L.length; n++) L[n].bar = L[n - 1].bar + L[n - 1].bars;   // back to back, no gaps or overlaps
