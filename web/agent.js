@@ -47,7 +47,6 @@ const COL_TAGS = ['', 'Calm', 'Groove', 'Peak', 'Drop'];
 const TAG_BAND = { Calm: 'calm', Groove: 'groove', Peak: 'peak', Drop: 'peak' };
 const colTag = ci => (comp.agentTags && comp.agentTags[ci]) || '';
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // ---------- what it may play ----------
 const playable = c => !!(c && !c.missing && !c.error);

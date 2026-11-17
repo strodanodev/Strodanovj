@@ -84,6 +84,7 @@ function tickMix() {
     setStatus('Crossfader moved by hand: the mix is yours');
   } else if (m) {
     if (!m.out.playing && !m.started) { cancelMix(); return; }
+    if (!m.out.playing && m.started) { finishMix(); return; }   // paused or ran out mid-mix: hand over now (it used to hang, and autopilot with it)
     if (m.style === 'fade') {
       if (!m.started) { m.started = true; m.xfFrom = mixer.lastXf = comp.crossfade; if (!m.inn.playing) deckPlay(m.inn); mixBegun(m); }
       const p = Math.min(1, (c.currentTime - m.t0) / m.len);

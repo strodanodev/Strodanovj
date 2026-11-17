@@ -9,7 +9,8 @@
 function analyseTrack(x, sr) {
   const hop = Math.max(1, Math.round(sr / 200)), fps = sr / hop, n = Math.floor(x.length / hop);
   const peaks = new Float32Array(n), lows = new Float32Array(n), eF = new Float32Array(n), eL = new Float32Array(n);
-  const res = { ok: false, bpm: 120, beatLen: 0.5, grid0: 0, conf: 0, fps, duration: x.length / sr, peaks, lows };
+  // defaults for every field, so a result returned early (a very short or silent file, no beat found) is still complete
+  const res = { ok: false, bpm: 120, beatLen: 0.5, barLen: 2, grid0: 0, conf: 0, fps, duration: x.length / sr, peaks, lows, loudDb: -60, flux: 0, mixIn: 0, mixOut: Math.max(0, x.length / sr - 20), beatEnd: x.length / sr };
   const k = 1 - Math.exp(-2 * Math.PI * 150 / sr);
   let l1 = 0, l2 = 0;
   for (let i = 0; i < n; i++) {
@@ -103,7 +104,7 @@ function analyseTrack(x, sr) {
   // An onset is seen a little under one frame after the attack that caused it (energy smoothing above).
   let grid0 = (f0 - 0.7) / fps + d * beatLen;
   while (grid0 < -0.05) grid0 += 4 * beatLen;   // a track that starts right on the beat may land a few ms below zero
-  res.ok = f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0;
+  res.ok = f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0; res.barLen = 4 * beatLen;   // sections below may set it again; without sections it was left undefined (NaN transition points)
   res.rms = eF;   // per-frame level, the same measure the live listener uses (track recognition, follow.js)
 
   // ---- loudness and energy ----
