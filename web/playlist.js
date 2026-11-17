@@ -77,7 +77,7 @@ function planTrack(t) {
   t.plan = planParts(t).map(s => {
     const band = partBand(t, s.type), drop = s.type === 'drop';
     let sc = byType[s.type] && byType[s.type].band === band ? varyScene(byType[s.type]) : makeScene(band, drop, prev);
-    if (sc) { byType[s.type] = sc; prev = sc; }
+    if (sc) { byType[s.type] = sc; prev = sc; if (typeof remember === 'function') remember(sc); }   // agent.js: later parts and songs use other clips
     return { s, sc };
   });
   t.planFor = t.info; t.planSig = pl.sig; t.planSecs = secSig(t);
