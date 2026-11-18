@@ -154,7 +154,8 @@ function identifyDisplays() {
 function displayPanel(scr, i) {
   const t = displayTargets()[i], live = !!((scr.win && !scr.win.closed) || scr.ndiSend || scr.vdoSend);
   const sel = el('select', { onchange: e => {
-    const was = screenDevice(scr);
+    const was = screenDevice(scr), net = v => v === 'ndi' || v === 'vdo';
+    if (net(was) && !net(e.target.value) && screens.some(s => s !== scr && !net(screenDevice(s))) && !entGate('mapping')) { e.target.value = was; return; }   // a second display output is mapping
     scr.device = e.target.value;
     if (was === 'ndi' && scr.device !== 'ndi') ndiStop(scr);
     if (was === 'vdo' && scr.device !== 'vdo') vdoStop(scr);

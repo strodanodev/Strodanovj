@@ -418,7 +418,46 @@ function initShaderEditor() {
 
 // ---------- menu, transport, persistence ----------
 // keeps the header Output button in step with the output windows (they can be closed from outside the app)
+// ---------- Broadcast (header button) ----------
+// The web link and NDI are screen devices, which hid them inside Advanced Output > Display. The Broadcast button
+// gives each its own screen (made on first use, so the display output is left alone) and opens Advanced Output on
+// it, where the link, the settings and Start are. A broadcast screen is not "advanced mapping": making one is free.
+const BC_KINDS = { vdo: { name: 'Web link', menu: 'Web link (internet)', hint: 'Anyone with the link can watch in a browser' },
+  ndi: { name: 'NDI', menu: 'NDI (network)', hint: 'For OBS, vMix and other NDI receivers on this network' } };
+let bcMenuEl = null;
+function closeBroadcastMenu() { if (bcMenuEl) { bcMenuEl.remove(); bcMenuEl = null; $('bcBtn').setAttribute('aria-expanded', 'false'); } }
+function openBroadcast(kind) {
+  closeBroadcastMenu();
+  if (kind === 'ndi' && !ndi.api) { setStatus('NDI output needs the desktop app (and the NDI Runtime installed)'); return; }
+  let i = screens.findIndex(s => screenDevice(s) === kind);
+  if (i < 0) { screens.push({ name: BC_KINDS[kind].name, device: kind, win: null, ctx: null, slices: [newSlice('Slice 1')] }); i = screens.length - 1; }
+  outUI.screen = i; outUI.slice = 0;
+  $('outModal').hidden = false;
+  renderOutPanels();
+  const s = screens[i], live = kind === 'vdo' ? s.vdoSend : s.ndiSend;
+  setStatus(live ? BC_KINDS[kind].name + ' is live' : 'Press Start ' + (kind === 'vdo' ? 'web link' : 'NDI') + ' to go live. ' + BC_KINDS[kind].hint + '.');
+}
+function toggleBroadcastMenu() {
+  if (bcMenuEl) return closeBroadcastMenu();
+  const b = $('bcBtn'), r = b.getBoundingClientRect();
+  const item = kind => {
+    const s = screens.find(x => screenDevice(x) === kind), live = s && (kind === 'vdo' ? s.vdoSend : s.ndiSend), off = kind === 'ndi' && !ndi.api;
+    return el('button', { role: 'menuitem', disabled: off, onclick: () => openBroadcast(kind),
+      style: { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: '0', background: 'none', height: 'auto', opacity: off ? '.5' : '1' } },
+      el('div', { textContent: BC_KINDS[kind].menu + (live ? '  [live]' : '') }),
+      el('div', { textContent: off ? 'Desktop app only' : BC_KINDS[kind].hint, style: { color: 'var(--dim)', fontSize: '12px' } }));
+  };
+  bcMenuEl = el('div', { role: 'menu', style: { position: 'fixed', left: Math.max(8, Math.min(r.left, innerWidth - 276)) + 'px', top: r.bottom + 4 + 'px', zIndex: '20', width: '268px', boxSizing: 'border-box', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '4px', boxShadow: '0 12px 40px rgba(0,0,0,.7)' } },
+    item('vdo'), item('ndi'));
+  document.body.append(bcMenuEl);
+  b.setAttribute('aria-expanded', 'true');
+}
+document.addEventListener('pointerdown', e => { if (bcMenuEl && !bcMenuEl.contains(e.target) && !e.target.closest('#bcBtn')) closeBroadcastMenu(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && bcMenuEl) closeBroadcastMenu(); });
+
 function syncOutBtn() {
+  const bc = $('bcBtn'), bcOn = ndiLive().length + vdoLive().length > 0;
+  if (bc && bc.classList.contains('on') !== bcOn) bc.classList.toggle('on', bcOn);
   const b = $('outBtn'), on = liveScreens().length + ndiLive().length + vdoLive().length > 0;
   if (!b) return;
   if (b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
@@ -443,8 +482,8 @@ function initMenu() {
     dj: () => toggleDJ(!djUI.open),
     agent: () => toggleAgentPanel(!agUI.open),
     keys: () => toggleKeysHelp(),
-    // header Output button: open every screen's output window, or close them all when any is live
-    outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => openOnDisplay(i, t[i])); } syncOutBtn(); ui.propsDirty = true; },
+    // header Output button: open every screen's output (not the web link: only its own Start puts it on the internet), or close them all when any is live
+    outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => { if (screenDevice(s) !== 'vdo') openOnDisplay(i, t[i]); }); } syncOutBtn(); ui.propsDirty = true; },
   };
   const onAct = e => { const b = e.target.closest && e.target.closest('[data-act]'), a = b && b.dataset.act; if (a && acts[a]) acts[a](); };
   $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
@@ -572,6 +611,7 @@ function tickUI() {
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) stockComp(); else stockRelink();   // the STRODANO stock show (stock.js) is the default
   initNdi();
+  $('bcBtn').addEventListener('click', toggleBroadcastMenu);
   syncTransport();
   initMediaFolder().then(initAudius, initAudius);   // then STRODANO's set from Audius when the track list is empty
   setInterval(autosave, 2000);

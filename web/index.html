@@ -63,9 +63,9 @@ input[type=checkbox]{accent-color:var(--acc)}
 #menubar h1.brand{display:flex;align-items:center;gap:6px;margin-right:var(--s)}
 #menubar h1.brand img{height:40px;width:auto;display:block;filter:drop-shadow(0 0 6px rgba(0,0,0,.6))}
 #menubar h1.brand span{font-size:13px;font-weight:600;letter-spacing:.12em;color:var(--acc);align-self:flex-end;margin-bottom:6px}
-#outBtn{display:flex;align-items:center;gap:6px;font-weight:500}
-#outBtn i{width:7px;height:7px;border-radius:50%;background:var(--dim)}
-#outBtn.on i{background:var(--acc);box-shadow:0 0 8px var(--acc);animation:livepulse 1.4s ease-in-out infinite}
+#outBtn,#bcBtn{display:flex;align-items:center;gap:6px;font-weight:500}
+#outBtn i,#bcBtn i{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+#outBtn.on i,#bcBtn.on i{background:var(--acc);box-shadow:0 0 8px var(--acc);animation:livepulse 1.4s ease-in-out infinite}
 @keyframes livepulse{50%{opacity:.35}}
 #themes{display:flex;gap:6px;align-items:center;margin-left:var(--m)} #status:empty+#themes{margin-left:auto}
 #themes button{width:16px;height:16px;padding:0;border-radius:50%;background:var(--sw);border:2px solid var(--top);box-shadow:0 0 0 1px var(--ctl-line)}
@@ -320,6 +320,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
     <span class="sep"></span>
     <button id="outBtn" data-act="outWin" title="Open the outputs (fullscreen on their displays, see Advanced Output). Click again to close them." aria-pressed="false"><i></i>Output</button>
+    <button id="bcBtn" title="Broadcast: send the output over the internet (web link) or to other computers on the network (NDI)" aria-haspopup="menu"><i></i>Broadcast</button>
     <button id="acctBtn" title="Your Strodano account and plan">Sign in</button>
     <span id="status"></span>
     <div id="themes" role="radiogroup" aria-label="Colour theme"></div>
