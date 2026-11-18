@@ -1,4 +1,6 @@
-// Strodano VJ (web, desktop page) - the workspace: taking a project to another computer. GPL-3.0.
+// Strodano VJ (web) - the workspace: taking a project to another computer. GPL-3.0.
+// Loaded by both pages. The desktop page has the whole Workspace menu; the phone page uses the cloud projects
+// (wsCloud, on its Build tab) and the smart relink.
 // A project (.svj) only names its media files, so three things live here:
 //  1. Cloud projects: the project file kept on the website for the signed-in account (GET /api/app/projects and
 //     POST /api/app/projects/save | load | delete, device token from plan.js). The website enforces how many an account
@@ -92,6 +94,38 @@ async function wsFindInFolder() {
     (left.length ? '. Still missing: ' + left.slice(0, 3).map(w => w.fileName).join(', ') + (left.length > 3 ? ' and ' + (left.length - 3) + ' more' : '') : '. Nothing is missing now.')), 10);
 }
 
+// ---------- the playlist: song order, transition points and mix styles ----------
+// The playlist is remembered per computer by file name + size + date (playlist.js), and a copied file has a new date,
+// so a workspace and a cloud project carry it by file name instead: [{ name, i, o, s, v }] in playing order.
+function wsPlaylist() {
+  if (typeof crate === 'undefined') return undefined;
+  const list = crate.tracks.filter(t => t.file).map(t => ({ name: t.file.name, i: typeof t.inAt === 'number' ? +t.inAt.toFixed(3) : undefined, o: typeof t.outAt === 'number' ? +t.outAt.toFixed(3) : undefined,
+    s: t.jStyle && t.jStyle !== 'auto' ? t.jStyle : undefined, v: t.jVis && t.jVis !== 'mix' ? t.jVis : undefined }));
+  return list.length ? list : undefined;
+}
+// Puts the songs that are in the track list now into the saved order with their saved settings. Returns how many.
+function wsApplyPlaylist(list) {
+  if (!Array.isArray(list) || typeof crate === 'undefined' || !crate.tracks.length) return 0;
+  const at = new Map();
+  list.slice(0, 5000).forEach((x, i) => { if (x && typeof x.name === 'string' && !at.has(x.name)) at.set(x.name, { i, x }); });
+  let n = 0;
+  for (const t of crate.tracks) {
+    const e = t.file && at.get(t.file.name);
+    if (!e) continue;
+    n++;
+    if (typeof e.x.i === 'number') t.inAt = e.x.i;
+    if (typeof e.x.o === 'number') t.outAt = e.x.o;
+    if (typeof PL_STYLES !== 'undefined' && PL_STYLES.some(([v]) => v === e.x.s)) t.jStyle = e.x.s;
+    if (typeof PL_VIS !== 'undefined' && PL_VIS.some(([v]) => v === e.x.v)) t.jVis = e.x.v;
+  }
+  if (!n) return 0;
+  const was = new Map(crate.tracks.map((t, i) => [t, i])), rank = t => (t.file && at.has(t.file.name) ? at.get(t.file.name).i : 1e9 + was.get(t));
+  crate.tracks.sort((a, b) => rank(a) - rank(b));
+  if (typeof plSave === 'function') plSave();
+  if (typeof plDirty === 'function') plDirty();
+  return n;
+}
+
 // ---------- collect into a folder / open a workspace folder ----------
 const WS_FILE = 'workspace.svj';
 async function wsWrite(dir, name, blob) {
@@ -126,7 +160,7 @@ async function wsCollect() {
     if (clips.size) { const sub = await dir.getDirectoryHandle('media', { create: true }); for (const [name, m] of clips) await step(sub, name, async () => (await fetch(m.url)).blob()); }
     if (tracks.length) { const sub = await dir.getDirectoryHandle('tracks', { create: true }); for (const t of tracks) await step(sub, t.file.name, async () => t.file); }
     const j = compToJSON();
-    j.workspace = { made: new Date().toISOString(), media: [...clips.keys()], tracks: tracks.map(t => t.file.name) };
+    j.workspace = { made: new Date().toISOString(), media: [...clips.keys()], tracks: tracks.map(t => t.file.name), playlist: wsPlaylist() };
     await wsWrite(dir, WS_FILE, new Blob([JSON.stringify(j, null, 1)], { type: 'application/json' }));
     setStatus('Workspace saved in "' + dir.name + '": ' + clips.size + ' clip file(s)' + (tracks.length ? ' and ' + tracks.length + ' track(s)' : '') + (copied === total ? '' : ' (' + copied + ' copied, the rest were already there)') +
       (failed.length ? '. Could not copy: ' + failed.slice(0, 3).join(', ') : '') + (missing.length ? '. ' + missing.length + ' clip(s) had no file to copy' : '') +
@@ -138,6 +172,11 @@ function wsAfterLoad() {
   if (typeof syncTransport === 'function') syncTransport();
   if (typeof display !== 'undefined' && display.autoOut) syncDisplays(display.list.map(d => d.key));   // the new project's screens go to their displays
   sel.l = 0; sel.c = -1; ui.gridDirty = ui.propsDirty = ui.browserDirty = true;
+  if (typeof M !== 'undefined') {   // the phone page: its own view, its broadcast screen, and the starter pack files the project may want
+    if (typeof vdoScreen === 'function') vdoScreen();
+    M.dirty = true;
+    if (typeof starterFetch === 'function') starterFetch();
+  }
 }
 async function wsOpenFolder() {
   if (ws.busy) return;
@@ -155,6 +194,7 @@ async function wsOpenFolder() {
     mediaFolder.handle = dir;                       // the workspace is the Media folder from now on: remembered for the next start
     try { await folderStore('put', dir); } catch (e) {}
     await loadMediaFolder();
+    wsApplyPlaylist(j.workspace && j.workspace.playlist);
     wsAfterLoad();
     const left = wsWanted().length;
     setStatus('Opened the workspace "' + dir.name + '"' + (left ? ': ' + left + ' clip file(s) are not in it (Workspace > Find missing files)' : ': every clip found its file') + '. It is now your Media folder.');
@@ -181,7 +221,7 @@ async function wsCloud(note) {
     return null;
   };
   const save = async (name, id) => {
-    const j = await act('/api/app/projects/save', { name, data: compToJSON(), ...(id && { id }) }, 'Saved "' + name + '" to the cloud (the project only: its media files stay on this computer)');
+    const j = await act('/api/app/projects/save', { name, data: Object.assign(compToJSON(), { workspace: { playlist: wsPlaylist() } }), ...(id && { id }) }, 'Saved "' + name + '" to the cloud (the project only: its media files stay on this device)');
     if (j) { ws.cloud = { id: j.id, name: j.name }; wsCloud('Saved "' + j.name + '".'); }
   };
   const open = async p => {
@@ -189,13 +229,14 @@ async function wsCloud(note) {
     if (!j) return;
     if (!loadComp(j.data)) return wsCloud('That saved project could not be opened.');
     ws.cloud = { id: p.id, name: p.name };
+    wsApplyPlaylist(j.data.workspace && j.data.workspace.playlist);
     wsAfterLoad(); entClose();
     if (typeof stockRelink === 'function') stockRelink();
     const left = wsWanted().length;
-    setStatus('Opened "' + p.name + '" from the cloud' + (left ? ': ' + left + ' clip file(s) are not on this computer yet. Use Workspace > Open a workspace folder, or Find missing files.' : ''));
+    setStatus('Opened "' + p.name + '" from the cloud' + (left ? ': ' + left + (typeof M !== 'undefined' ? ' clip file(s) are not on this phone yet: import them in Library.' : ' clip file(s) are not on this computer yet. Use Workspace > Open a workspace folder, or Find missing files.') : ''));
   };
-  const rows = projects.map(p => el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderTop: '1px solid var(--line)' } },
-    el('div', { style: { flex: '1', minWidth: '0' } },
+  const rows = projects.map(p => el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderTop: '1px solid var(--line)', flexWrap: 'wrap' } },
+    el('div', { style: { flex: '1 1 120px', minWidth: '0' } },
       el('div', { textContent: p.name + (p.id === ws.cloud.id ? '  (open now)' : ''), style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }),
       el('div', { textContent: wsDate(p.updatedAt) + ' · ' + Math.max(1, Math.round(p.bytes / 1024)) + ' KB', style: { color: 'var(--dim)', fontSize: '12px' } })),
     el('button', { textContent: 'Open', title: 'Load this project (replaces what is open now)', style: small, onclick: () => open(p) }),
@@ -206,7 +247,7 @@ async function wsCloud(note) {
   const saveNew = () => { const n = nameIn.value.replace(/\s+/g, ' ').trim(); if (!n) { nameIn.focus(); setStatus('Give the project a name first'); return; } save(n); };
   nameIn.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') saveNew(); });
   const used = projects.length + ' of ' + limit + ' used on ' + pname + '.';
-  entDialog('CLOUD', 'Cloud projects', (note ? note + ' ' : '') + used + ' Only the project is saved (layers, clips, settings); the media files stay on your computer.',
+  entDialog('CLOUD', 'Cloud projects', (note ? note + ' ' : '') + used + ' Only the project is saved (layers, clips, settings); the media files stay on this device.',
     [full && plan !== 'festival' ? el('a', { textContent: 'See plans', href: ENT_SITE + '/#pricing', target: '_blank', rel: 'noopener', style: entBtnStyle(false) }) : null, entBtn('Close', entClose, true)],
     el('div', { style: { margin: '14px 0 0', maxHeight: '40vh', overflowY: 'auto' } }, ...(rows.length ? rows : [el('div', { textContent: 'Nothing saved yet.', style: { color: 'var(--dim)', padding: '8px 0', borderTop: '1px solid var(--line)' } })])),
     el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--line)' } }, nameIn,

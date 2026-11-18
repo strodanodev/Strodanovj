@@ -326,9 +326,9 @@ function renderBuild(v) {
       x => { const [w, h] = x.split('x').map(Number); resizeComp(w, h); M.slow = 0; M.dirty = true; })),
     setting('Frame rate', choice([[60, '60 fps'], [30, '30 fps (saves battery)']], M.prefs.fpsCap, x => { M.prefs.fpsCap = +x; savePrefs(); }))),
     el('div', { className: 'row' }, btn('Save project', saveProject), btn('Open project', () => $('compInput').click())),
-    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Account and plan', entAccount)),
+    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Account and plan', entAccount), btn('Cloud projects', () => wsCloud())),
     el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Start over', e => armThen(e.currentTarget, 'start a new project (your library stays)', () => { mobileDemo(); M.dirty = true; }), 'danger')),
-    hint('Projects keep the layout; photos and videos stay in the Library and relink by name.'));
+    hint('Projects keep the layout; photos and videos stay in the Library and relink by name. Cloud projects open on any phone or computer you sign in on.'));
 }
 function saveProject() {
   const blob = new Blob([JSON.stringify(compToJSON(), null, 1)], { type: 'application/json' });

@@ -5,13 +5,13 @@
 // Never cached: vdo.ninja and other sites (the web link is online by nature), and the MediaPipe hand tracking
 // bundle (14 MB, a desktop feature), and the desktop page (index.html): only the files in SHELL go through here.
 'use strict';
-const VERSION = 'svj-mobile-6';
+const VERSION = 'svj-mobile-7';
 const SHELL = [
   'mobile.html', 'manifest.webmanifest', 'logo.png', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'theme.js', 'core.js', 'plan.js', 'shaders.js', 'engine.js', 'mediafolder.js', 'midi.js', 'analysis.js', 'audio.js', 'crate.js', 'mix.js', 'dj.js', 'live.js',
   'score.js', 'segments.js', 'cues.js', 'follow.js', 'agent.js', 'record.js', 'agentui.js', 'playlist.js', 'motion.js', 'camera.js', 'text.js',
   'vendor/three.min.js', 'smart3d.js', 'hands.js', 'inputs.js', 'safety.js', 'display.js', 'ndi.js', 'vdo.js', 'clipopts.js', 'snapshots.js',
-  'vendor/qrcode.js', 'vendor/vdoninja-sdk.min.js', 'medialib.js', 'starter.js', 'mobileui.js',
+  'vendor/qrcode.js', 'vendor/vdoninja-sdk.min.js', 'medialib.js', 'starter.js', 'workspace.js', 'mobileui.js',
 ];
 const SHELL_URLS = new Set(SHELL.map(p => new URL(p, self.registration.scope).href));
 self.addEventListener('install', e => {
