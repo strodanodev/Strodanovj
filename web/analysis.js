@@ -2,11 +2,15 @@
 // analyseTrack() is self-contained on purpose: its source is also handed to a Worker built from a Blob URL,
 // which is the only kind of worker that loads when the page runs from file://.
 'use strict';
-// x: mono samples, sr: sample rate. Returns { ok, bpm, beatLen, grid0, conf, fps, duration, peaks, lows }.
+// x: mono samples, sr: sample rate, hint: optional { bpm, grid0 } beat grid to use instead of finding one (rekordbox.js:
+// the DJ's own grid from a rekordbox stick). Its tempo and first beat of the bar are kept; its beats are moved onto the
+// ones heard here when they are within 70 ms (gridShift, seconds): rekordbox counts time from before the padding at the
+// start of tagged MP3 and M4A files, which the browser's decoder removes, so its grid is 25 to 50 ms late for those.
+// Without a hint nothing here is different. Returns { ok, bpm, beatLen, grid0, conf, fps, duration, peaks, lows }.
 //   grid0    time (s) of a first-beat-of-the-bar; every beat is grid0 + k * beatLen
 //   peaks    peak level per frame (fps frames per second), lows: share of that frame's energy below ~150 Hz
 //   ok       false when no steady beat was found (bpm and grid0 are then not to be trusted)
-function analyseTrack(x, sr) {
+function analyseTrack(x, sr, hint) {
   const hop = Math.max(1, Math.round(sr / 200)), fps = sr / hop, n = Math.floor(x.length / hop);
   const peaks = new Float32Array(n), lows = new Float32Array(n), eF = new Float32Array(n), eL = new Float32Array(n);
   // defaults for every field, so a result returned early (a very short or silent file, no beat found) is still complete
@@ -60,7 +64,7 @@ function analyseTrack(x, sr) {
     const o = Math.log2(60 * fps / lag / 125) / 0.6, sc = (ac[lag] + 0.5 * ac[2 * lag]) * Math.exp(-0.5 * o * o);
     if (sc > bestSc) { bestSc = sc; T = lag; }
   }
-  if (!(bestSc > 0)) return res;
+  if (!hint && !(bestSc > 0)) return res;
 
   // Fold the onsets onto one beat of length T frames: a sharp peak means T is right, and its place is the beat phase.
   function fold(T, a, len, B) {
@@ -80,13 +84,17 @@ function analyseTrack(x, sr) {
     return bT;
   }
   const [a1, len1] = win(30), [a2, len2] = win(120), [a3, len3] = win(480);
+  let f, bpm;
+  if (hint) { T = 60 * fps / hint.bpm; bpm = hint.bpm; f = fold(T, a3, len3, 64); }
+  else {
   T = refine(T, 0.012, 24, a1, len1, 16);
   T = refine(T, 0.0008, 16, a2, len2, 16);
   T = refine(T, 0.00012, 12, a3, len3, 32);
-  let f = fold(T, a3, len3, 64), bpm = 60 * fps / T;
+  f = fold(T, a3, len3, 64); bpm = 60 * fps / T;
   // Produced music is nearly always at a whole-number tempo: take it when it fits as well.
   const whole = Math.round(bpm);
   if (Math.abs(bpm - whole) < 0.08) { const Tw = 60 * fps / whole, fw = fold(Tw, a3, len3, 64); if (fw.score >= 0.97 * f.score) { T = Tw; f = fw; bpm = whole; } }
+  }
 
   // First beat of the bar: of the four possible beats, the one that carries the most bass onsets.
   const f0 = f.phase * T, grp = [0, 0, 0, 0];
@@ -102,9 +110,15 @@ function analyseTrack(x, sr) {
   if (grp[d] < 1.08 * (grp[0] + grp[1] + grp[2] + grp[3]) / 4) d = 0;
   const beatLen = T / fps;
   // An onset is seen a little under one frame after the attack that caused it (energy smoothing above).
-  let grid0 = (f0 - 0.7) / fps + d * beatLen;
-  while (grid0 < -0.05) grid0 += 4 * beatLen;   // a track that starts right on the beat may land a few ms below zero
-  res.ok = f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0; res.barLen = 4 * beatLen;   // sections below may set it again; without sections it was left undefined (NaN transition points)
+  let grid0 = hint ? hint.grid0 : (f0 - 0.7) / fps + d * beatLen;
+  while (!hint && grid0 < -0.05) grid0 += 4 * beatLen;
+  if (hint) {
+    let dd = ((f0 - 0.7) / fps - hint.grid0) % beatLen;
+    if (dd > beatLen / 2) dd -= beatLen; else if (dd < -beatLen / 2) dd += beatLen;
+    res.gridShift = f.score > 1.6 && Math.abs(dd) <= 0.07 ? dd : 0;   // no clear beat here, or too far to be padding: rekordbox's grid as it is
+    grid0 += res.gridShift;
+  }   // a track that starts right on the beat may land a few ms below zero
+  res.ok = !!hint || f.score > 1.6; res.conf = f.score; res.bpm = bpm; res.beatLen = beatLen; res.grid0 = grid0; res.barLen = 4 * beatLen;   // sections below may set it again; without sections it was left undefined (NaN transition points)
   res.rms = eF;   // per-frame level, the same measure the live listener uses (track recognition, follow.js)
 
   // ---- loudness and energy ----
@@ -268,18 +282,18 @@ function analyseTrack(x, sr) {
 }
 
 // Run analyseTrack off the main thread; falls back to running it here if the worker cannot start.
-function analyseAsync(mono, sr) {
+function analyseAsync(mono, sr, hint) {
   return new Promise(resolve => {
-    const local = () => setTimeout(() => resolve(analyseTrack(mono, sr)), 0);
+    const local = () => setTimeout(() => resolve(analyseTrack(mono, sr, hint)), 0);
     let w, url;
     const done = () => { try { w.terminate(); } catch (e) {} URL.revokeObjectURL(url); };
     try {
       url = URL.createObjectURL(new Blob([analyseTrack.toString(),
-        '\nonmessage = e => { const r = analyseTrack(e.data.x, e.data.sr); postMessage(r, [r.peaks.buffer, r.lows.buffer].concat(r.rms ? [r.rms.buffer] : [])); };'], { type: 'text/javascript' }));
+        '\nonmessage = e => { const r = analyseTrack(e.data.x, e.data.sr, e.data.hint); postMessage(r, [r.peaks.buffer, r.lows.buffer].concat(r.rms ? [r.rms.buffer] : [])); };'], { type: 'text/javascript' }));
       w = new Worker(url);
     } catch (e) { local(); return; }
     w.onmessage = e => { done(); resolve(e.data); };
     w.onerror = () => { done(); local(); };
-    w.postMessage({ x: mono, sr });   // copied, not transferred: the fallback above still needs it
+    w.postMessage({ x: mono, sr, hint });   // copied, not transferred: the fallback above still needs it
   });
 }

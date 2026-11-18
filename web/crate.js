@@ -19,25 +19,35 @@ function trackDB(op, key, value) {
   });
 }
 const ANALYSIS_VERSION = 5;   // raise when analyseTrack changes what it returns, so old results are worked out again
-async function cachedAnalysis(file) {
-  try { const v = await trackDB('get', fileKey(file)); return v && v.v === ANALYSIS_VERSION ? v.info : null; } catch (e) { return null; }
+// A track from a rekordbox stick brings the DJ's own beat grid (t.rb.grid, rekordbox.js): the analysis is then made on
+// that grid, and a remembered analysis only counts when it was made on the same one (info.rb).
+const gridHint = t => (t && t.rb && t.rb.grid) || undefined;
+const hintSig = h => (h ? h.bpm.toFixed(2) + '@' + h.grid0.toFixed(3) + '+s' : undefined);   // +s: made with the beat correction (gridShift)
+// The two kinds are kept apart (own key for the rekordbox one), so a file added by hand never gets an analysis made on
+// rekordbox's grid, and the other way round.
+const cacheKey = (file, hint) => fileKey(file) + (hint ? '#rb' : '');
+async function cachedAnalysis(file, hint) {
+  try { const v = await trackDB('get', cacheKey(file, hint)); return v && v.v === ANALYSIS_VERSION && (hint ? v.info.rb === hintSig(hint) : !v.info.rb) ? v.info : null; } catch (e) { return null; }
 }
-function storeAnalysis(file, info) { trackDB('put', fileKey(file), { v: ANALYSIS_VERSION, info }).catch(() => {}); }
+async function analyseWith(mono, sr, hint) { const info = await analyseAsync(mono, sr, hint); if (hint) info.rb = hintSig(hint); return info; }
+function storeAnalysis(file, info) { trackDB('put', cacheKey(file, info.rb), { v: ANALYSIS_VERSION, info }).catch(() => {}); }
 
 // Called by deckLoad (audio.js): the cached analysis, or a new one that is then cached and listed.
 async function crateInfo(file, buf) {
   let t = crate.tracks.find(x => x.key === fileKey(file));
   if (t && t.info) return t.info;
   if (t && t.busy) return t.busy;   // the list is analysing it right now: wait for that result instead of a second analysis
-  let info = await cachedAnalysis(file);
-  if (!info) { info = await analyseAsync(monoOf(buf), buf.sampleRate); storeAnalysis(file, info); }
+  const hint = gridHint(t);
+  let info = await cachedAnalysis(file, hint);
+  if (!info) { info = await analyseWith(monoOf(buf), buf.sampleRate, hint); storeAnalysis(file, info); }
   if (!t) { t = newTrack(file); crate.tracks.push(t); }
-  t.info = info; t.state = 'ready'; rankEnergy(); crateDirty();
+  t.info = info; t.state = 'ready'; if (t.rb) rbApply(t); rankEnergy(); crateDirty();
   return info;
 }
 function newTrack(file) {
   const t = { key: fileKey(file), file, name: file.name.replace(/\.[^.]+$/, ''), info: null, state: 'queued', played: false, energy: 0 };
   if (typeof plRestore === 'function') plRestore(t);   // its playlist place and transition points (playlist.js)
+  if (typeof rbAttach === 'function') rbAttach(t);     // title, cue points and beat grid, when it came from a rekordbox stick
   return t;
 }
 
@@ -59,14 +69,15 @@ async function analyseQueue() {
       t.state = 'analysing'; crateDirty();
       let done; t.busy = new Promise(r => { done = r; });
       try {
-        let info = await cachedAnalysis(t.file);
+        const hint = gridHint(t);
+        let info = await cachedAnalysis(t.file, hint);
         if (!info) {
           // an offline context decodes without starting audio, so tracks found in the media folder at start-up need no click
           const buf = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(await t.file.arrayBuffer());
-          info = await analyseAsync(monoOf(buf), buf.sampleRate);
+          info = await analyseWith(monoOf(buf), buf.sampleRate, hint);
           storeAnalysis(t.file, info);
         }
-        t.info = info; t.state = 'ready';
+        t.info = info; t.state = 'ready'; if (t.rb) rbApply(t);
       } catch (e) { t.state = 'error'; }
       done(t.info); t.busy = null;
       rankEnergy(); crateDirty();
@@ -165,7 +176,7 @@ function renderCrate() {
   const head = el('div', { className: 'ch' },
     el('b', { textContent: 'Tracks' }),
     el('span', { className: 'hint', textContent: crate.tracks.length ? (ref ? 'Ranked as next track for deck ' + ref.id + ' by tempo, key and energy' : 'Play a track to get suggestions') : 'Drop audio files here or use Add tracks. The beat, key and energy are worked out once and remembered.' }),
-    el('button', { textContent: 'Add tracks...', onclick: addTracksPicker }));
+    el('button', { textContent: 'Add tracks...', onclick: addTracksPicker }), typeof rbButton === 'function' ? rbButton() : null);
   const rows = crate.tracks.slice().sort((a, b) => {
     const sa = sug.get(a), sb = sug.get(b);
     if (sa && sb) return sa.rank - sb.rank;

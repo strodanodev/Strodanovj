@@ -20,6 +20,7 @@ function buildDeck(d) {
   u.bass = el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: d.bass, title: 'Bass: left kills it, middle leaves it alone (double-click to reset)', dataset: { midi: 'deck:' + d.id + ':bass' },
     oninput: e => { d.bass = +e.target.value; }, ondblclick: () => { d.bass = 0.5; } });
   u.cue = el('span', { className: 'dq' });
+  u.hot = el('div', { className: 'dhot', hidden: true });   // the loaded song's rekordbox cue points (rekordbox.js)
   u.root = el('div', { className: 'deck' },
     el('div', { className: 'dh' }, el('b', { className: 'did', textContent: d.id }), u.name, el('i', { className: 'dk', textContent: 'DRIVING VISUALS' }), u.cue, u.bpm, u.time),
     u.wave,
@@ -27,7 +28,7 @@ function buildDeck(d) {
       el('button', { textContent: 'Load...', title: 'Load a track (or drop an audio file on this deck)', onclick: () => { djUI.loadFor = d; $('trackInput').click(); } }),
       u.play, btn('Cue', 'Stop and go back to the first bar', 'cue', () => deckCue(d)), u.sync,
       el('button', { textContent: 'Bar 1', title: 'If the bright bar lines sit on the wrong beat: press this on the first beat of a bar', onclick: () => deckSetDownbeat(d) }),
-      el('span', { textContent: 'Tempo' }), u.tempo, u.rate, el('span', { textContent: 'Bass' }), u.bass, el('span', { textContent: 'Vol' }), u.vol));
+      el('span', { textContent: 'Tempo' }), u.tempo, u.rate, el('span', { textContent: 'Bass' }), u.bass, el('span', { textContent: 'Vol' }), u.vol), u.hot);
   dropTarget(u.root, hasFiles, e => {
     rememberDropped(e.dataTransfer);
     const f = [...e.dataTransfer.files].find(isAudioFile);
@@ -143,6 +144,7 @@ function drawDeck(u) {
   x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, oy, f * W, oh);
   x.fillStyle = THEME.acc; x.fillRect(Math.round(f * W) - dpr, oy, 2 * dpr, oh);
   if (i.ok) for (const t of [inPoint(d), outPoint(d)]) { x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(Math.round(t / i.duration * W), oy, Math.max(1, dpr), oh); }
+  if (typeof rbDrawDeck === 'function') rbDrawDeck(x, d, t0, span, W, zh, oy, oh, dpr);   // rekordbox cue points
 }
 // Called from tickUI every frame the control window is visible.
 function tickDJ() {
@@ -169,6 +171,7 @@ function tickDJ() {
     if (document.activeElement !== u.tempo) u.tempo.value = 0.5 + (d.rate - 1) / 0.16;
     if (document.activeElement !== u.vol) u.vol.value = d.volume;
     if (document.activeElement !== u.bass) u.bass.value = d.bass;
+    if (typeof rbDeckCues === 'function') rbDeckCues(u);
     drawDeck(u);
   }
 }

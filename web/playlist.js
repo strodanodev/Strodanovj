@@ -225,6 +225,7 @@ function renderPlHead() {
   if (mini) h.append(mini);
   h.append(el('b', { textContent: 'Playlist' }),
     el('button', { textContent: 'Add songs...', title: 'Add songs to the end of the playlist (or drop them anywhere on it)', onclick: addTracksPicker }),
+    typeof rbButton === 'function' ? rbButton() : null,
     audiusMenu(),
     el('button', { textContent: 'STRODANO show', title: 'Replace the layers with the STRODANO stock show (videos, 3D, strobe, locked logo)', onclick: e => armThen(e.currentTarget, 'replace your layers with the STRODANO stock show', () => { stockComp(); setStatus('STRODANO stock show loaded: the logo layer is locked (unlock it to change it)'); }) }),
     el('span', { className: 'plleg' }, ...['intro', 'build', 'drop', 'breakdown'].map(s => el('i', { className: 'sec-' + s, textContent: SECTION_NAMES[s] }))),
@@ -271,7 +272,7 @@ function renderPlaylist() {
     list.append(el('div', { className: 'plempty' },
       el('b', { textContent: 'Drop songs here' }),
       el('span', { textContent: 'MP3, WAV, FLAC, M4A... The Agent finds the tempo, key, build-ups and drops of each song, plans visuals for every part, and mixes them in this order when you press Start.' }),
-      el('button', { textContent: 'Add songs...', onclick: addTracksPicker })));
+      el('button', { textContent: 'Add songs...', onclick: addTracksPicker }), typeof rbButton === 'function' ? rbButton() : null));
     return;
   }
   crate.tracks.forEach((t, i) => {
@@ -302,6 +303,7 @@ function plRow(t, i) {
     r.mIn = plMarker(t, 'in', wave); r.mOut = plMarker(t, 'out', wave);
     wave.append(r.mIn, r.mOut);
   }
+  if (inf && typeof rbPlCues === 'function') rbPlCues(t, wave);   // rekordbox cue points
   if (inf) {
     r.cv.title = 'Click to jump the show to this point of the song';
     r.cv.addEventListener('pointerdown', e => {   // the markers on top of it stop their own presses

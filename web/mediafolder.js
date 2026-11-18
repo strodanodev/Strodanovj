@@ -54,6 +54,7 @@ async function reconnectMediaFolder() {
     try { if (await mediaFolder.handle.requestPermission({ mode: 'read' }) === 'granted') await loadMediaFolder(); } catch (e) { setStatus('Could not reconnect the media folder'); }
   }
   await reconnectLooseFiles();
+  if (typeof rbReconnect === 'function') await rbReconnect();   // a remembered rekordbox stick
 }
 function forgetMediaFolder() {
   folderStore('delete').catch(() => {});
@@ -160,10 +161,11 @@ async function initMediaFolder() {
     }
   }
   await initLooseFiles();
+  if (typeof initRekordbox === 'function') await initRekordbox();
   if (needsReconnect()) {
     if (typeof browserTab !== 'undefined') browserTab = 'files';   // the Reconnect button lives on the Files tab
     setStatus('The browser needs your OK to read your media again after a restart: click Reconnect in Files (choose "Allow on every visit" if offered).');
   } else if (missingClips()) setStatus(`${missingClips()} clip(s) are missing their file: add those files again, or pick a Media folder that holds them.`);
   ui.browserDirty = true;
 }
-const needsReconnect = () => mediaFolder.state === 'needs-permission' || looseFiles.pending.length > 0;
+const needsReconnect = () => mediaFolder.state === 'needs-permission' || looseFiles.pending.length > 0 || (typeof rb !== 'undefined' && rb.pending);
