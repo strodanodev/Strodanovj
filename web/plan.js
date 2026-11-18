@@ -9,11 +9,14 @@
 // (it must work from file:// and inside the desktop shell), so it signs in with a code: entSignIn() asks the
 // website for a code, the person approves it on the website's /link page, and the app receives a device token.
 // With that token it reads the plan (GET /api/app/plan) at start, every half hour and when the network returns.
-// The last answer is kept for ENT_GRACE without a connection, so a venue with no internet does not lock a show.
-// Without an account the plan is Free.
+// The plan comes as a ticket signed by the website (ECDSA P-256, public key ENT_PUBKEY): `<base64url JSON>.<sig>`
+// over {plan, dev, iat, exp}. Only a ticket that verifies, belongs to this device token (dev) and has not run out
+// (exp, a week after it was issued) counts, so a venue with no internet keeps its plan for a week, and an edited
+// localStorage entry gives nothing. Without an account, or until the stored ticket is checked (`entReady`), the plan
+// is Free; `strodano-plan` fires on window whenever the plan in force may have changed.
 //
 // Testing, only on a page served from this computer (http://localhost: ENT_DEV), never in the desktop app or on the
-// phone site: entTest('free' | 'pro' | 'festival') in the console forces a plan, entTest('off') removes every lock,
+// phone site (every test switch, including the in-memory one, is ignored unless ENT_DEV): entTest('free' | 'pro' | 'festival') in the console forces a plan, entTest('off') removes every lock,
 // entTest() goes back to the account; localStorage `strodano-vj-api` points the app at another website (a local one).
 'use strict';
 const ENT_RANK = { free: 0, pro: 1, festival: 2 };
@@ -30,30 +33,74 @@ const ENT_FEATURES = {
 const ENT_REC_MAX = { free: 0, pro: 3600, festival: 36000 };   // seconds of recording per file
 const ENT_SITE = 'https://www.strodano.live';
 const ENT_KEY = 'strodano-vj-account', ENT_TEST_KEY = 'strodano-vj-plan-test', ENT_API_KEY = 'strodano-vj-api';
-const ENT_GRACE = 7 * 864e5;        // how long the last known plan holds with no connection
+// The public half of the website's PLAN_SIGNING_KEY (website/server/app.mjs planTicket). Change both together.
+const ENT_PUBKEY = { kty: 'EC', crv: 'P-256', x: 'ndI3wMvbZ48aKQb_KmrN-5wYZ6o78LsWCQ8T930RSe4', y: 'ILM_PsoVjT498G-otaQeNwnuupeuFZNnhcjj_GEiJ6I' };
 const ENT_EVERY = 30 * 60e3;        // how often the plan is read again
 // A page served from this computer (development). Only there do the test plan and another website's address count.
 const ENT_DEV = location.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-// token: this app's device token; plan / at: the last plan the website reported and when; test: a forced plan
-const ent = { token: '', plan: 'free', at: 0, test: '', box: null, link: null, lastTry: 0 };
+// token: this app's device token; ticket: the website's last signed plan; plan / at / exp: what that ticket says
+// (checked), when it was issued and when it runs out (ms); test: a forced plan (ENT_DEV only)
+const ent = { token: '', ticket: '', plan: 'free', at: 0, exp: 0, test: '', box: null, link: null, lastTry: 0 };
 const entLS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} } };
-try { const a = JSON.parse(entLS.get(ENT_KEY) || 'null'); if (a && a.token) { ent.token = String(a.token); ent.plan = a.plan in ENT_RANK ? a.plan : 'free'; ent.at = +a.at || 0; } } catch (e) {}
+let entStored = '';
+try { const a = JSON.parse(entLS.get(ENT_KEY) || 'null'); if (a && a.token) { ent.token = String(a.token); entStored = String(a.ticket || ''); } } catch (e) {}
 if (ENT_DEV) { const t = entLS.get(ENT_TEST_KEY); if (t === 'off' || t in ENT_RANK) ent.test = t; }
 const entApi = () => ((ENT_DEV && entLS.get(ENT_API_KEY)) || ENT_SITE).replace(/\/$/, '');
-function entSave() { entLS.set(ENT_KEY, ent.token ? JSON.stringify({ token: ent.token, plan: ent.plan, at: ent.at }) : null); }
+function entSave() { entLS.set(ENT_KEY, ent.token ? JSON.stringify({ token: ent.token, ticket: ent.ticket }) : null); }
+const entChanged = () => { entShow(); if (typeof ui !== 'undefined') ui.browserDirty = ui.propsDirty = true; try { window.dispatchEvent(new Event('strodano-plan')); } catch (e) {} };
+
+// ---------- plan tickets ----------
+const entB64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+let entKeyP = null;
+// The key tickets are checked with. A development page pointed at another website (strodano-vj-api) asks that one.
+function entKey() {
+  if (!entKeyP) entKeyP = (async () => {
+    let jwk = ENT_PUBKEY;
+    if (ENT_DEV && entLS.get(ENT_API_KEY)) { try { const r = await entFetch('/api/app/key'); if (r.ok && r.json.jwk) jwk = r.json.jwk; } catch (e) {} }
+    return crypto.subtle.importKey('jwk', { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  })();
+  return entKeyP;
+}
+// What a ticket says, when it is genuine, this device's and in force now; null otherwise.
+async function entCheck(ticket, token) {
+  try {
+    const [body, sig] = String(ticket || '').split('.');
+    if (!body || !sig || !token) return null;
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await entKey(), entB64(sig), new TextEncoder().encode(body));
+    if (!ok) return null;
+    const t = JSON.parse(new TextDecoder().decode(entB64(body)));
+    const dev = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))), b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    const now = Date.now() / 1000;
+    if (t.v !== 1 || t.dev !== dev || !(t.plan in ENT_RANK) || !(t.iat - 600 <= now && now < t.exp)) return null;   // 10 min of clock slack
+    return { plan: t.plan, at: t.iat * 1000, exp: t.exp * 1000 };
+  } catch (e) { return null; }
+}
+// Takes a ticket from the website (or the stored one). One that does not check out leaves the app on Free.
+async function entTake(ticket) {
+  const token = ent.token, t = await entCheck(ticket, token);
+  if (ent.token !== token) return false;   // signed out meanwhile
+  ent.ticket = t ? String(ticket) : ''; ent.plan = t ? t.plan : 'free'; ent.at = t ? t.at : 0; ent.exp = t ? t.exp : 0;
+  entSave(); entChanged();
+  return !!t;
+}
+// The website said this account has no paid plan (premium pack 403): believe it until the next ticket.
+function entDowngrade() { ent.ticket = ''; ent.plan = 'free'; ent.at = Date.now(); ent.exp = 0; entSave(); entChanged(); }
+// Resolves once the stored ticket is checked; features restored at start (DJ mode) wait for it.
+const entReady = ent.token && entStored ? entTake(entStored) : Promise.resolve(false);
 
 // The plan in force right now.
 function entPlan() {
-  if (ent.test in ENT_RANK) return ent.test;
-  return ent.token && Date.now() - ent.at < ENT_GRACE ? ent.plan : 'free';
+  if (ENT_DEV && ent.test in ENT_RANK) return ent.test;
+  return ent.token && ent.ticket && Date.now() < ent.exp ? ent.plan : 'free';
 }
+const entOff = () => ENT_DEV && ent.test === 'off';
 function entCan(feature) {
   const f = ENT_FEATURES[feature];
-  return ent.test === 'off' || !f || ENT_RANK[entPlan()] >= ENT_RANK[f.plan];
+  return entOff() || !f || ENT_RANK[entPlan()] >= ENT_RANK[f.plan];
 }
 // Longest recording, in seconds.
-const entRecMax = () => (ent.test === 'off' ? 3600 : ENT_REC_MAX[entPlan()]);
+const entRecMax = () => (entOff() ? 3600 : ENT_REC_MAX[entPlan()]);
 function entGate(feature) {
   if (entCan(feature)) return true;
   entPrompt(feature);
@@ -63,7 +110,7 @@ function entTest(plan) {
   if (!ENT_DEV) return 'Test plans only work on a development page (http://localhost)';
   ent.test = plan === 'off' || plan in ENT_RANK ? plan : '';
   entLS.set(ENT_TEST_KEY, ent.test || null);
-  entShow();
+  entChanged();
   return ent.test === 'off' ? 'Every lock is off' : ent.test ? 'Forced plan: ' + ENT_NAMES[ent.test] : 'Back to the account: ' + ENT_NAMES[entPlan()];
 }
 
@@ -76,21 +123,19 @@ async function entFetch(path, body, token) {
   return { ok: res.ok, status: res.status, json };
 }
 // Reads the plan again. A 401 means this app was signed out (or pushed out by newer devices); no answer at all
-// keeps the last known plan (see ENT_GRACE).
+// keeps the last ticket, which counts until it runs out (a week after it was issued).
 async function entRefresh() {
   if (!ent.token) return;
   ent.lastTry = Date.now();
   let r;
   try { r = await entFetch('/api/app/plan', null, ent.token); } catch (e) { return; }
-  if (r.status === 401) { ent.token = ''; ent.plan = 'free'; ent.at = 0; if (typeof setStatus === 'function') setStatus('This app was signed out of your Strodano account'); }
-  else if (r.ok && r.json.plan in ENT_RANK) { ent.plan = r.json.plan; ent.at = Date.now(); }
-  else return;
-  entSave(); entShow();
+  if (r.status === 401) { ent.token = ''; ent.ticket = ''; ent.plan = 'free'; ent.at = 0; ent.exp = 0; entSave(); entChanged(); if (typeof setStatus === 'function') setStatus('This app was signed out of your Strodano account'); }
+  else if (r.ok) await entTake(r.json.ticket);   // no ticket (a website without its signing key) reads as Free
 }
 function entSignOut() {
   const t = ent.token;
-  ent.token = ''; ent.plan = 'free'; ent.at = 0;
-  entSave(); entShow();
+  ent.token = ''; ent.ticket = ''; ent.plan = 'free'; ent.at = 0; ent.exp = 0;
+  entSave(); entChanged();
   if (t) entFetch('/api/app/signout', {}, t).catch(() => {});
   if (typeof setStatus === 'function') setStatus('Signed out. You are on Free.');
 }
@@ -116,8 +161,8 @@ async function entSignIn() {
     if (ent.link !== link) return;
     if (p && p.ok && p.json.approved && p.json.token) {
       entStopLink();
-      ent.token = p.json.token; ent.plan = p.json.plan in ENT_RANK ? p.json.plan : 'free'; ent.at = Date.now();
-      entSave(); entShow();
+      ent.token = p.json.token; ent.ticket = ''; ent.plan = 'free'; ent.at = 0; ent.exp = 0;
+      await entTake(p.json.ticket);
       const name = ENT_NAMES[ent.plan];
       if (typeof setStatus === 'function') setStatus('Signed in. You are on ' + name + '.');
       entDialog(name.toUpperCase(), 'Signed in', ent.plan === 'free' ? 'This account is on Free. Pro and Festival unlock here as soon as you subscribe on the website.' : 'Your ' + name + ' features are unlocked on this device.', [entBtn('Done', entClose, true)]);
@@ -132,9 +177,9 @@ function entStopLink() { if (ent.link) { clearTimeout(ent.link.timer); ent.link 
 // The account dialog: the plan, and Sign in or Sign out.
 function entAccount() {
   const plan = entPlan(), name = ENT_NAMES[plan];
-  if (ent.test) return entDialog('TEST', ent.test === 'off' ? 'Every lock is off' : 'Forced plan: ' + name, 'A test setting is in force on this device, not your account.', [entBtn('Close', entClose), entBtn('Back to my account', () => { entTest(); entAccount(); }, true)]);
+  if (ENT_DEV && ent.test) return entDialog('TEST', ent.test === 'off' ? 'Every lock is off' : 'Forced plan: ' + name, 'A test setting is in force on this device, not your account.', [entBtn('Close', entClose), entBtn('Back to my account', () => { entTest(); entAccount(); }, true)]);
   if (!ent.token) return entDialog('ACCOUNT', 'You are on Free', 'Sign in with your Strodano account to unlock the Pro or Festival features you subscribed to.', [entBtn('Close', entClose), entBtn('Sign in', entSignIn, true)]);
-  const stale = Date.now() - ent.at > ENT_EVERY * 2;
+  const stale = ent.at && Date.now() - ent.at > ENT_EVERY * 2;
   entRefresh();
   entDialog(name.toUpperCase(), 'You are on ' + name, 'This device is signed in to your Strodano account.' + (stale ? ' The plan was last checked ' + new Date(ent.at).toLocaleDateString() + '; it is checked again when there is a connection.' : ''),
     [entBtn('Sign out', () => { entSignOut(); entClose(); }), plan === 'festival' ? null : el('a', { textContent: 'See plans', href: ENT_SITE + '/#pricing', target: '_blank', rel: 'noopener', style: entBtnStyle(false) }), entBtn('Close', entClose, true)]);
@@ -143,8 +188,9 @@ function entAccount() {
 function entShow() {
   const b = document.getElementById('acctBtn');
   if (!b) return;
-  b.textContent = ent.test ? (ent.test === 'off' ? 'Test' : ENT_NAMES[ent.test] + ' (test)') : ent.token ? ENT_NAMES[entPlan()] : 'Sign in';
-  b.classList.toggle('on', !ent.test && entPlan() !== 'free');
+  const test = ENT_DEV && ent.test;
+  b.textContent = test ? (ent.test === 'off' ? 'Test' : ENT_NAMES[ent.test] + ' (test)') : ent.token ? ENT_NAMES[entPlan()] : 'Sign in';
+  b.classList.toggle('on', !test && entPlan() !== 'free');
 }
 
 // ---------- dialogs ----------
@@ -167,7 +213,7 @@ function entDialog(kicker, title, text, buttons, ...extra) {
   document.body.append(ent.box);
 }
 function entPrompt(feature) {
-  const f = ENT_FEATURES[feature], need = ENT_NAMES[f.plan], signedIn = !!ent.token && !ent.test;
+  const f = ENT_FEATURES[feature], need = ENT_NAMES[f.plan], signedIn = !!ent.token && !(ENT_DEV && ent.test);
   if (typeof setStatus === 'function') setStatus(f.name + ' is part of ' + need);
   entDialog(need.toUpperCase(), f.name + ' is part of ' + need, f.what + ' You are on ' + ENT_NAMES[entPlan()] + '.', [
     entBtn('Not now', entClose),
@@ -179,7 +225,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && ent.box) {
 // ---------- keeping the plan current ----------
 const entSoon = () => { if (ent.token && Date.now() - ent.lastTry > 60e3) entRefresh(); };
 window.addEventListener('online', entSoon);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - ent.at > ENT_EVERY) entSoon(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - ent.lastTry > ENT_EVERY) entSoon(); });
 setInterval(() => { if (ent.token) entRefresh(); }, ENT_EVERY);
 window.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('acctBtn');

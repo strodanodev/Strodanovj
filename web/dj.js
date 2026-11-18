@@ -52,7 +52,8 @@ function initDJ() {
     el('span', { style: { marginLeft: 'auto' }, textContent: 'Visual delay (ms)' }), off));
   $('trackInput').addEventListener('change', e => { const f = e.target.files[0]; if (f && djUI.loadFor) deckLoad(djUI.loadFor, f); e.target.value = ''; });
   initCrate(); hookLiveEvents(); initCueCapture();
-  try { if (localStorage.getItem(DJ_KEY) === '1' && entCan('dj')) toggleDJ(true); } catch (e) {}
+  // DJ mode left on last time comes back once the stored plan ticket is checked (plan.js entReady)
+  entReady.then(() => { try { if (localStorage.getItem(DJ_KEY) === '1' && entCan('dj') && !djUI.open) toggleDJ(true); } catch (e) {} });
 }
 function toggleDJ(on) {
   if (on && !entGate('dj')) on = false;

@@ -16,6 +16,7 @@ let cellEls = [];                       // mix.js marks clip cells while a launc
 const outUI = { screen: 0 };            // vdo.js / ndi.js read the Advanced Output selection
 function syncOutBtn() { M.badge = null; M.dirty = true; }
 function renderProps() { M.dirty = true; }
+window.addEventListener('strodano-plan', () => { M.dirty = true; });   // plan.js: the plan in force may have changed
 const holding = () => false;
 
 const PREFS_KEY = 'strodano-vj-mobile-prefs';

@@ -13,8 +13,14 @@ const { setupUpdater } = require('./updater');
 const { setupRekordbox, stopRekordbox } = require('./rekordbox');
 
 const selftest = process.argv.includes('--selftest');
-const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
+// Packaged, the page is inside app.asar (package.json build.files), whose hash the Electron binary checks on start
+// (afterpack.js fuses), so the shipped app's files cannot be edited.
+const webDir = app.isPackaged ? path.join(__dirname, 'web') : path.join(__dirname, '..', 'web');
 const isMac = process.platform === 'darwin';
+// Developer tools only in development (`npm start`). The packaged app has no DevTools, no menu item for them, and
+// refuses to start with a remote-debugging switch (the Node inspector switches are turned off by a fuse).
+const devTools = !app.isPackaged;
+if (!devTools && ['remote-debugging-port', 'remote-debugging-pipe', 'remote-allow-origins'].some(s => app.commandLine.hasSwitch(s))) { app.exit(1); }
 
 if (!selftest && !app.requestSingleInstanceLock()) app.quit();
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -31,12 +37,12 @@ const ALLOWED = new Set(['media', 'midi', 'midiSysex', 'fullscreen', 'fileSystem
 function createWindow() {
   win = new BrowserWindow({
     width: 1600, height: 1000, minWidth: 1000, minHeight: 640, backgroundColor: '#0a0a0a', title: 'Strodano VJ', show: !selftest,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false, preload: path.join(__dirname, 'preload.js') },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false, devTools, preload: path.join(__dirname, 'preload.js') },
   });
   // Output windows (window.open('', 'strodano_out_N')) open as real windows; other links go to the browser.
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
     if (frameName && frameName.startsWith('strodano_out_')) {
-      return { action: 'allow', overrideBrowserWindowOptions: { backgroundColor: '#000000', autoHideMenuBar: true, title: 'Strodano VJ output', webPreferences: { backgroundThrottling: false } } };
+      return { action: 'allow', overrideBrowserWindowOptions: { backgroundColor: '#000000', autoHideMenuBar: true, title: 'Strodano VJ output', webPreferences: { backgroundThrottling: false, devTools } } };
     }
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -71,7 +77,7 @@ function buildMenu() {
     { label: 'Help', submenu: [
       { label: 'Check for updates...', click: () => { if (updater) updater.check(); } },
       { label: 'Project page', click: () => shell.openExternal('https://github.com/strodanodev/Strodanovj') },
-      { label: 'Developer tools', click: () => { if (win) win.webContents.toggleDevTools(); } },
+      ...(devTools ? [{ label: 'Developer tools', click: () => { if (win) win.webContents.toggleDevTools(); } }] : []),
     ] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -112,7 +118,7 @@ ipcMain.handle('displays:identify', (e, marks) => {
     const d = screen.getAllDisplays().find(x => x.id === m.id);
     if (!d) continue;
     const w = new BrowserWindow({ ...d.bounds, frame: false, transparent: true, alwaysOnTop: true, focusable: false, skipTaskbar: true, resizable: false, hasShadow: false, show: false,
-      webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+      webPreferences: { sandbox: true, contextIsolation: true, javascript: false, devTools } });
     w.setIgnoreMouseEvents(true); w.setAlwaysOnTop(true, 'screen-saver');
     const esc = String(m.text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const [num, ...rest] = esc.split('\n');
@@ -160,12 +166,6 @@ function runSelftest() {
           const i = screens.length - 1, s = screens[i]; out.testPattern = true; await ndiStart(i); const t0 = performance.now(); await new Promise(r => setTimeout(r, 8000));
           const n = s.ndiSend || {}, r = { available: true, version: st.version, sent: n.sent, fps: +(n.sent * 1000 / (performance.now() - t0)).toFixed(1), conns: n.conns, dropped: n.dropped, workerMs: n.ms, rttMs: Math.round(n.rtt), readMs: +(n.readMs || 0).toFixed(1), error: n.error || '', label: document.getElementById('outBtn').textContent };
           closeOutput(i); screens.splice(i, 1); out.testPattern = false; return r; })()`);
-        report.ndi.ok = !report.ndi.available || (report.ndi.sent > 0 && !report.ndi.error);
-        report.place.ok =report.place.placed && report.place.size[0] === report.place.display[0] && report.place.back[0] < report.place.display[0] && report.place.live === 1;
-        await js(`gl.getExtension('WEBGL_lose_context').loseContext(); true`);   // simulated GPU reset: the page reloads itself
-      } else {
-        report.recovered = await js(`({ recovery: window.vjRecovered || '', status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
-        const b = report.boot, o = report.output, r = report.recovered;
         // rekordbox stick (only where one is plugged in): found by the drive scan, database read, one playlist's songs handed over as files
         report.rekordbox = await js(`(async () => { const st = await window.strodanoDesktop.rekordbox.list(); if (!st.length) return { sticks: 0 };
           try { await rbOpenStick(st[0]); const l = rb.db.lists.filter(x => !x.folder).map(x => ({ x, ts: rbListTracks(rb.db, x.id) })).filter(o => o.ts.length).sort((a, b) => a.ts.length - b.ts.length)[0];
@@ -175,6 +175,12 @@ function runSelftest() {
             const r = { sticks: st.length, name: st[0].name, tracks: rb.db.tracks.size, playlists: rb.db.lists.length, list: l ? l.x.name : '', asked: ts.length, files: fs.length, named, bytes: fs.reduce((n, f) => n + f.size, 0), head, grid: !!(m && m.grid), cues: m ? m.cues.length : 0 };
             rb.stick = null; rb.db = null; rb.deskFiles = new Map(); return r; } catch (e) { return { sticks: st.length, error: String(e && e.message || e) }; } })()`);
         report.rekordbox.ok = !report.rekordbox.sticks || (!report.rekordbox.error && report.rekordbox.files > 0 && report.rekordbox.named === report.rekordbox.files && report.rekordbox.head === 4);
+        report.ndi.ok = !report.ndi.available || (report.ndi.sent > 0 && !report.ndi.error);
+        report.place.ok =report.place.placed && report.place.size[0] === report.place.display[0] && report.place.back[0] < report.place.display[0] && report.place.live === 1;
+        await js(`gl.getExtension('WEBGL_lose_context').loseContext(); true`);   // simulated GPU reset: the page reloads itself
+      } else {
+        report.recovered = await js(`({ recovery: window.vjRecovered || '', status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
+        const b = report.boot, o = report.output, r = report.recovered;
         const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && report.rekordbox.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && r.recovery === 'ok';
         finish(ok, ok ? '' : 'a check failed');
       }
@@ -189,11 +195,11 @@ app.whenReady().then(() => {
   buildMenu();
   createWindow();
   setupNdi(() => win);
+  setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
   updater = setupUpdater(() => win, { selftest, beforeInstall: () => { quitting = true; } });   // desktop/updater.js
   screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => { stopNdi(); stopRekordbox(); });
-  setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
 app.on('window-all-closed', () => app.quit());

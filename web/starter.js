@@ -103,7 +103,7 @@ async function premiumGet() {
     if (!r) return premiumNote('The premium pack needs an internet connection to download');
     if (r.status === 401) { entRefresh(); return premiumNote('This app was signed out: sign in again to download the pack'); }
     if (r.status === 403) {   // the website says this account has no paid plan (any more): believe it, then offer the upgrade
-      ent.plan = r.json.plan in ENT_RANK ? r.json.plan : 'free'; ent.at = Date.now(); entSave(); entShow();
+      entDowngrade();
       premiumNote('The premium pack comes with Pro and Festival'); entPrompt('pack'); return;
     }
     if (!r.ok || !r.json.sig) return premiumNote('The premium pack is not available right now. Try again later.');

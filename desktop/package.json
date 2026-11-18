@@ -35,13 +35,7 @@
       "rekordbox.js",
       "package.json",
       "!node_modules/koffi/{src,vendor,doc}/**",
-      "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**"
-    ],
-    "asarUnpack": [
-      "ndi-worker.js",
-      "node_modules/koffi/**"
-    ],
-    "extraResources": [
+      "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**",
       {
         "from": "../web",
         "to": "web",
@@ -50,6 +44,11 @@
           "!**/*.md"
         ]
       }
+    ],
+    "asarUnpack": [
+      "ndi-worker.js",
+      "node_modules/koffi/**",
+      "web/stock/**"
     ],
     "artifactName": "StrodanoVJ-${version}-${os}-${arch}.${ext}",
     "afterPack": "afterpack.js",
