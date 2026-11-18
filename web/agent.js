@@ -335,9 +335,10 @@ function agentRelease(L) {
   agent.base.delete(L); agent.vis.delete(L); agent.fades.delete(L); agent.written.delete(L);
 }
 // Flash effects (Strobe) in a chain follow the drop gate: your mix during a drop's first bars, off otherwise.
+// Not one held on a phone FX pad (e.padHeld, mobileui.js): your finger on it wins over the gate.
 function gateFlashFx(chain) {
   for (const e of chain) {
-    if (!FLASH_FX.has(e.def)) continue;
+    if (!FLASH_FX.has(e.def) || e.padHeld) continue;
     const w = agent.fxWritten.get(e);
     if (!agent.fxBase.has(e) || (w !== undefined && Math.abs(e.mix - w) > 0.004)) agent.fxBase.set(e, e.mix);   // you set its mix
     e.mix = agent.fxBase.get(e) * agent.fxGate;
