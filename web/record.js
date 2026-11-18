@@ -5,7 +5,7 @@
 // Recording and rendering run in real time: the page must keep drawing frames (keep this window visible, or open the
 // output window, which keeps the loop running even when this window is covered).
 'use strict';
-const REC_MAX = 3600;   // seconds: one hour
+// The longest recording is the plan's (entRecMax, plan.js): one hour on Pro, ten on Festival.
 const REC_QUALITY = { high: { w: 1920, h: 1080, vbr: 8e6, label: '1080p, 8 Mbit/s (about 3.6 GB per hour)' },
   std: { w: 1280, h: 720, vbr: 4e6, label: '720p, 4 Mbit/s (about 1.8 GB per hour)' },
   small: { w: 1280, h: 720, vbr: 2e6, label: '720p, 2 Mbit/s (about 0.9 GB per hour)' } };
@@ -27,6 +27,7 @@ function recAddInput(node) { if (rec.dest) node.connect(rec.dest); }
 
 async function recStart(title) {
   if (rec.on) return true;
+  if (!entGate('record')) return false;
   const fmt = recFormat();
   if (!fmt) { setStatus('This browser cannot record video. Use a current Chrome or Edge.'); return false; }
   audioCtx();
@@ -101,7 +102,7 @@ const recElapsed = () => (rec.on ? (performance.now() - rec.t0) / 1000 : 0);
 function recTick() {
   if (!rec.on || rec.stopping) return;
   const now = performance.now();
-  if (recElapsed() >= REC_MAX) { setStatus('Recording reached one hour and was stopped'); recStop(); return; }
+  if (recElapsed() >= entRecMax()) { setStatus('Recording reached ' + (entRecMax() / 3600) + (entRecMax() > 3600 ? ' hours' : ' hour') + ' and was stopped'); recStop(); return; }
   if (now - rec.lastCopy < 1000 / 31) return;
   rec.lastCopy = now;
   const c = rec.canvas, w = c.width, h = c.height;
@@ -112,9 +113,10 @@ function recTick() {
 // ---------- auto render ----------
 // 'file': the loaded music file or mix, from the start to its end, with the Agent directing.
 // 'list': the DJ track list, mixed by autopilot, with the Agent directing, until the list runs out.
-// Both stop at one hour.
+// Both stop at the plan's longest recording.
 async function renderMix(kind) {
   if (rec.on) { setStatus('Already recording'); return; }
+  if (!entGate('agent') || !entGate('record')) return;
   if (kind === 'file' && !(live.src === 'file' && live.el)) { setStatus('Open a music file in the Agent panel first'); return; }
   if (kind === 'list' && !crate.tracks.some(t => t.state === 'ready' && !t.played)) { setStatus('Add tracks to the DJ track list first'); return; }
   if (kind === 'file') { live.el.pause(); live.el.currentTime = 0; }
@@ -139,6 +141,6 @@ onMusic(type => { if (type === 'ended' && rec.render && rec.render.kind === 'fil
 function renderProgress() {
   const r = rec.render;
   if (!r) return null;
-  if (r.kind === 'file') { const d = fileDur(); return d ? Math.min(1, fileTime() / Math.min(d, REC_MAX)) : 0; }
+  if (r.kind === 'file') { const d = fileDur(); return d ? Math.min(1, fileTime() / Math.min(d, entRecMax())) : 0; }
   return r.total ? Math.min(1, crate.tracks.filter(t => t.played).length / r.total) : 0;
 }

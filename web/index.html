@@ -320,6 +320,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
     <span class="sep"></span>
     <button id="outBtn" data-act="outWin" title="Open the outputs (fullscreen on their displays, see Advanced Output). Click again to close them." aria-pressed="false"><i></i>Output</button>
+    <button id="acctBtn" title="Your Strodano account and plan">Sign in</button>
     <span id="status"></span>
     <div id="themes" role="radiogroup" aria-label="Colour theme"></div>
   </div>
@@ -364,6 +365,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <input type="file" id="compInput" accept=".svj,.json" hidden>
 <input type="file" id="shaderInput" accept=".fs,.frag,.glsl,.isf,.txt" multiple hidden>
 <script src="core.js"></script>
+<script src="plan.js"></script>
 <script src="shaders.js"></script>
 <script src="engine.js"></script>
 <script src="mediafolder.js"></script>

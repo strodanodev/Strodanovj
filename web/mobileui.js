@@ -326,6 +326,7 @@ function renderBuild(v) {
       x => { const [w, h] = x.split('x').map(Number); resizeComp(w, h); M.slow = 0; M.dirty = true; })),
     setting('Frame rate', choice([[60, '60 fps'], [30, '30 fps (saves battery)']], M.prefs.fpsCap, x => { M.prefs.fpsCap = +x; savePrefs(); }))),
     el('div', { className: 'row' }, btn('Save project', saveProject), btn('Open project', () => $('compInput').click())),
+    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Account and plan', entAccount)),
     el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Start over', e => armThen(e.currentTarget, 'start a new project (your library stays)', () => { mobileDemo(); M.dirty = true; }), 'danger')),
     hint('Projects keep the layout; photos and videos stay in the Library and relink by name.'));
 }
@@ -385,6 +386,7 @@ mlib.onChange = () => { if (M.tab === 'library') M.dirty = true; };
 
 // ---------- Auto (the Agent, listening) ----------
 async function startAuto() {
+  if (!entGate('agent')) return;
   audioCtx();
   if (M.listen === 'mic' && live.src !== 'mic') { if (!(await useMic())) { M.dirty = true; return; } }
   if (M.listen === 'tap' && live.src !== 'dj') useDecks();

@@ -148,6 +148,7 @@ function mixStatus() {
 
 // ---------- autopilot ----------
 function setAuto(on) {
+  if (on && !entGate('autopilot')) on = false;
   mixer.auto = on;
   if (on && !crate.tracks.some(t => t.state === 'ready') && !audio.decks.some(d => d.buffer)) setStatus('Autopilot: add tracks to the list first');
   else if (on) setStatus('Autopilot on: it picks the next track and mixes it in at the outro');

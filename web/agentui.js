@@ -12,6 +12,7 @@ function agentUIDirty() { agUI.dirty = true; if (typeof plDirty === 'function') 
 const showOn = () => agent.on;
 function startShow() {
   if (showOn()) { stopShow(); return; }
+  if (!entGate('agent')) return;
   audioCtx();
   if (live.src === 'dj') {
     const unplayed = crate.tracks.some(t => t.state !== 'error' && !t.played);

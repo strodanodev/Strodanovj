@@ -460,6 +460,7 @@ function agentTick() {
 }
 function setAgent(on) {
   if (on === agent.on) return;
+  if (on && !entGate('agent')) return;
   agent.on = on;
   if (on) {
     audioCtx();

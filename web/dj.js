@@ -51,9 +51,10 @@ function initDJ() {
     el('span', { style: { marginLeft: 'auto' }, textContent: 'Visual delay (ms)' }), off));
   $('trackInput').addEventListener('change', e => { const f = e.target.files[0]; if (f && djUI.loadFor) deckLoad(djUI.loadFor, f); e.target.value = ''; });
   initCrate(); hookLiveEvents(); initCueCapture();
-  try { if (localStorage.getItem(DJ_KEY) === '1') toggleDJ(true); } catch (e) {}
+  try { if (localStorage.getItem(DJ_KEY) === '1' && entCan('dj')) toggleDJ(true); } catch (e) {}
 }
 function toggleDJ(on) {
+  if (on && !entGate('dj')) on = false;
   djUI.open = on;
   $('dj').hidden = !on;
   $('djBtn').classList.toggle('on', on);

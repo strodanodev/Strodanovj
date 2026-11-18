@@ -229,14 +229,14 @@ function renderOutPanels() {
   L.textContent = '';
   L.append(el('h4', { textContent: 'Screens' }));
   screens.forEach((s, i) => L.append(el('div', { className: 'sel-item' + (i === outUI.screen ? ' on' : ''), textContent: s.name + (s.win && !s.win.closed ? '  [live]' : ''), onclick: () => { outUI.screen = i; outUI.slice = 0; redo(); } })));
-  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Screen', onclick: () => { screens.push({ name: 'Screen ' + (screens.length + 1), win: null, ctx: null, slices: [newSlice('Slice 1')] }); outUI.screen = screens.length - 1; redo(); } }),
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Screen', onclick: () => { if (!entGate('mapping')) return; screens.push({ name: 'Screen ' + (screens.length + 1), win: null, ctx: null, slices: [newSlice('Slice 1')] }); outUI.screen = screens.length - 1; redo(); } }),
     el('button', { textContent: '- Screen', onclick: () => { if (screens.length > 1) { closeOutput(outUI.screen); screens.splice(outUI.screen, 1); redo(); } } })));
   L.append(el('h4', { textContent: 'Slices and masks' }));
   scr.slices.forEach((sl, i) => L.append(el('div', { className: 'sel-item' + (i === outUI.slice ? ' on' : ''), onclick: () => { outUI.slice = i; redo(); } },
     el('input', { type: 'checkbox', checked: sl.enabled, onclick: e => e.stopPropagation(), onchange: e => { sl.enabled = e.target.checked; } }), sl.name + (sl.mask ? '  (mask)' : ''))));
   const swap = d => { const i = outUI.slice, j = i + d; if (j >= 0 && j < scr.slices.length) { [scr.slices[i], scr.slices[j]] = [scr.slices[j], scr.slices[i]]; outUI.slice = j; redo(); } };
-  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Slice', onclick: () => { scr.slices.push(newSlice('Slice ' + (scr.slices.length + 1))); outUI.slice = scr.slices.length - 1; redo(); } }),
-    el('button', { textContent: '+ Mask', onclick: () => { scr.slices.push(newSlice('Mask ' + (scr.slices.length + 1), true)); outUI.slice = scr.slices.length - 1; redo(); } })),
+  L.append(el('div', { className: 'fld' }, el('button', { textContent: '+ Slice', onclick: () => { if (!entGate('mapping')) return; scr.slices.push(newSlice('Slice ' + (scr.slices.length + 1))); outUI.slice = scr.slices.length - 1; redo(); } }),
+    el('button', { textContent: '+ Mask', onclick: () => { if (!entGate('mapping')) return; scr.slices.push(newSlice('Mask ' + (scr.slices.length + 1), true)); outUI.slice = scr.slices.length - 1; redo(); } })),
     el('div', { className: 'fld' }, el('button', { textContent: 'Remove', onclick: () => { scr.slices.splice(outUI.slice, 1); redo(); } }),
       el('button', { textContent: 'To front', onclick: () => swap(1) }), el('button', { textContent: 'To back', onclick: () => swap(-1) })),
     el('div', { className: 'hint', textContent: 'Later items draw on top.' }));
@@ -253,13 +253,13 @@ function renderOutPanels() {
   if (!sl) return;
   P.append(el('h4', { textContent: sl.mask ? 'Mask' : 'Slice' }),
     el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: sl.name, onchange: e => { sl.name = e.target.value || sl.name; redo(); } })),
-    el('div', { className: 'fld' }, el('label', { textContent: 'Mask (black)' }), el('input', { type: 'checkbox', checked: sl.mask, onchange: e => { sl.mask = e.target.checked; redo(); } })));
+    el('div', { className: 'fld' }, el('label', { textContent: 'Mask (black)' }), el('input', { type: 'checkbox', checked: sl.mask, onchange: e => { if (e.target.checked && !entGate('mapping')) { e.target.checked = false; return; } sl.mask = e.target.checked; redo(); } })));
   if (!sl.mask) P.append(
     el('div', { className: 'fld' }, el('label', { textContent: 'Flip' }), el('label', null, el('input', { type: 'checkbox', checked: sl.flipH, onchange: e => { sl.flipH = e.target.checked; } }), ' H'),
       el('label', null, el('input', { type: 'checkbox', checked: sl.flipV, onchange: e => { sl.flipV = e.target.checked; } }), ' V')),
     fld('Brightness', 0, 1, 0.001, () => sl.bright, v => { sl.bright = v; }));
-  P.append(fld('Warp grid', 0, 6, 1, () => sl.grid, v => { setGrid(sl, v); }, v => (v ? v + ' x ' + v : 'Off')),
-    fld('Soft edge', 0, 0.5, 0.001, () => sl.feather, v => { sl.feather = v; }, v => v.toFixed(3)),
+  P.append(fld('Warp grid', 0, 6, 1, () => sl.grid, v => { if (v > sl.grid && !entGate('mapping')) { redo(); return; } setGrid(sl, v); }, v => (v ? v + ' x ' + v : 'Off')),
+    fld('Soft edge', 0, 0.5, 0.001, () => sl.feather, v => { if (v > sl.feather && !entGate('mapping')) { redo(); return; } sl.feather = v; }, v => v.toFixed(3)),
     el('div', { className: 'fld' }, el('button', { textContent: 'Reset warp', onclick: () => { sl.c = sl.mask ? [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]] : [[0, 0], [1, 0], [1, 1], [0, 1]]; setGrid(sl, sl.grid); } }),
       el('button', { textContent: 'Reset input', onclick: () => { sl.in = [0, 0, 1, 1]; } })),
     el('div', { className: 'hint', textContent: 'Orange handles: corners. Blue: move. Green: warp points.' }));
