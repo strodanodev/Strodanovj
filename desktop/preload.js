@@ -22,5 +22,13 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
   },
+  // rekordbox USB sticks (desktop/rekordbox.js, web/rekordbox.js): which are plugged in, a small file of one, and its
+  // song files put into a file input of the page
+  rekordbox: {
+    list: () => ipcRenderer.invoke('rekordbox:sticks'),
+    onSticks: fn => { ipcRenderer.on('rekordbox:sticks', (e, l) => fn(l)); },
+    read: (id, rel) => ipcRenderer.invoke('rekordbox:read', { id: String(id).slice(0, 80), rel: String(rel).slice(0, 2048) }),
+    files: (id, rels, inputId) => ipcRenderer.invoke('rekordbox:files', { id: String(id).slice(0, 80), rels: (Array.isArray(rels) ? rels : []).slice(0, 50000).map(r => String(r).slice(0, 2048)), inputId: String(inputId).slice(0, 40) }),
+  },
   identify: marks => ipcRenderer.invoke('displays:identify', (Array.isArray(marks) ? marks : []).slice(0, 16).map(m => ({ id: Number(m.id), text: String(m.text).slice(0, 80) }))),
 });

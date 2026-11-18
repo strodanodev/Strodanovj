@@ -198,8 +198,12 @@ function renderCrate() {
     r.addEventListener('dblclick', () => { const d = audio.decks.find(x => !x.playing); if (d) crateLoad(t, d); });
     return r;
   });
+  // the list is rebuilt on every click and every few seconds (re-ranking): keep where it was scrolled to, or a long
+  // list (a rekordbox playlist) jumps back to the top while it is being browsed
+  const was = crateEl.querySelector('.cl'), top = was ? was.scrollTop : 0, list = el('div', { className: 'cl' }, ...rows);
   crateEl.textContent = '';
-  crateEl.append(head, el('div', { className: 'cl' }, ...rows));
+  crateEl.append(head, list);
+  list.scrollTop = top;
 }
 let crateRefT = 0;
 function tickCrate() {

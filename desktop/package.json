@@ -32,6 +32,7 @@
       "ndi.js",
       "ndi-worker.js",
       "updater.js",
+      "rekordbox.js",
       "package.json",
       "!node_modules/koffi/{src,vendor,doc}/**",
       "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**"

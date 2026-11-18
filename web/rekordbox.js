@@ -163,10 +163,15 @@ function rbKey(name) {
 // picks the PIONEER folder (pio) and then the folder the music is in (music) instead.
 // files: the other way in, for browsers and shells whose folder picker hands nothing back: a plain folder upload input,
 // every file of the picked folder keyed by its lower-case path on the stick (nothing can be remembered for the next start).
-const rb = { root: null, pio: null, music: null, files: null, db: null, lists: [], pending: false, busy: false, meta: new Map() };
+const rb = { root: null, pio: null, music: null, files: null, stick: null, sticks: [], deskFiles: new Map(), deskSaved: null, db: null, lists: [], pending: false, busy: false, meta: new Map() };
 const canRekordbox = typeof window !== 'undefined';
 const canRbHandles = typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
 const rbKeyOf = path => '/' + rbParts(path).join('/').toLowerCase();
+// Desktop app (desktop/rekordbox.js): the main process watches the drives and says which hold a rekordbox export, so a
+// stick is found when it is plugged in and opened without a folder picker. rb.sticks = what is plugged in now,
+// rb.stick = the one that is open, rb.deskFiles = its song files (stick path -> File) as far as they were asked for.
+const rbDesk = (typeof window !== 'undefined' && window.strodanoDesktop && window.strodanoDesktop.rekordbox) || null;
+const RB_DESK_KEY = 'strodano-vj-rekordbox';
 const rbParts = p => p.split(/[\\/]+/).filter(Boolean);
 async function rbWalk(dir, parts) {
   for (let i = 0; i < parts.length - 1; i++) dir = await dir.getDirectoryHandle(parts[i]);
@@ -175,6 +180,12 @@ async function rbWalk(dir, parts) {
 // A file by its path on the stick ("/Contents/Artist/Album/song.mp3", "/PIONEER/USBANLZ/.../ANLZ0000.DAT").
 async function rbFile(path) {
   const ps = rbParts(path);
+  if (rb.stick) {
+    if (ps[0] && ps[0].toUpperCase() === 'PIONEER') return new File([await rbDesk.read(rb.stick.id, path)], ps[ps.length - 1]);   // database and analysis files: small, read whole
+    const f = rb.deskFiles.get(path);
+    if (!f) throw new Error('not on the stick');
+    return f;
+  }
   if (rb.files) { const f = rb.files.get(rbKeyOf(path)); if (!f) throw new Error('not in the picked folder'); return f; }
   if (rb.root) return rbWalk(rb.root, ps);
   if (ps[0] && ps[0].toUpperCase() === 'PIONEER' && rb.pio) return rbWalk(rb.pio, ps.slice(1));
@@ -187,7 +198,7 @@ async function rbFile(path) {
 async function rbHas(dir, parts) { try { await rbWalk(dir, parts); return true; } catch (e) { return false; } }
 // Works out what the picked folder is and reads the database. Returns false (with a status line) when it is not a rekordbox stick.
 async function rbUse(dir) {
-  rb.root = rb.pio = rb.files = null;
+  rb.root = rb.pio = rb.files = rb.stick = null;
   if (await rbHas(dir, ['PIONEER', 'rekordbox', 'export.pdb'])) rb.root = dir;
   else if (await rbHas(dir, ['rekordbox', 'export.pdb'])) rb.pio = dir;
   else {
@@ -201,6 +212,10 @@ async function rbUse(dir) {
 }
 async function rbPick() {
   if (!entGate('rekordbox')) return;
+  if (rbDesk && rb.sticks.length) { rbPickStick(); return; }   // desktop app: the stick that is plugged in
+  rbPickFolder();
+}
+async function rbPickFolder() {
   if (!canRbHandles) { rbPickPlain(false); return; }
   let dir;
   try { dir = await window.showDirectoryPicker({ id: 'strodano-rekordbox', mode: 'read' }); }
@@ -235,7 +250,7 @@ async function rbUseFiles(fs, add) {
       const tail = '/pioneer/rekordbox/export.pdb', at = keys.findIndex(k => k.endsWith(tail));
       if (at < 0) { setStatus(keys.some(k => k.endsWith('/pioneer/rekordbox/exportlibrary.db')) ? 'This stick only has the newer Device Library Plus database, which cannot be read. In rekordbox, export it again with the standard Device Library on.' : 'No rekordbox export in that folder: pick the USB stick itself, or its PIONEER folder'); return; }
       const pre = keys[at].slice(0, -tail.length);
-      rb.root = rb.pio = rb.music = null; rb.lists = [];
+      rb.root = rb.pio = rb.music = rb.stick = null; rb.lists = [];
       rb.files = new Map();
       keys.forEach((k, i) => { if (k.startsWith(pre + '/')) rb.files.set(k.slice(pre.length), fs[i]); });
       try { rb.db = rbParsePdb(await fs[at].arrayBuffer()); } catch (e) { rb.files = null; setStatus('Could not read the rekordbox database: ' + (e.message || e)); return; }
@@ -272,12 +287,12 @@ function rbDialog() {
     hist.length ? el('div', { textContent: 'Played sets (history)', style: { padding: '8px 10px', color: 'var(--dim)', fontWeight: '600', borderBottom: '1px solid var(--line)' } }) : null,
     ...hist.map(l => line(l, 1)));
   // files mode: the songs are missing when not one of the first tracks is among the picked files
-  const needMusic = rb.files ? ![...db.tracks.values()].slice(0, 200).some(t => rb.files.has(rbKeyOf(t.path))) : !rb.root && !rb.music;
+  const needMusic = rb.stick ? false : rb.files ? ![...db.tracks.values()].slice(0, 200).some(t => rb.files.has(rbKeyOf(t.path))) : !rb.root && !rb.music;
   entDialog('REKORDBOX', needMusic ? 'One more folder' : 'Choose a playlist',
     needMusic ? 'You picked the PIONEER folder. Now pick the folder on the stick that holds the songs (usually "Contents").'
       : db.tracks.size + ' songs on this stick. A playlist is added to the end of the track list with its beat grids, keys and cue points.',
     needMusic ? [entBtn('Cancel', entClose), entBtn('Pick the songs folder', rbPickMusic, true)]
-      : [entBtn('Cancel', entClose), entBtn('All ' + db.tracks.size + ' songs', () => { entClose(); rbImport(null); })],
+      : [entBtn('Cancel', entClose), rb.stick ? entBtn('Another folder...', () => { entClose(); rbPickFolder(); }) : null, entBtn('All ' + db.tracks.size + ' songs', () => { entClose(); rbImport(null); })],
     needMusic ? null : rows.length || hist.length ? list : el('div', { textContent: 'This stick has no playlists: use "All songs".', style: { marginTop: '14px', color: 'var(--dim)' } }));
 }
 // What rekordbox knows about one song, in this app's terms.
@@ -299,6 +314,7 @@ async function rbImport(ids, quiet) {
   try {
     const seen = new Set(), want = [];
     for (const tr of ids ? ids.flatMap(id => rbListTracks(rb.db, id)) : [...rb.db.tracks.values()]) if (!seen.has(tr.id)) { seen.add(tr.id); want.push(tr); }
+    if (rb.stick) await rbDeskFetch(want.map(t => t.path));
     const files = [];
     let lost = 0, cued = 0, grids = 0, dyn = 0;
     for (let i = 0; i < want.length; i++) {
@@ -314,7 +330,11 @@ async function rbImport(ids, quiet) {
     const n = crateAdd(files);
     crateDirty();
     if (ids) rb.lists = [...new Set(rb.lists.concat(ids))]; else rb.lists = [null];
-    if (!rb.files) {   // only folder handles can be kept for the next start (initRekordbox)
+    if (rb.stick) {   // desktop: the stick is known by its volume, and comes back by itself when it is plugged in again
+      rb.deskSaved = { id: rb.stick.id, name: rb.stick.name, lists: rb.lists };
+      try { localStorage.setItem(RB_DESK_KEY, JSON.stringify(rb.deskSaved)); } catch (e) {}
+      ui.browserDirty = true;
+    } else if (!rb.files) {   // only folder handles can be kept for the next start (initRekordbox)
       rb.saved = { root: rb.root, pio: rb.pio, music: rb.music, lists: rb.lists };
       folderStore('put', rb.saved, 'rekordbox').catch(() => {});
       ui.browserDirty = true;
@@ -343,6 +363,7 @@ function rbApply(t) {
 
 // ---------- the next start ----------
 async function initRekordbox() {
+  initRbDesk();
   if (!canRbHandles) return;
   let s = null;
   try { s = await folderStore('get', null, 'rekordbox'); } catch (e) {}
@@ -356,7 +377,7 @@ async function rbReload() {
   const s = rb.saved;
   rb.pending = false;
   try {
-    rb.root = s.root || null; rb.pio = s.pio || null; rb.music = s.music || null; rb.files = null;
+    rb.root = s.root || null; rb.pio = s.pio || null; rb.music = s.music || null; rb.files = rb.stick = null;
     rb.db = rbParsePdb(await (await rbFile('/PIONEER/rekordbox/export.pdb')).arrayBuffer());
     rb.lists = [];
     const ids = (s.lists || []).filter(id => id === null || rb.db.lists.some(l => l.id === id));
@@ -372,8 +393,61 @@ async function rbReconnect() {
   } catch (e) { rb.pending = false; }
 }
 
+// ---------- desktop app: sticks found by the main process ----------
+function initRbDesk() {
+  if (!rbDesk || rb.deskOn) return;
+  rb.deskOn = true;
+  try { rb.deskSaved = JSON.parse(localStorage.getItem(RB_DESK_KEY) || 'null'); } catch (e) {}
+  rbDesk.onSticks(rbSticks);
+  rbDesk.list().then(rbSticks, () => {});
+}
+// The list of plugged-in sticks changed (also called once at start).
+function rbSticks(list) {
+  const was = new Set(rb.sticks.map(s => s.id));
+  rb.sticks = Array.isArray(list) ? list : [];
+  for (const s of rb.sticks) {
+    if (was.has(s.id)) continue;
+    const mine = rb.deskSaved && rb.deskSaved.id === s.id && (rb.deskSaved.lists || []).length;
+    if (mine) rbOpenStick(s).then(() => rbImport(rb.deskSaved.lists.includes(null) ? null : rb.deskSaved.lists.filter(id => rb.db.lists.some(l => l.id === id)), true)).catch(() => {});
+    else setStatus('rekordbox stick found (' + s.name + '): press "rekordbox USB..." in the track list to bring in a playlist');
+  }
+  if (rb.stick && !rb.sticks.some(s => s.id === rb.stick.id)) {   // pulled out: songs already on a deck keep playing, the others can no longer be read
+    setStatus('rekordbox stick (' + rb.stick.name + ') was removed: its songs that are not loaded on a deck cannot be read until it is back');
+    rb.stick = null; rb.db = null; rb.deskFiles = new Map();
+  }
+  ui.browserDirty = true;
+  if (typeof crateDirty === 'function') crateDirty();
+}
+async function rbOpenStick(s) {
+  rb.root = rb.pio = rb.music = rb.files = null; rb.lists = [];
+  rb.stick = s; rb.deskFiles = new Map();
+  try { const u = await rbDesk.read(s.id, '/PIONEER/rekordbox/export.pdb'); rb.db = rbParsePdb(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength)); }
+  catch (e) { rb.stick = null; throw e; }
+}
+async function rbPickStick() {
+  const open = async s => { try { await rbOpenStick(s); rbDialog(); } catch (e) { setStatus('Could not read the rekordbox database on ' + s.name + ': ' + (e.message || e)); } };
+  if (rb.sticks.length === 1) return open(rb.sticks[0]);
+  entDialog('REKORDBOX', 'Which stick?', rb.sticks.length + ' rekordbox sticks are plugged in.', [entBtn('Cancel', entClose), ...rb.sticks.map(s => entBtn(s.name, () => { entClose(); open(s); }, true))]);
+}
+// The song files of the open stick as File objects: the main process puts them into a hidden file input of this page
+// (they stay on the disk until a song is decoded). Asked for once per song.
+async function rbDeskFetch(paths) {
+  const need = [...new Set(paths)].filter(p => !rb.deskFiles.has(p));
+  if (!need.length) return;
+  let inp = document.getElementById('rbDeskInput');
+  if (!inp) { inp = el('input', { type: 'file', id: 'rbDeskInput', multiple: true, hidden: true }); document.body.append(inp); }
+  const r = await rbDesk.files(rb.stick.id, need, 'rbDeskInput');
+  if (!r || r.error) throw new Error((r && r.error) || 'the stick could not be read');
+  const got = [...inp.files];
+  if (got.length !== r.ok.filter(Boolean).length) throw new Error('the stick handed over ' + got.length + ' files instead of ' + r.ok.filter(Boolean).length);
+  let k = 0;
+  need.forEach((p, i) => { if (r.ok[i]) rb.deskFiles.set(p, got[k++]); });
+}
+
 function rbForget() {
   folderStore('delete', null, 'rekordbox').catch(() => {});
+  try { localStorage.removeItem(RB_DESK_KEY); } catch (e) {}
+  rb.deskSaved = null;
   rb.saved = null; rb.pending = false; rb.lists = []; ui.browserDirty = true;
   setStatus('rekordbox stick forgotten: its songs stay in the list until the next start');
 }
@@ -381,6 +455,17 @@ function rbForget() {
 // ---------- on screen ----------
 // Files tab (ui.js): the remembered stick, with Reconnect when the browser wants a click again.
 function rbRow() {
+  if (rbDesk && (rb.sticks.length || rb.deskSaved)) {   // desktop app: what is plugged in, and the stick whose playlists come back
+    const box = document.createDocumentFragment(), sv = rb.deskSaved;
+    for (const st of rb.sticks) {
+      const mine = sv && sv.id === st.id;
+      box.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1' }, textContent: 'rekordbox stick (' + st.name + ')' + (mine ? ' is remembered: its playlists come back whenever it is plugged in' : ' is plugged in') }),
+        el('button', { className: mine ? '' : 'on', textContent: 'Playlists...', onclick: rbPick }), mine ? el('button', { textContent: 'Forget', title: 'Stop bringing this stick\'s playlists back', onclick: rbForget }) : null));
+    }
+    if (sv && !rb.sticks.some(st => st.id === sv.id)) box.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1' }, textContent: 'rekordbox stick (' + sv.name + ') is not plugged in: its playlists come back when it is' }),
+      el('button', { textContent: 'Forget', onclick: rbForget })));
+    return box;
+  }
   const s = rb.saved;
   if (!s) return null;
   const nm = (s.root || s.pio).name || 'USB stick';
@@ -388,7 +473,7 @@ function rbRow() {
     rb.pending ? el('button', { className: 'on', textContent: 'Reconnect', onclick: reconnectMediaFolder }) : null,
     el('button', { textContent: 'Forget', title: 'Stop reloading playlists from this stick', onclick: rbForget }));
 }
-const rbButton = () => (canRekordbox ? el('button', { textContent: 'rekordbox USB...', title: 'Bring in a playlist from a USB stick exported by rekordbox, with its beat grids and cue points' + (entCan('rekordbox') ? '' : ' (Pro)'), onclick: rbPick }) : null);
+const rbButton = () => (canRekordbox ? el('button', { className: rbDesk && rb.sticks.length ? 'on' : '', textContent: 'rekordbox USB...', title: 'Bring in a playlist from a USB stick exported by rekordbox, with its beat grids and cue points' + (entCan('rekordbox') ? '' : ' (Pro)'), onclick: rbPick }) : null);
 const rbCueCol = c => c.color || (c.hot ? '#30d040' : '#ff3030');
 const rbCueTag = c => (c.hot ? String.fromCharCode(64 + Math.min(c.hot, 26)) : '');
 const rbCueTitle = c => (c.hot ? 'Hot cue ' + rbCueTag(c) : c.end !== undefined ? 'Loop' : 'Memory cue') + (c.name ? ': ' + c.name : '') + ' at ' + mmss(c.t);

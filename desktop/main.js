@@ -10,6 +10,7 @@ const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, scre
 const path = require('path');
 const { setupNdi, stopNdi } = require('./ndi');
 const { setupUpdater } = require('./updater');
+const { setupRekordbox, stopRekordbox } = require('./rekordbox');
 
 const selftest = process.argv.includes('--selftest');
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
@@ -165,7 +166,16 @@ function runSelftest() {
       } else {
         report.recovered = await js(`({ recovery: window.vjRecovered || '', status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
         const b = report.boot, o = report.output, r = report.recovered;
-        const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && r.recovery === 'ok';
+        // rekordbox stick (only where one is plugged in): found by the drive scan, database read, one playlist's songs handed over as files
+        report.rekordbox = await js(`(async () => { const st = await window.strodanoDesktop.rekordbox.list(); if (!st.length) return { sticks: 0 };
+          try { await rbOpenStick(st[0]); const l = rb.db.lists.filter(x => !x.folder).map(x => ({ x, ts: rbListTracks(rb.db, x.id) })).filter(o => o.ts.length).sort((a, b) => a.ts.length - b.ts.length)[0];
+            const ts = l ? l.ts : [...rb.db.tracks.values()].slice(0, 5); await rbDeskFetch(ts.map(t => t.path));
+            const fs = ts.map(t => rb.deskFiles.get(t.path)).filter(Boolean), named = fs.filter((f, i) => ts.filter(t => rb.deskFiles.get(t.path))[i].path.endsWith('/' + f.name)).length;
+            const head = fs[0] ? new Uint8Array(await fs[0].slice(0, 4).arrayBuffer()).length : 0, m = ts[0] ? await rbMeta(ts[0]) : null;
+            const r = { sticks: st.length, name: st[0].name, tracks: rb.db.tracks.size, playlists: rb.db.lists.length, list: l ? l.x.name : '', asked: ts.length, files: fs.length, named, bytes: fs.reduce((n, f) => n + f.size, 0), head, grid: !!(m && m.grid), cues: m ? m.cues.length : 0 };
+            rb.stick = null; rb.db = null; rb.deskFiles = new Map(); return r; } catch (e) { return { sticks: st.length, error: String(e && e.message || e) }; } })()`);
+        report.rekordbox.ok = !report.rekordbox.sticks || (!report.rekordbox.error && report.rekordbox.files > 0 && report.rekordbox.named === report.rekordbox.files && report.rekordbox.head === 4);
+        const ok = report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && report.rekordbox.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && r.recovery === 'ok';
         finish(ok, ok ? '' : 'a check failed');
       }
     } catch (e) { finish(false, String(e && e.message || e)); }
@@ -184,5 +194,6 @@ app.whenReady().then(() => {
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', stopNdi);
+app.on('will-quit', () => { stopNdi(); stopRekordbox(); });
+  setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
 app.on('window-all-closed', () => app.quit());
