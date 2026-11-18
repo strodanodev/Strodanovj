@@ -61,7 +61,8 @@ writeFileSync(path.join(OUT, 'starter', 'README.txt'),
   'These media files are NOT covered by the GPL licence of the Strodano VJ software. They are included so the\n' +
   'phone edition opens with a ready show; do not reuse them outside Strodano VJ without permission.\n');
 
-// 3b. the premium pack (names must match PREMIUM_FILES in web/starter.js): Pro / Festival only, behind middleware.js
+// 3b. the premium pack (names must match PREMIUM_FILES in web/starter.js and PREMIUM_PACK in web/premium.js, the desktop
+// page's copy): Pro / Festival only, behind middleware.js
 const PREMIUM = [
   ['top section.mp4', 'strodano-pro-crowd.mp4'], ['mid section.MOV', 'strodano-pro-stage.mp4'],
   ['static image.jpg', 'strodano-pro-booth-1.webp'], ['static image (2).jpg', 'strodano-pro-booth-2.webp'],
@@ -82,6 +83,8 @@ for (const [from, to] of PREMIUM) {
 }
 const premiumMissing = premiumNames.filter(n => !existsSync(path.join(OUT, 'premium', n)));
 if (premiumMissing.length || premiumNames.length !== PREMIUM.length) fail('starter.js PREMIUM_FILES and the premium pack do not match: ' + (premiumMissing.join(', ') || 'different counts'));
+const deskNames = [...readFileSync(path.join(WEB, 'premium.js'), 'utf8').matchAll(/\['(strodano-pro-[^']+)'/g)].map(m => m[1]);
+if (deskNames.join() !== premiumNames.join()) fail('premium.js PREMIUM_PACK (desktop) and starter.js PREMIUM_FILES (phone) list different files');
 writeFileSync(path.join(OUT, 'premium', 'README.txt'), 'STRODANO premium pack (c) STRODANO. All rights reserved. For Strodano VJ Pro and Festival subscribers only.\n');
 // Vercel Routing Middleware: a premium file is served only with a fresh signature from the website (GET /api/app/pack),
 // ?e=<unix expiry>&s=<base64url HMAC-SHA256 of "premium:<e>">, keyed with PACK_SECRET (set on both Vercel projects)
@@ -113,7 +116,8 @@ writeFileSync(path.join(OUT, 'vercel.json'), JSON.stringify({
   rewrites: [{ source: '/live/:name', destination: '/watch.html' }],
   headers: [
     { source: '/(sw.js|mobile.html|watch.html|index.html|manifest.webmanifest)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
-    { source: '/premium/(.*)', headers: [{ key: 'Cache-Control', value: 'private, no-store' }] },
+    // the desktop app downloads the pack from file:// (origin null), so the files allow any origin: the signature is the lock
+    { source: '/premium/(.*)', headers: [{ key: 'Cache-Control', value: 'private, no-store' }, { key: 'Access-Control-Allow-Origin', value: '*' }] },
     { source: '/starter/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=86400' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }] },
   ],

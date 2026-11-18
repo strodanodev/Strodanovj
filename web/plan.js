@@ -12,8 +12,9 @@
 // The last answer is kept for ENT_GRACE without a connection, so a venue with no internet does not lock a show.
 // Without an account the plan is Free.
 //
-// Testing: entTest('free' | 'pro' | 'festival') in the console forces a plan, entTest('off') removes every lock,
-// entTest() goes back to the account. localStorage `strodano-vj-api` points the app at another website (a local one).
+// Testing, only on a page served from this computer (http://localhost: ENT_DEV), never in the desktop app or on the
+// phone site: entTest('free' | 'pro' | 'festival') in the console forces a plan, entTest('off') removes every lock,
+// entTest() goes back to the account; localStorage `strodano-vj-api` points the app at another website (a local one).
 'use strict';
 const ENT_RANK = { free: 0, pro: 1, festival: 2 };
 const ENT_NAMES = { free: 'Free', pro: 'Pro', festival: 'Festival' };
@@ -30,13 +31,15 @@ const ENT_SITE = 'https://www.strodano.live';
 const ENT_KEY = 'strodano-vj-account', ENT_TEST_KEY = 'strodano-vj-plan-test', ENT_API_KEY = 'strodano-vj-api';
 const ENT_GRACE = 7 * 864e5;        // how long the last known plan holds with no connection
 const ENT_EVERY = 30 * 60e3;        // how often the plan is read again
+// A page served from this computer (development). Only there do the test plan and another website's address count.
+const ENT_DEV = location.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 // token: this app's device token; plan / at: the last plan the website reported and when; test: a forced plan
 const ent = { token: '', plan: 'free', at: 0, test: '', box: null, link: null, lastTry: 0 };
 const entLS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} } };
 try { const a = JSON.parse(entLS.get(ENT_KEY) || 'null'); if (a && a.token) { ent.token = String(a.token); ent.plan = a.plan in ENT_RANK ? a.plan : 'free'; ent.at = +a.at || 0; } } catch (e) {}
-{ const t = entLS.get(ENT_TEST_KEY); if (t === 'off' || t in ENT_RANK) ent.test = t; }
-const entApi = () => (entLS.get(ENT_API_KEY) || ENT_SITE).replace(/\/$/, '');
+if (ENT_DEV) { const t = entLS.get(ENT_TEST_KEY); if (t === 'off' || t in ENT_RANK) ent.test = t; }
+const entApi = () => ((ENT_DEV && entLS.get(ENT_API_KEY)) || ENT_SITE).replace(/\/$/, '');
 function entSave() { entLS.set(ENT_KEY, ent.token ? JSON.stringify({ token: ent.token, plan: ent.plan, at: ent.at }) : null); }
 
 // The plan in force right now.
@@ -56,6 +59,7 @@ function entGate(feature) {
   return false;
 }
 function entTest(plan) {
+  if (!ENT_DEV) return 'Test plans only work on a development page (http://localhost)';
   ent.test = plan === 'off' || plan in ENT_RANK ? plan : '';
   entLS.set(ENT_TEST_KEY, ent.test || null);
   entShow();

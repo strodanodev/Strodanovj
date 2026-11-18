@@ -186,6 +186,7 @@ function renderBrowser() {
         pend ? el('button', { className: 'on', textContent: 'Reconnect', onclick: reconnectMediaFolder }) : null,
         el('button', { textContent: 'Forget', title: 'Stop reloading the files you added one by one', onclick: forgetLooseFiles })));
     } else if (media.length && !mediaFolder.handle && !canKeepFiles) b.append(el('div', { className: 'hint', textContent: 'This browser cannot remember added files: they are gone after a refresh. Use Chrome or Edge, or pick a Media folder.' }));
+    { const row = premiumRow(); if (row) b.append(row); }
     b.append(el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
     const missing = new Set(missingNames());
     if (missing.size) b.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1', color: 'var(--bad)' }, textContent: missing.size + ' clip file(s) missing' }),
@@ -613,6 +614,7 @@ function tickUI() {
   initNdi();
   $('bcBtn').addEventListener('click', toggleBroadcastMenu);
   syncTransport();
+  initPremium();   // the premium pack files already on this computer (premium.js)
   initMediaFolder().then(initAudius, initAudius);   // then STRODANO's set from Audius when the track list is empty
   setInterval(autosave, 2000);
   schedule();
