@@ -2,7 +2,9 @@ name: desktop
 
 # The Strodano VJ desktop app (desktop/, Electron around web/): Windows installer and macOS disk images.
 # Every run: self-test (desktop/main.js --selftest, software GL) and installers as artifacts.
-# A v* tag also collects them into a DRAFT GitHub release, which a person publishes by hand.
+# A v* tag also collects them into a DRAFT GitHub release, which a person publishes by hand. The Windows app updates
+# itself from the newest PUBLISHED release: it reads latest.yml there (version, installer name, SHA-512) and downloads
+# the installer (the .blockmap lets it fetch only what changed), so both must be in the release beside the .exe.
 
 on:
   push:
@@ -55,6 +57,8 @@ jobs:
           path: |
             desktop/dist/*.exe
             desktop/dist/*.dmg
+            desktop/dist/latest.yml
+            desktop/dist/*.exe.blockmap
           if-no-files-found: error
 
   draft-release:
@@ -74,5 +78,5 @@ jobs:
           body: |
             Strodano VJ desktop app.
 
-            - **Windows:** `StrodanoVJ-*-win-x64.exe`. The installer is not code-signed: if SmartScreen warns, choose *More info* > *Run anyway*.
+            - **Windows:** `StrodanoVJ-*-win-x64.exe`. From 0.3.4 on the app updates itself (`latest.yml` and the `.blockmap` are for that: do not remove them). The installer is not code-signed: if SmartScreen warns, choose *More info* > *Run anyway*.
             - **Mac (Apple Silicon):** `StrodanoVJ-*-mac-arm64.dmg`. **Mac (Intel):** `StrodanoVJ-*-mac-x64.dmg`. Needs macOS 12 (Monterey) or later. Not notarised: the first time, right-click the app > *Open*, or allow it under *System Settings > Privacy & Security*.

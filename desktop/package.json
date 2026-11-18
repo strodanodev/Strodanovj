@@ -31,6 +31,7 @@
       "preload.js",
       "ndi.js",
       "ndi-worker.js",
+      "updater.js",
       "package.json",
       "!node_modules/koffi/{src,vendor,doc}/**",
       "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**"
@@ -78,6 +79,7 @@
           ]
         }
       ],
+      "publish": null,
       "category": "public.app-category.entertainment",
       "icon": "res/icon.png",
       "identity": null,
@@ -91,9 +93,14 @@
     "dmg": {
       "title": "Strodano VJ ${version}"
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "strodanodev",
+      "repo": "Strodanovj"
+    }
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "koffi": "^2.16.4"
   }
 }

@@ -14,5 +14,13 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     start: (id, name) => ipcRenderer.invoke('ndi:start', { id: String(id), name: String(name).slice(0, 120) }),
     stop: id => ipcRenderer.invoke('ndi:stop', String(id)),
   },
+  // updates (desktop/updater.js, web/update.js): the state, and the three things the page may ask for
+  update: {
+    state: () => ipcRenderer.invoke('update:state'),
+    onState: fn => { ipcRenderer.on('update:state', (e, s) => fn(s)); },
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+  },
   identify: marks => ipcRenderer.invoke('displays:identify', (Array.isArray(marks) ? marks : []).slice(0, 16).map(m => ({ id: Number(m.id), text: String(m.text).slice(0, 80) }))),
 });

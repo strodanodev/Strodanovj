@@ -9,6 +9,7 @@
 const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, screen, ipcMain } = require('electron');
 const path = require('path');
 const { setupNdi, stopNdi } = require('./ndi');
+const { setupUpdater } = require('./updater');
 
 const selftest = process.argv.includes('--selftest');
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
@@ -22,7 +23,7 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('force_high_performance_gpu');
 if (process.env.STRODANO_SOFTWARE_GL) { app.commandLine.appendSwitch('use-angle', 'swiftshader'); app.commandLine.appendSwitch('enable-unsafe-swiftshader'); }
 
-let win = null, quitting = false;
+let win = null, quitting = false, updater = null;
 const outputs = new Map();   // output window name ('strodano_out_N') -> BrowserWindow
 const ALLOWED = new Set(['media', 'midi', 'midiSysex', 'fullscreen', 'fileSystem', 'clipboard-sanitized-write', 'window-management', 'pointerLock']);
 
@@ -67,6 +68,7 @@ function buildMenu() {
     { role: 'editMenu' },
     { label: 'View', submenu: [{ role: 'togglefullscreen' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] },
     { label: 'Help', submenu: [
+      { label: 'Check for updates...', click: () => { if (updater) updater.check(); } },
       { label: 'Project page', click: () => shell.openExternal('https://github.com/strodanodev/Strodanovj') },
       { label: 'Developer tools', click: () => { if (win) win.webContents.toggleDevTools(); } },
     ] },
@@ -177,6 +179,7 @@ app.whenReady().then(() => {
   buildMenu();
   createWindow();
   setupNdi(() => win);
+  updater = setupUpdater(() => win, { selftest, beforeInstall: () => { quitting = true; } });   // desktop/updater.js
   screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
