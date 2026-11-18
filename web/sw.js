@@ -5,7 +5,7 @@
 // Never cached: vdo.ninja and other sites (the web link is online by nature), and the MediaPipe hand tracking
 // bundle (14 MB, a desktop feature), and the desktop page (index.html): only the files in SHELL go through here.
 'use strict';
-const VERSION = 'svj-mobile-5';
+const VERSION = 'svj-mobile-6';
 const SHELL = [
   'mobile.html', 'manifest.webmanifest', 'logo.png', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'theme.js', 'core.js', 'plan.js', 'shaders.js', 'engine.js', 'mediafolder.js', 'midi.js', 'analysis.js', 'audio.js', 'crate.js', 'mix.js', 'dj.js', 'live.js',

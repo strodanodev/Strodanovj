@@ -22,6 +22,7 @@ const ENT_FEATURES = {
   dj:        { plan: 'pro',      name: 'DJ mode',          what: 'Two decks, tempo and beat-grid analysis, and auto-mix.' },
   autopilot: { plan: 'pro',      name: 'Autopilot sets',   what: 'Autopilot picks the next track and mixes it in for you.' },
   record:    { plan: 'pro',      name: 'Recording',        what: 'Record the show with its sound: up to 1 hour on Pro, 10 hours on Festival.' },
+  pack:      { plan: 'pro',      name: 'Premium pack',     what: 'More STRODANO footage and photos, downloaded into your library.' },
   mapping:   { plan: 'festival', name: 'Advanced mapping', what: 'Several screens, slices, mesh warp, masks and soft edges.' },
 };
 const ENT_REC_MAX = { free: 0, pro: 3600, festival: 36000 };   // seconds of recording per file

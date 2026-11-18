@@ -72,3 +72,65 @@ async function starterFetch() {
   starterPlay();
   setStatus(files.length === need.length ? 'STRODANO starter pack ready: it is in your Library, offline too' : files.length ? 'Part of the starter pack could not be downloaded' : 'The starter pack needs an internet connection the first time');
 }
+
+// ---------- the STRODANO premium pack (Pro and Festival) ----------
+// More STRODANO footage and photos for paying plans. The files are on the phone site under premium/ (built by
+// tools/build-mobile.mjs, never in the repository) behind a check at the edge (middleware.js) that only lets a request
+// through with a fresh signature. The website gives that signature (GET /api/app/pack) only to an app signed in to a
+// Pro or Festival account, so the pack cannot be had by editing this code: the lock is on the server.
+// Once downloaded, the files live in the phone's library like any import and stay there offline.
+const PREMIUM_BASE = 'premium/';
+const PREMIUM_FILES = [
+  ['strodano-pro-crowd.mp4', 'Crowd'], ['strodano-pro-stage.mp4', 'Main stage'],
+  ['strodano-pro-booth-1.webp', 'Booth'], ['strodano-pro-booth-2.webp', 'Booth 2'],
+  ['strodano-pro-press-1.webp', 'Press 1'], ['strodano-pro-press-2.webp', 'Press 2'], ['strodano-pro-press-3.webp', 'Press 3'], ['strodano-pro-press-4.webp', 'Press 4'],
+  ['strodano-pro-uwu.webp', 'UwU'], ['strodano-pro-avatar.webp', 'Avatar logo'], ['strodano-pro-mark.webp', 'Supporting logo'],
+];
+const premiumState = { busy: false, done: 0, total: 0, note: '' };
+const premiumMissing = () => PREMIUM_FILES.map(f => f[0]).filter(n => !mlib.items.some(x => x.name === n));
+const premiumHave = () => mlib.ready && !premiumMissing().length;
+const premiumNote = t => { premiumState.note = t; setStatus(t); if (typeof M !== 'undefined') M.dirty = true; };
+async function premiumGet() {
+  if (premiumState.busy) return;
+  if (!entGate('pack')) return;
+  if (!ent.token) { premiumNote('Sign in to your Strodano account to download the premium pack'); entAccount(); return; }
+  const need = premiumMissing();
+  if (!need.length) { premiumToLayer(); return; }
+  premiumState.busy = true; premiumState.done = 0; premiumState.total = need.length; premiumNote('Checking your plan...');
+  try {
+    let r = null;
+    try { r = await entFetch('/api/app/pack', null, ent.token); } catch (e) {}
+    if (!r) return premiumNote('The premium pack needs an internet connection to download');
+    if (r.status === 401) { entRefresh(); return premiumNote('This app was signed out: sign in again to download the pack'); }
+    if (r.status === 403) {   // the website says this account has no paid plan (any more): believe it, then offer the upgrade
+      ent.plan = r.json.plan in ENT_RANK ? r.json.plan : 'free'; ent.at = Date.now(); entSave(); entShow();
+      premiumNote('The premium pack comes with Pro and Festival'); entPrompt('pack'); return;
+    }
+    if (!r.ok || !r.json.sig) return premiumNote('The premium pack is not available right now. Try again later.');
+    const q = '?e=' + encodeURIComponent(r.json.exp) + '&s=' + encodeURIComponent(r.json.sig), files = [];
+    premiumNote('Downloading the premium pack...');
+    for (const n of need) {
+      try {
+        const f = await fetch(PREMIUM_BASE + encodeURIComponent(n) + q, { cache: 'no-store' });
+        if (!f.ok) throw new Error(f.status);
+        const b = await f.blob();
+        files.push(new File([b], n, { type: b.type || (starterKind(n) === 'video' ? 'video/mp4' : 'image/webp') }));
+      } catch (e) { /* counted below */ }
+      premiumState.done++; if (typeof M !== 'undefined') M.dirty = true;
+    }
+    if (files.length) await mlibImport(files);
+    if (files.length < need.length) return premiumNote(files.length ? 'Part of the premium pack could not be downloaded: tap again for the rest' : 'The premium pack could not be downloaded. Try again in a moment.');
+    premiumToLayer();
+    premiumNote('Premium pack ready: it is in your Library and on a new layer "Premium"');
+  } finally { premiumState.busy = false; if (typeof M !== 'undefined') M.dirty = true; }
+}
+// A new top layer "Premium" with the pack's clips across the scenes (only once; the files stay in the Library either way)
+function premiumToLayer() {
+  if (comp.layers.some(L => L.name === 'Premium')) { setStatus('The premium clips are on the layer "Premium" and in your Library'); return; }
+  const clips = PREMIUM_FILES.map(([n, title]) => { const m = media.find(x => x.name === n); if (!m) return null; const c = mediaClip(m); c.name = title; return c; }).filter(Boolean);
+  if (!clips.length) return;
+  addLayer();
+  const li = comp.layers.length - 1, L = comp.layers[li];
+  L.name = 'Premium'; L.opacity = 0.85;
+  for (let ci = 0; ci < comp.columns && ci < clips.length; ci++) setClip(li, ci, clips[ci]);
+}

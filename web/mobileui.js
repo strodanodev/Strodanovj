@@ -343,6 +343,7 @@ function renderLibrary(v) {
   v.append(el('div', { style: { height: '4px' } }), btn('Import photos & videos', () => { M.importTo = null; $('importInput').click(); }, 'big pri'));
   if (mlib.busy) v.append(hint(`Copying into the app: ${Math.min(mlib.total, mlib.done + 1)} of ${mlib.total}…`));
   if (mlib.est && mlib.est.quota) v.append(hint(`Using ${mlibSize(mlib.est.usage || 0)} of ${mlibSize(mlib.est.quota)} available` + (mlib.persisted ? ' · kept by the browser' : '')));
+  if (typeof premiumGet === 'function') v.append(premiumCard());
   if (isIOS && !standalone()) v.append(el('div', { className: 'card' }, hint('iPhone: tap Share, then "Add to Home Screen". The app then keeps your library and opens full screen.')));
   if (!mlib.items.length) {
     const e = el('div', { className: 'empty-state' });
@@ -358,6 +359,17 @@ function renderLibrary(v) {
       el('span', { textContent: it.name }), el('i', { className: 'k', textContent: video ? 'VIDEO' : 'PHOTO' })));
   }
   v.append(h3(mlib.items.length + ' in the library', el('span', { className: 'x hint', textContent: 'tap one to use it' })), g);
+}
+// The premium pack (starter.js): download for Pro / Festival, the upgrade prompt for Free
+function premiumCard() {
+  const have = premiumHave(), unlocked = entCan('pack'), p = premiumState;
+  const label = p.busy ? (p.total ? `Downloading ${Math.min(p.total, p.done + 1)} of ${p.total}…` : 'Checking your plan…')
+    : have ? (comp.layers.some(L => L.name === 'Premium') ? 'In your library' : 'Put it on a layer') : unlocked ? 'Download the pack' : 'Unlock with Pro';
+  return el('div', { className: 'card' },
+    el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: 'STRODANO premium pack' })), el('i', { className: 'k', textContent: 'PRO' })),
+    hint(`${PREMIUM_FILES.length} clips: festival footage, booth and press photos, logos. Copied into your library, so they work offline.`),
+    p.note && !p.busy && !have ? hint(p.note) : null,
+    btn(label, () => premiumGet(), have ? 'big' : 'big pri', { disabled: p.busy || (have && comp.layers.some(L => L.name === 'Premium')), style: { marginTop: '8px' } }));
 }
 function libSheet(it, m) {
   openSheet(it.name, s => {
