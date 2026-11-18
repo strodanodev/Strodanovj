@@ -2,6 +2,7 @@
 // Each playlist song shows its parts (intro / build / drop / breakdown / outro) as blocks under the waveform. Here they
 // can be edited without the DJ panel:
 //   click            select a part (toolbar: visuals, reroll, type, split, merge, delete, undo)
+//   Split            the cut tool: the next click on the song's parts cuts there (snaps to bars)
 //   double-click     choose the part's visuals: Auto (the Agent picks), Pick clips (one clip per layer, mixed and
 //                    matched), Snapshot (the clips of a stored snapshot), or Keep (leave whatever is up)
 //   drag an edge     move the boundary between two parts (snaps to bars)
@@ -16,6 +17,7 @@ pl.sel = null;    // { key, k } the selected part
 pl.pick = null;   // { key, k } the part whose visuals picker is open
 pl.undo = [];     // [{ key, list }] segment lists before each edit (null: the song had no edits)
 pl.hover = null;  // { key, bar } where the pointer is over a song's parts (C cuts there)
+pl.cut = null;    // key of the song whose cut tool is on: the next click on its parts cuts there
 
 // ---------- what a part's visuals mean ----------
 const clipRef = c => (c ? c.uid || (c.fileName ? 'f:' + c.fileName : 'n:' + c.name) : '');
@@ -61,12 +63,13 @@ const canEditParts = t => !!(t && t.info && t.info.ok && t.info.sections && t.in
 const partsList = t => (canEditParts(t) ? sectionsFor(t.info, t.file) : null);
 function segEdit(t, fn) {
   if (!canEditParts(t)) { setStatus('This song has no beat grid, so its parts cannot be edited'); return; }
-  const key = segKey(t.file, t.info), was = seg.edits[key];
-  pl.undo.push({ key, list: was ? JSON.parse(JSON.stringify(was)) : null });
+  pl.undo.push(undoPoint(t));
   if (pl.undo.length > 60) pl.undo.shift();
   fn(editable(t));
   changed(); plDirty();
 }
+// The song's segment edits as they are now (null: none yet), to go back to.
+function undoPoint(t) { const key = segKey(t.file, t.info), was = seg.edits[key]; return { key, list: was ? JSON.parse(JSON.stringify(was)) : null }; }
 function segUndo() {
   const u = pl.undo.pop();
   if (!u) { setStatus('Nothing to undo'); return; }
@@ -113,6 +116,7 @@ function rerollPinned(t, k) {
 
 // ---------- the parts strip ----------
 // Fills r.chips with one block per part and adds r.tools / r.pick under the row (playlist.js plRow calls it).
+// The strip itself takes the presses (not each block), so the 2 px gaps between blocks are grabbable too.
 function plSegStrip(t, r, wv) {
   const inf = t.info;
   r.tools = el('div', { className: 'pltools' });
@@ -124,18 +128,19 @@ function plSegStrip(t, r, wv) {
   r.chips.append(r.cut);
   t.plan.forEach((p, k) => {
     const s = parts ? parts[k] : null, pinned = !!(s && s.vis);
-    const c = el('div', { className: 'plchip band-' + (p.sc ? p.sc.band : 'calm') + ' sec-' + p.s.type + (pinned ? ' pinned' : ''), tabIndex: 0,
+    const c = el('div', { className: 'plchip band-' + (p.sc ? p.sc.band : 'calm') + ' sec-' + p.s.type + (pinned ? ' pinned' : ''),
       textContent: (visLabel(s) || sceneShort(p.sc)),
       title: (SECTION_NAMES[p.s.type] || 'Whole song') + (s ? ' · bars ' + (s.bar + 1) + '-' + (s.bar + s.bars) : '') + ': ' + (p.sc ? (p.sc.keep ? 'keeps what is up' : sceneLabel(p.sc)) : 'nothing to play: add clips or unlock a layer') +
         (pinned ? '\nYour choice (pinned)' : '\nChosen by the Agent') + '\nClick to select · double-click to choose its visuals' + (edit ? ' · drag an edge to resize' : '') });
     c.sc = p.sc; c.k = k;
-    c.addEventListener('pointerdown', e => partPointer(e, t, r, k, c));
-    c.addEventListener('dblclick', e => { e.preventDefault(); pl.sel = { key: t.key, k }; pl.pick = { key: t.key, k }; plDirty(); });
     r.chips.append(c);
   });
   layoutChips(r, t);
+  r.chips.classList.toggle('cutting', pl.cut === t.key);
+  r.chips.addEventListener('pointerdown', e => partPointer(e, t, r));
+  r.chips.addEventListener('dblclick', e => { if (pl.cut) return; e.preventDefault(); const k = partAtX(e, t, r); pl.sel = { key: t.key, k }; pl.pick = { key: t.key, k }; plDirty(); });
   r.chips.addEventListener('pointermove', e => partHover(e, t, r));
-  r.chips.addEventListener('pointerleave', () => { if (r.cut) r.cut.hidden = true; });
+  r.chips.addEventListener('pointerleave', () => { r.cut.hidden = true; });
   const selK = pl.sel && pl.sel.key === t.key ? pl.sel.k : -1;
   if (selK >= 0 && t.plan[selK]) { r.chips.children[selK + 1].classList.add('sel'); renderTools(t, r, selK); }
   if (pl.pick && pl.pick.key === t.key && t.plan[pl.pick.k]) renderPicker(t, r, pl.pick.k);
@@ -148,44 +153,73 @@ function layoutChips(r, t) {
   });
 }
 const barAtX = (t, x, w) => Math.round((x / w * t.info.duration - t.info.grid0) / t.info.barLen);
+// The part under the pointer (playlist.js partAt: the last part that starts before that point of the song).
+function partAtX(e, t, r) {
+  const b = r.chips.getBoundingClientRect();
+  return Math.max(0, partAt(t, (e.clientX - b.left) / b.width * t.info.duration));
+}
+// The part a cut at `bar` would land in (at least one bar from each of its ends), or -1.
+const cutPart = (t, bar) => partsList(t).findIndex(s => bar > s.bar && bar < s.bar + s.bars);
 function partHover(e, t, r) {
   if (!canEditParts(t)) return;
   const b = r.chips.getBoundingClientRect(), bar = barAtX(t, e.clientX - b.left, b.width);
   pl.hover = { key: t.key, bar };
-  const L = partsList(t), k = pl.sel && pl.sel.key === t.key ? pl.sel.k : -1, s = L[k];
-  const show = !!s && bar > s.bar && bar < s.bar + s.bars;
+  // the dashed line shows where a cut would go: anywhere with the cut tool, inside the selected part for the C key
+  const cutting = pl.cut === t.key, k = cutPart(t, bar);
+  const show = !e.buttons && k >= 0 && (cutting || !!(pl.sel && pl.sel.key === t.key && pl.sel.k === k));
   r.cut.hidden = !show;
   if (show) r.cut.style.left = (100 * (t.info.grid0 + bar * t.info.barLen) / t.info.duration).toFixed(3) + '%';
-  // edges show a resize cursor
-  const edge = edgeAt(e, t, r);
-  r.chips.style.cursor = edge > 0 ? 'col-resize' : '';
+  if (!e.buttons) r.chips.style.cursor = cutting ? 'crosshair' : edgeAt(e, t, r) > 0 ? 'col-resize' : '';
 }
-// The boundary under the pointer (the index of the part after it), or -1.
+// The boundary under the pointer (the index of the part after it), or -1. An edge is grabbed within 8 px, less on a
+// short part so that its middle still selects it.
 function edgeAt(e, t, r) {
   if (!canEditParts(t)) return -1;
-  const b = r.chips.getBoundingClientRect(), L = partsList(t);
-  for (let k = 1; k < L.length; k++) { const x = b.left + b.width * L[k].t / t.info.duration; if (Math.abs(e.clientX - x) <= 5) return k; }
-  return -1;
+  const b = r.chips.getBoundingClientRect(), L = partsList(t), px = s => b.width * (s.end - s.t) / t.info.duration;
+  let best = -1, bd = 1e9;
+  for (let k = 1; k < L.length; k++) {
+    const d = Math.abs(e.clientX - (b.left + b.width * L[k].t / t.info.duration));
+    if (d <= Math.min(8, Math.max(3, Math.min(px(L[k - 1]), px(L[k])) / 3)) && d < bd) { bd = d; best = k; }
+  }
+  return best;
 }
-function partPointer(e, t, r, k, c) {
+function partPointer(e, t, r) {
   if (e.button !== 0) return;
-  const edge = edgeAt(e, t, r);
-  if (edge > 0) {   // drag the boundary in front of part `edge`
-    e.preventDefault(); e.stopPropagation();
-    try { c.setPointerCapture(e.pointerId); } catch (err) {}
-    const key = segKey(t.file, t.info), was = seg.edits[key];
-    const undo = { key, list: was ? JSON.parse(JSON.stringify(was)) : null };
-    let moved = false;
-    pl.held = true;
-    const move = ev => {
-      const b = r.chips.getBoundingClientRect(), bar = barAtX(t, ev.clientX - b.left, b.width), L = editable(t);
-      if (L[edge] && bar !== L[edge].bar) { if (!moved) { pl.undo.push(undo); moved = true; } moveBoundary(t, edge, bar); layoutChips(r, t); setStatus('Part starts at bar ' + (L[edge].bar + 1)); }
-    };
-    const up = () => { c.removeEventListener('pointermove', move); c.removeEventListener('pointerup', up); c.removeEventListener('pointercancel', up); pl.held = false; if (moved) { changed(); plDirty(); } };
-    c.addEventListener('pointermove', move); c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  const box = r.chips;
+  if (pl.cut === t.key) {   // the cut tool: this click is the cut
+    e.preventDefault();
+    const b = box.getBoundingClientRect(), bar = barAtX(t, e.clientX - b.left, b.width), k = cutPart(t, bar);
+    if (k < 0) { setStatus('A cut goes at least one bar from each end of a part: click further inside one'); return; }
+    pl.cut = null;
+    segEdit(t, () => splitAt(t, k, bar));
+    pl.sel = { key: t.key, k: k + 1 }; pl.pick = null;
+    setStatus('Cut at bar ' + (bar + 1));
     return;
   }
+  const edge = edgeAt(e, t, r);
+  if (edge > 0) {   // drag the boundary in front of part `edge`
+    e.preventDefault();
+    try { box.setPointerCapture(e.pointerId); } catch (err) {}
+    const undo = undoPoint(t);
+    let moved = false;
+    box.style.cursor = 'col-resize'; r.cut.hidden = true;
+    const move = ev => {
+      const b = box.getBoundingClientRect(), bar = barAtX(t, ev.clientX - b.left, b.width), L = editable(t);
+      if (L[edge] && bar !== L[edge].bar) { if (!moved) { pl.undo.push(undo); moved = true; } moveBoundary(t, edge, bar); layoutChips(r, t); setStatus('Part starts at bar ' + (L[edge].bar + 1)); }
+    };
+    const up = () => { box.removeEventListener('pointermove', move); box.removeEventListener('pointerup', up); box.removeEventListener('pointercancel', up); if (moved) plDirty(); };
+    box.addEventListener('pointermove', move); box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+    return;
+  }
+  if (!t.plan) return;
+  const k = partAtX(e, t, r);
   if (!pl.sel || pl.sel.key !== t.key || pl.sel.k !== k) { pl.sel = { key: t.key, k }; if (pl.pick && (pl.pick.key !== t.key || pl.pick.k !== k)) pl.pick = null; plDirty(); }
+}
+// Split button: the next click on this song's parts is the cut (press again or Escape to put the tool away).
+function cutTool(t) {
+  pl.cut = pl.cut === t.key ? null : t.key;
+  plDirty();
+  if (pl.cut) setStatus('Cut: click on the song\'s parts where the cut goes (Esc to cancel)');
 }
 
 // ---------- toolbar ----------
@@ -198,11 +232,11 @@ function renderTools(t, r, k) {
     el('button', { textContent: 'Visuals...', title: 'Choose this part’s visuals (or double-click the part)', onclick: () => { pl.pick = pl.pick && pl.pick.key === t.key && pl.pick.k === k ? null : { key: t.key, k }; plDirty(); } }),
     el('button', { textContent: 'Reroll', title: 'Let the Agent pick a different combination for this part', onclick: () => rerollPinned(t, k) }),
     typeSel,
-    el('button', { textContent: 'Split', title: 'Cut this part in two at the pointer (C), or in the middle', disabled: !edit, onclick: () => splitPart(t, k) }),
+    el('button', { textContent: 'Split', className: pl.cut === t.key ? 'on' : '', title: 'Cut tool: press, then click on the parts where the cut goes. Or point at the spot in the selected part and press C.', disabled: !edit, onclick: () => cutTool(t) }),
     el('button', { textContent: 'Merge →', title: 'Join this part with the next one', disabled: !edit, onclick: () => mergePart(t, k) }),
     el('button', { textContent: 'Delete', title: 'Remove this part: its bars go to the part before it (Delete key)', disabled: !edit, onclick: () => deletePart(t, k) }),
     el('button', { textContent: 'Undo', title: 'Undo the last part edit (Ctrl+Z)', disabled: !pl.undo.length, onclick: segUndo }),
-    el('span', { className: 'hint', textContent: edit ? 'Drag an edge to resize' : 'No beat grid: only the visuals can be rerolled' }));
+    el('span', { className: 'hint', textContent: !edit ? 'No beat grid: only the visuals can be rerolled' : pl.cut === t.key ? 'Click on the parts where the cut goes' : 'Drag an edge to resize' }));
 }
 
 // ---------- visuals picker ----------
@@ -269,17 +303,18 @@ window.addEventListener('keydown', e => {
   else if (e.ctrlKey || e.metaKey || e.altKey) done = false;
   else if (e.key === 'Delete' || e.key === 'Backspace') deletePart(t, pl.sel.k);
   else if (e.code === 'KeyC') splitPart(t, pl.sel.k);
-  else if (e.key === 'Escape') { if (pl.pick) pl.pick = null; else pl.sel = null; plDirty(); }
+  else if (e.key === 'Escape') { if (pl.cut) pl.cut = null; else if (pl.pick) pl.pick = null; else pl.sel = null; plDirty(); }
   else done = false;
   if (done) { e.preventDefault(); e.stopPropagation(); }
 }, true);
 // A click anywhere outside the playlist's parts clears the selection.
-document.addEventListener('pointerdown', e => { if (pl.sel && !e.target.closest('.plchips, .pltools, .plpick')) { pl.sel = null; pl.pick = null; plDirty(); } });
+document.addEventListener('pointerdown', e => { if ((pl.sel || pl.cut) && !e.target.closest('.plchips, .pltools, .plpick')) { pl.sel = null; pl.pick = null; pl.cut = null; plDirty(); } });
 
 (function css() {
   const s = document.createElement('style');
   s.textContent = `
-.plchip{cursor:pointer;user-select:none}
+.plchips{cursor:pointer;touch-action:none} .plchip{user-select:none}
+.plchips.cutting .plchip{opacity:.8} .pltools button.on{background:var(--acc-soft);color:var(--acc);border-color:var(--acc)}
 .plchip.sel{outline:2px solid var(--acc);outline-offset:0;z-index:1}
 .plchip.pinned{font-weight:600;color:var(--txt)} .plchip.pinned::before{content:'\\25C6  ';color:var(--acc)}
 .plcut{position:absolute;top:-2px;bottom:-2px;width:0;border-left:2px dashed var(--acc);z-index:2;pointer-events:none}

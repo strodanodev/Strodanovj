@@ -248,7 +248,6 @@ function applyScene(sc, beats) {
   }
   agent.scene = sc; agent.lookBeat = comp.beats; agent.empty = false;
   remember(sc);
-  if (typeof agentUIDirty === 'function') agentUIDirty();
 }
 // One decision. reason: song | drop | breakdown | section | band | vary | next
 // A playlist song's planned scene for the section playing now (playlist.js) wins, except for variations and the
@@ -268,7 +267,7 @@ function change(reason) {
   if (!sc && reason === 'vary' && agent.scene && agent.scene.band === band) sc = varyScene({ ...agent.scene, drop: inDrop });
   if (!sc) sc = makeScene(band, inDrop, agent.scene, { logo: reason === 'song' });
   agent.seenPlan = now;   // the planned part this decision answers (variations included): the next part brings a change
-  if (!sc) { if (!agent.empty) { agent.empty = true; if (typeof agentUIDirty === 'function') agentUIDirty(); } return; }
+  if (!sc) { agent.empty = true; return; }
   if (drop) agent.dropBeat = comp.beats;
   applyScene(sc, sc.drop && drop ? 0 : beats);
 }
@@ -403,7 +402,6 @@ function agentTick() {
     if (yours.length) {
       yours.forEach(li => { const L = comp.layers[li]; if (layerClip(L) >= 0) { baseOf(L); fadeTo(L, 1, 1); } });
       agent.holdUntil = b + 32; agent.pending = null;
-      if (typeof agentUIDirty === 'function') agentUIDirty();
     }
   }
   if (!agent.scene && !agent.hold && b >= agent.holdUntil) change('song');   // first scene as soon as the Agent starts
@@ -473,7 +471,7 @@ function setAgent(on) {
 }
 function agentNext() { if (!agent.on) return setAgent(true); agent.hold = false; agent.holdUntil = -1; agentSchedule('next'); }
 function agentDrop() { if (!agent.on) return; agent.hold = false; agent.holdUntil = -1; agent.manualDrop = comp.beats; change('drop'); }
-function agentHold(v) { agent.hold = v === undefined ? !agent.hold : v; agent.pending = null; if (typeof agentUIDirty === 'function') agentUIDirty(); }
+function agentHold(v) { agent.hold = v === undefined ? !agent.hold : v; agent.pending = null; }
 // Nothing to play yet: put starter clips in YOUR grid (generators, columns tagged by energy), so the Agent has a
 // composition to work with and you can change any of it.
 const STARTER = [['Calm', ['Gradient']], ['Calm', ['Plasma']], ['Groove', ['Tunnel', 'Lines']], ['Groove', ['Plasma', 'Checkerboard']],

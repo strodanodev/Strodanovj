@@ -157,6 +157,12 @@ function initPlaylist() {
   pl.list = el('div', { className: 'pll' });
   root.append(pl.head, pl.list);
   $('grid').before(root);
+  // The list is never rebuilt under a pressed pointer (pl.held): a rebuild would take away the element being clicked or
+  // dragged. A release outside the window is caught by the next move without a button down.
+  pl.list.addEventListener('pointerdown', () => { pl.held = true; }, true);
+  const release = () => { pl.held = false; };
+  window.addEventListener('pointerup', release, true); window.addEventListener('pointercancel', release, true); window.addEventListener('blur', release);
+  pl.list.addEventListener('pointermove', e => { if (!e.buttons) pl.held = false; }, true);
   // songs dropped from Explorer join the playlist where they land; a dragged row moves there
   const over = e => {
     const files = hasFiles(e);
@@ -295,27 +301,52 @@ function plRow(t, i) {
   if (inf && inf.ok) {
     r.mIn = plMarker(t, 'in', wave); r.mOut = plMarker(t, 'out', wave);
     wave.append(r.mIn, r.mOut);
-    wave.addEventListener('pointerdown', e => {   // click the playing song's waveform to jump there
-      if (e.target !== r.cv && e.target !== r.done) return;
-      const d = audio.decks.find(x => trackOf(x) === t && x.buffer);
-      if (!d) return;
+  }
+  if (inf) {
+    r.cv.title = 'Click to jump the show to this point of the song';
+    r.cv.addEventListener('pointerdown', e => {   // the markers on top of it stop their own presses
+      if (e.button !== 0) return;
       const b = wave.getBoundingClientRect();
-      deckSeek(d, (e.clientX - b.left) / b.width * d.buffer.duration);
+      plJump(t, (e.clientX - b.left) / b.width);
     });
   }
-  if (typeof plSegStrip === 'function') plSegStrip(t, r, wv);   // editable parts (plsegs.js)
-  else if (inf && ensurePlan(t)) {
-    t.plan.forEach((p, k) => {
-      const a = p.s.t / inf.duration, w = (Math.min(inf.duration, p.s.end) - p.s.t) / inf.duration;
-      const c = el('button', { className: 'plchip band-' + (p.sc ? p.sc.band : 'calm') + ' sec-' + p.s.type, style: { left: (a * 100).toFixed(3) + '%', width: 'calc(' + (w * 100).toFixed(3) + '% - 2px)' },
-        textContent: sceneShort(p.sc), title: (SECTION_NAMES[p.s.type] || 'Whole song') + ': ' + (p.sc ? sceneLabel(p.sc) : 'no layer can play: add clips or unlock a layer') + '\nClick for a different combination of your clips', onclick: () => rerollPart(t, k) });
-      c.sc = p.sc;
-      r.chips.append(c);
-    });
-  }
+  plSegStrip(t, r, wv);   // the song's parts, editable (plsegs.js)
   r.root.append(grip, r.num, info, wv, el('button', { className: 'del', title: 'Remove from the playlist', innerHTML: TRASH_SVG, onclick: () => plRemove(t) }));
   r.root.classList.toggle('err', t.state === 'error');
   return r;
+}
+// A click on a song's waveform. The song that is playing jumps to that point. Any other song (played already, up next,
+// or further down the list) is cut in from that point, and the playlist carries on in order from it. With nothing
+// playing, only a song already on a deck is moved.
+async function plJump(t, f) {
+  if (live.src !== 'dj' || !t.info) return;
+  const pos = Math.max(0, Math.min(1, f)) * t.info.duration, has = x => !!x.buffer && trackOf(x) === t;
+  const cur = audio.decks.find(x => x.playing && has(x)) || audio.decks.find(x => x.playing && x === audio.clockDeck) || audio.decks.find(x => x.playing);
+  if (!cur) {
+    const d = audio.decks.find(has);
+    if (d) deckSeek(d, pos); else setStatus('Press Start first: a click on a song then jumps the show to that point');
+    return;
+  }
+  const seq = pl.jumpSeq = (pl.jumpSeq || 0) + 1;   // a second click while the song is still loading wins
+  if (mixer.m) cancelMix();
+  let d = cur;
+  if (!has(cur)) {
+    d = otherDeck(cur);
+    deckPause(d);
+    if (!has(d)) {
+      setStatus('Jumping to ' + t.name + '...');
+      await deckLoad(d, t.file);
+      if (seq !== pl.jumpSeq || !has(d)) return;
+    }
+    d.sync = false; deckSetRate(d, 1);   // a cut, not a blend: the song comes in at its own tempo
+  }
+  deckPause(otherDeck(d));
+  d.bass = 0.5; d.echo = 0;
+  setXf(sideXf(d));
+  deckSeek(d, pos);
+  if (!d.playing) deckPlay(d);
+  pickClockDeck();
+  setStatus('Jumped to ' + mmss(pos) + ' of ' + t.name);
 }
 // A transition marker: drag to move it (it snaps to bars), double-click to put it back where the analysis had it.
 function plMarker(t, which, wave) {
@@ -325,7 +356,7 @@ function plMarker(t, which, wave) {
   const snap = s => i.grid0 + Math.round((s - i.grid0) / bar) * bar;
   m.addEventListener('pointerdown', e => {
     e.preventDefault(); e.stopPropagation();
-    m.setPointerCapture(e.pointerId); pl.held = true;
+    m.setPointerCapture(e.pointerId);
     const move = ev => {
       const b = wave.getBoundingClientRect(), s = snap(Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)) * i.duration);
       const tin = typeof t.inAt === 'number' ? t.inAt : i.mixIn, tout = typeof t.outAt === 'number' ? t.outAt : i.mixOut;
@@ -333,7 +364,7 @@ function plMarker(t, which, wave) {
       else t.outAt = Math.min(i.beatEnd - 2 * bar, Math.max(s, tin + 8 * bar));
       setStatus((which === 'in' ? 'Mix in at ' : 'Mix out from ') + mmss(which === 'in' ? t.inAt : t.outAt));
     };
-    const up = () => { m.removeEventListener('pointermove', move); m.removeEventListener('pointerup', up); m.removeEventListener('pointercancel', up); pl.held = false; plSave(); };
+    const up = () => { m.removeEventListener('pointermove', move); m.removeEventListener('pointerup', up); m.removeEventListener('pointercancel', up); plSave(); };
     m.addEventListener('pointermove', move); m.addEventListener('pointerup', up); m.addEventListener('pointercancel', up);
   });
   m.addEventListener('dblclick', () => { if (which === 'in') delete t.inAt; else delete t.outAt; plSave(); setStatus('Transition point back to the analysed one'); });
