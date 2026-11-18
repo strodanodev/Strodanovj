@@ -106,7 +106,7 @@ function findMissingFiles() {
     addMediaFiles(files);
     const left = missingNames(), found = want.length - left.length;
     setStatus((found ? found + ' missing file(s) found and relinked' : 'None of those files are the missing ones') +
-      (left.length ? '. Still missing: ' + left.slice(0, 3).join(', ') + (left.length > 3 ? ' and ' + (left.length - 3) + ' more' : '') + ' (the names must match: a renamed file is not recognised)' : ''));
+      (left.length ? '. Still missing: ' + left.slice(0, 3).join(', ') + (left.length > 3 ? ' and ' + (left.length - 3) + ' more' : '') + ' (Search a folder looks through subfolders too)' : ''));
   });
 }
 async function readLoose(hs) {

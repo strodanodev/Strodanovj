@@ -190,7 +190,8 @@ function renderBrowser() {
     b.append(el('div', { className: 'hint', textContent: 'Or drag video files from your file manager onto a clip slot. Drag a file below onto a slot, or double-click it.' }));
     const missing = new Set(missingNames());
     if (missing.size) b.append(el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1', color: 'var(--bad)' }, textContent: missing.size + ' clip file(s) missing' }),
-      el('button', { className: 'on', textContent: 'Find missing files...', title: 'Pick the missing files (several at once): they relink by name and are remembered for next start', onclick: findMissingFiles })));
+      el('button', { className: 'on', textContent: 'Find missing files...', title: 'Pick the missing files (several at once): they relink by name and are remembered for next start', onclick: findMissingFiles }),
+      canPickFolder ? el('button', { textContent: 'Search a folder...', title: 'Look through a folder and its subfolders for the missing files. Renamed files are recognised too.', onclick: wsFindInFolder }) : null));
     missing.forEach(n => list.append(el('div', { className: 'miss', textContent: 'Missing: ' + n, title: 'Add this file again to relink it' })));
     media.forEach(m => {
       const d = el('div', { textContent: m.name, title: m.name, ondblclick: () => { const ci = sel.c >= 0 && !comp.layers[sel.l].clips[sel.c] ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, mediaClip(m)); else setStatus('No free clip slot on the selected layer'); } });

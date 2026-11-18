@@ -242,7 +242,7 @@ const BLENDS = ['Alpha', 'Add', 'Subtract', 'Multiply', 'Screen', 'Lighten', 'Da
 //   CLIP_TYPES[type] = { toJSON(c), fromJSON(j), free(c), props(c, panel, layer) }; such clips draw themselves through c.draw(fbo, layer).
 // SOURCE_PANELS holds functions that return extra elements for the Sources tab.
 const CLIP_TYPES = {}, SOURCE_PANELS = [];
-const media = [];   // {id, name, url, kind}
+const media = [];   // {id, name, url, kind, size}: size in bytes (0 for built-in stock), saved on clips as fileSize so a renamed file can be recognised (workspace.js)
 let mediaSeq = 1;
 const isVideoName = n => /\.(mp4|mov|m4v|webm|mkv|avi|ogv)$/i.test(n);
 const isImageName = n => /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(n);
@@ -252,13 +252,15 @@ function addMediaFiles(files) {
     const kind = f.type.startsWith('video') || isVideoName(f.name) ? 'video' : f.type.startsWith('image') || isImageName(f.name) ? 'image' : null;
     if (!kind) continue;
     let m = media.find(x => x.name === f.name);
-    if (!m) { m = { id: mediaSeq++, name: f.name, url: URL.createObjectURL(f), kind }; media.push(m); }
+    if (!m) { m = { id: mediaSeq++, name: f.name, url: URL.createObjectURL(f), kind, size: f.size || 0 }; media.push(m); }
+    else if (!m.size) m.size = f.size || 0;
     added.push(m);
     // relink clips that were saved with this file name
     comp.layers.forEach((L, li) => L.clips.forEach((c, ci) => {
       if (c && c.missing && c.fileName === m.name) { const n = mediaClip(m); n.speed = c.speed; n.name = c.name; if (typeof clipOptsCopy === 'function') clipOptsCopy(c, n); L.clips[ci] = n; }
     }));
   }
+  if (typeof smartRelink === 'function') smartRelink(added);   // clips still missing: a file under a slightly different name (workspace.js)
   ui.gridDirty = ui.browserDirty = true;
   return added;
 }
@@ -272,7 +274,7 @@ function thumbOf(source, w, h) {
   } catch (e) { return null; }
 }
 function mediaClip(m) {
-  const c = { type: m.kind, name: m.name.replace(/\.[^.]+$/, ''), fileName: m.name, tex: null, w: 0, h: 0, speed: 1, thumb: null };
+  const c = { type: m.kind, name: m.name.replace(/\.[^.]+$/, ''), fileName: m.name, fileSize: m.size || 0, tex: null, w: 0, h: 0, speed: 1, thumb: null };
   if (m.kind === 'video') {
     const v = document.createElement('video');
     Object.assign(v, { muted: true, loop: true, playsInline: true, preload: 'auto' });
@@ -704,7 +706,7 @@ function compToJSON() {
     score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
     layers: comp.layers.map(L => ({
       name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   /* your level, not the Agent's fade */ blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
-      clips: L.clips.map(c => c && Object.assign(CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) },
+      clips: L.clips.map(c => c && Object.assign(CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, fileSize: c.fileSize || undefined, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) },
         typeof clipLookJSON === 'function' ? clipLookJSON(c, fxJ) : null)),   // this clip's size, position, crop and effects (clipopts.js)
     })),
     screens: screens.map(s => ({ name: s.name, device: s.device || 'auto', ndiName: s.ndiName || undefined, ndiRes: s.ndiRes || undefined, ndiFps: s.ndiFps || undefined,
@@ -736,7 +738,7 @@ function loadComp(j) {
       if (c.type === 'gen') { const g = genClip(c.gen); if (g) { g.name = c.name || g.name; keepUid(g, c.uid); g.mod = loadMod(c.mod); (c.params || []).forEach((v, i) => { if (i < g.params.length) g.params[i] = num(v, 0); }); L.clips[ci] = g; } }
       else if (c.fileName) {
         const m = media.find(x => x.name === c.fileName);
-        const n = m ? mediaClip(m) : { type: c.type === 'image' ? 'image' : 'video', missing: true, fileName: c.fileName, thumb: null };
+        const n = m ? mediaClip(m) : { type: c.type === 'image' ? 'image' : 'video', missing: true, fileName: c.fileName, fileSize: num(c.fileSize, 0), thumb: null };
         n.name = c.name || c.fileName; n.speed = num(c.speed, 1); if (typeof clipOptsFrom === 'function') clipOptsFrom(n, c); L.clips[ci] = n;
       }
     });

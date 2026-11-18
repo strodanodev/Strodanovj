@@ -315,7 +315,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
   <div id="main">
   <div id="menubar">
     <h1 class="brand"><img src="logo.png" alt="Strodano" width="71" height="40" draggable="false"><span>VJ</span></h1>
-    <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button>
+    <button data-act="new">New</button><button data-act="open">Open</button><button data-act="save">Save</button><button id="wsBtn" aria-haspopup="menu" title="Workspace: cloud projects, collect the project and its files into a folder for a USB stick, open such a folder, find missing files">Workspace</button>
     <span class="sep"></span>
     <select id="resSel" title="Composition resolution"><option>1280x720</option><option selected>1920x1080</option><option>2560x1440</option><option>3840x2160</option></select>
     <span class="sep"></span>
@@ -397,6 +397,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="stock.js"></script>
 <script src="audius.js"></script>
 <script src="premium.js"></script>
+<script src="workspace.js"></script>
 <script src="hands.js"></script>
 <script src="inputs.js"></script>
 <script src="safety.js"></script>
