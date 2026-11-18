@@ -1,8 +1,9 @@
 # Builds the STRODANO stock pack for the web edition (web/stock.js uses it):
 #   web/stock-images.js  the logos and the duo cut-out as WebP data URLs, so they load into WebGL even from file://
-#   web/stock/*.mp4|mov  the stock videos, copied (git-ignored: too big for the repository)
+#   web/stock/*.mp4|mov  the stock videos at 1280x720 30 fps H.264, no sound (git-ignored). Names stay as they were
+#                        (saved projects relink by name); ffmpeg from PATH or ../website's ffmpeg-static
 # Usage: python tools/build-stock.py [source folder]   (default: ../strodano assets)
-import base64, io, os, shutil, sys
+import base64, io, os, shutil, subprocess, sys
 from PIL import Image
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +29,12 @@ for name, f, mw in IMAGES:
 out.append('};')
 open(os.path.join(web, 'stock-images.js'), 'w', newline='\n').write('\n'.join(out) + '\n')
 os.makedirs(os.path.join(web, 'stock'), exist_ok=True)
+ffmpeg = shutil.which('ffmpeg') or os.path.join(here, '..', '..', 'website', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
 for name, f in VIDEOS:
     p, d = os.path.join(src, f), os.path.join(web, 'stock', name)
-    if os.path.exists(p) and (not os.path.exists(d) or os.path.getsize(d) != os.path.getsize(p)): shutil.copyfile(p, d); print('copied', name)
+    if not os.path.exists(p): print('missing', p); continue
+    # redo when missing, older than the source, or still a full-size copy of it
+    if os.path.exists(d) and os.path.getmtime(d) >= os.path.getmtime(p) and os.path.getsize(d) != os.path.getsize(p): continue
+    subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', '-i', p, '-an', '-vf', 'scale=-2:720,fps=30', '-c:v', 'libx264', '-preset', 'slow',
+                    '-crf', '24', '-maxrate', '2500k', '-bufsize', '5000k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', d], check=True)
+    print(name, os.path.getsize(d) // 1024, 'KB')
