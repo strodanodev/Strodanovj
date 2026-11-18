@@ -29,7 +29,69 @@ function clipOptsFrom(c, j) {
   if (LOOP_MODES.some(m => m[0] === j.loopMode)) c.loopMode = j.loopMode;
   if (SYNC_LENGTHS.some(s => s[0] === j.syncBeats)) c.syncBeats = j.syncBeats;
 }
-function clipOptsCopy(from, to) { clipOptsFrom(to, clipOptsJSON(from)); }
+function clipOptsCopy(from, to) { clipOptsFrom(to, clipOptsJSON(from)); if (from.tr) to.tr = from.tr; if (from.fx) to.fx = from.fx; }
+
+// ---------- size, position, crop and effects of one clip (drawn by engine.js drawClip) ----------
+// c.tr = { s: size, w / h: width and height on top of it, x / y: position (-1..1 of the frame, y up), cl / cr / ct / cb:
+// crop from the left, right, top and bottom (fractions of the picture) }. No c.tr = untouched. c.fx = the clip's effects,
+// the same objects as a layer's (uid, def, params, mix, bypass, mod), so sliders take inputs and MIDI the same way.
+const TR_ID = { s: 1, w: 1, h: 1, x: 0, y: 0, cl: 0, cr: 0, ct: 0, cb: 0 };
+const clipTr = c => c.tr || (c.tr = { ...TR_ID });
+// drop c.tr again when everything is back at its default, so an untouched clip costs nothing
+function clipTrTidy(c) { if (c.tr && Object.keys(TR_ID).every(k => Math.abs(c.tr[k] - TR_ID[k]) < 1e-4)) delete c.tr; }
+function clipLookJSON(c, fxJ) {
+  const o = {};
+  clipTrTidy(c);
+  if (c.tr) o.tr = { ...c.tr };
+  if (c.fx && c.fx.length) o.fx = fxJ(c.fx);
+  return o;
+}
+function clipLookFrom(c, j, fxL) {
+  if (j.tr && typeof j.tr === 'object') {
+    const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d), t = j.tr;
+    c.tr = { s: n(t.s, 1, 0.05, 4), w: n(t.w, 1, 0.05, 4), h: n(t.h, 1, 0.05, 4), x: n(t.x, 0, -2, 2), y: n(t.y, 0, -2, 2),
+      cl: n(t.cl, 0, 0, 0.98), cr: n(t.cr, 0, 0, 0.98), ct: n(t.ct, 0, 0, 0.98), cb: n(t.cb, 0, 0, 0.98) };
+    if (c.tr.cl + c.tr.cr > 0.98) c.tr.cr = 0.98 - c.tr.cl;
+    if (c.tr.ct + c.tr.cb > 0.98) c.tr.cb = 0.98 - c.tr.ct;
+    clipTrTidy(c);
+  }
+  if (Array.isArray(j.fx) && j.fx.length) c.fx = fxL(j.fx);
+}
+// Every clip's effect chain, for the places that look effects up (MIDI, shader renames).
+function clipChains() {
+  const out = [];
+  comp.layers.forEach(L => L.clips.forEach(c => { if (c && c.fx && c.fx.length) out.push([L.name + ' > ' + c.name, c.fx]); }));
+  return out;
+}
+// The fields, shared by the desktop Clip tab and the phone's clip sheet: [label, min, max, step, get, set, format] rows.
+function clipTrFields(c) {
+  const g = k => () => (c.tr ? c.tr[k] : TR_ID[k]), pct = v => Math.round(v * 100) + '%', pos = v => v.toFixed(2);
+  const set = k => v => { clipTr(c)[k] = v; };
+  // opposite crops never meet: at least 2 % of the picture stays
+  const crop = (k, other) => v => { const t = clipTr(c); t[k] = Math.min(v, 0.98 - t[other]); };
+  return [
+    ['Size', 0.05, 4, 0.01, g('s'), set('s'), pct], ['Width', 0.05, 4, 0.01, g('w'), set('w'), pct], ['Height', 0.05, 4, 0.01, g('h'), set('h'), pct],
+    ['Position X', -1, 1, 0.001, g('x'), set('x'), pos], ['Position Y', -1, 1, 0.001, g('y'), set('y'), pos],
+    ['Crop left', 0, 0.98, 0.001, g('cl'), crop('cl', 'cr'), pct], ['Crop right', 0, 0.98, 0.001, g('cr'), crop('cr', 'cl'), pct],
+    ['Crop top', 0, 0.98, 0.001, g('ct'), crop('ct', 'cb'), pct], ['Crop bottom', 0, 0.98, 0.001, g('cb'), crop('cb', 'ct'), pct]];
+}
+// Clip tab (ui.js renderProps, every kind of clip)
+function clipLookUI(c) {
+  const box = el('div', null, el('h4', { textContent: 'Size, position and crop' }));
+  clipTrFields(c).forEach(r => box.append(fld(...r)));
+  box.append(el('div', { className: 'fld' },
+    el('button', { textContent: 'Reset', title: 'Full size, centred, nothing cropped', onclick: () => { delete c.tr; ui.propsDirty = true; } }),
+    el('button', { textContent: 'Fit to crop', title: 'Enlarge and centre what is left after cropping so it fills the frame again', onclick: () => { clipFillCrop(c); ui.propsDirty = true; } })));
+  return box;
+}
+// Zoom into the cropped part: it fills the frame (as far as its shape allows) and sits in the middle.
+function clipFillCrop(c) {
+  const t = c.tr;
+  if (!t) return;
+  const kw = 1 - t.cl - t.cr, kh = 1 - t.ct - t.cb;
+  t.s = Math.min(4, 1 / Math.max(kw, kh)); t.w = t.h = 1;
+  t.x = (t.cr - t.cl) / 2 * t.s; t.y = (t.ct - t.cb) / 2 * t.s;
+}
 
 // Called every frame (vjTick): keeps the playing video clips inside their in / out points, and in time when beat-synced.
 function clipOptsTick() {

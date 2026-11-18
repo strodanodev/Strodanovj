@@ -127,7 +127,7 @@ function warmScene(sc) {
     const L = comp.layers[+li], c = L && L.clips[sc.show[li]];
     if (!L) continue;
     if (c && c.type === 'gen') { const g = DEFS.gen.get(c.gen); if (g) defProg(g); }
-    for (const e of L.fx) { const d = DEFS.fx.get(e.def); if (d) defProg(d); }
+    for (const e of [...L.fx, ...((c && c.fx) || [])]) { const d = DEFS.fx.get(e.def); if (d) defProg(d); }
   }
 }
 // Short label for a planned scene: the clips that are up, bottom layer first.

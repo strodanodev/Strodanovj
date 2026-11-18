@@ -14,13 +14,29 @@ const VDO_SIZES = [['1280x720', '1280 x 720'], ['960x540', '960 x 540 (slow uplo
 const VDO_FPS = [25, 30, 60];
 const VDO_KBPS = [[1500, '1.5 Mbps'], [2500, '2.5 Mbps'], [4000, '4 Mbps'], [6000, '6 Mbps'], [10000, '10 Mbps']];
 const VDO_VIEWER = 'https://vdo.ninja/';
+// The link people get is our own branded viewer (watch.html, served at <site>/live/<name>#<password>): the phone edition's
+// own site when the page runs from one (https, not localhost), else vj.strodano.live. The password rides in the #fragment,
+// so it never reaches a server log. The same stream also plays at vdo.ninja (vdoNinjaLink), e.g. for vdo.ninja's own tools.
+const VDO_SITE = typeof location !== 'undefined' && location.protocol === 'https:' && !/^(localhost|127\.|\[::1\])/.test(location.hostname) ? location.origin : 'https://vj.strodano.live';
+// a link name typed by a person: lower-case letters, digits and _ only (spaces and dashes become _), 4..40 long
+const vdoCleanName = t => String(t || '').trim().replace(/[\s-]+/g, '_').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40).toLowerCase();
 const vdoRand = n => { const a = crypto.getRandomValues(new Uint8Array(n)), c = 'abcdefghijkmnpqrstuvwxyz23456789'; return Array.from(a, b => c[b % c.length]).join(''); };
 // IDs and passwords are letters and digits only: nothing to escape in the link, nothing the SDK rewrites
 function vdoEnsureIds(s) {
   if (!/^[A-Za-z0-9_]{4,64}$/.test(s.vdoId || '')) s.vdoId = 'svj_' + vdoRand(10);
   if (!/^[A-Za-z0-9]{6,64}$/.test(s.vdoPw || '')) s.vdoPw = vdoRand(12);
 }
-function vdoLink(s) { vdoEnsureIds(s); return VDO_VIEWER + '?view=' + s.vdoId + '&password=' + s.vdoPw; }
+function vdoLink(s) { vdoEnsureIds(s); return VDO_SITE + '/live/' + s.vdoId + '#' + s.vdoPw; }
+function vdoNinjaLink(s) { vdoEnsureIds(s); return VDO_VIEWER + '?view=' + s.vdoId + '&password=' + s.vdoPw; }
+// Rename the link (keeps the password). Returns an error message, or '' when done; a live link restarts under the new name.
+function vdoRename(i, text) {
+  const s = screens[i], n = vdoCleanName(text);
+  if (!s) return 'No screen';
+  if (n.length < 4) return 'A link name needs at least 4 letters or digits';
+  if (n === s.vdoId) return '';
+  s.vdoId = n; vdoEnsureIds(s); vdoRestart(i);
+  return '';
+}
 function vdoSize(s) {
   const r = s.vdoRes || '1280x720';
   let w, h;
@@ -138,6 +154,8 @@ function vdoPanel(scr, i) {
       el('button', { textContent: 'Copy link', onclick: () => { (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => setStatus('Link copied: anyone with it can watch'), () => { linkBox.focus(); linkBox.select(); setStatus('Press Ctrl+C to copy the link'); }); } }),
       el('button', { textContent: 'Watch', title: 'Open the link in the browser', onclick: () => window.open(link, '_blank', 'noopener') }),
       el('button', { textContent: 'New link', title: 'New ID and password: the old link stops working', onclick: () => { scr.vdoId = ''; scr.vdoPw = ''; vdoEnsureIds(scr); vdoRestart(i); refreshOutPanels(); } })),
+    el('div', { className: 'fld' }, el('label', { textContent: 'Link name' }), el('input', { type: 'text', value: scr.vdoId, spellcheck: false, title: 'Letters, digits and _ (4 to 40). Pick something only you would use: the old link stops working.',
+      onchange: e => { const err = vdoRename(i, e.target.value); setStatus(err || 'Link renamed: ' + vdoLink(scr)); refreshOutPanels(); } })),
     el('div', { className: 'fld' }, el('label', { textContent: 'Size' }), sel(VDO_SIZES, scr.vdoRes || '1280x720', v => { scr.vdoRes = v; })),
     el('div', { className: 'fld' }, el('label', { textContent: 'Frame rate' }), sel(VDO_FPS.map(v => [v, v + ' fps']), scr.vdoFps || 30, v => { scr.vdoFps = +v; })),
     el('div', { className: 'fld' }, el('label', { textContent: 'Bitrate' }), sel(VDO_KBPS, scr.vdoKbps || 2500, v => { scr.vdoKbps = +v; })),
