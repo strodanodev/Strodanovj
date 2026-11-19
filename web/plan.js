@@ -89,6 +89,20 @@ function entDowngrade() { ent.ticket = ''; ent.plan = 'free'; ent.at = Date.now(
 // Resolves once the stored ticket is checked; features restored at start (DJ mode) wait for it.
 const entReady = ent.token && entStored ? entTake(entStored) : Promise.resolve(false);
 
+// ---------- Strodano VJ Pro bundle ----------
+// The Pro and Festival features (DJ mode, auto-mix, Agent Mode, recording, rekordbox import...) are closed source: they
+// come as pro/pro.js, built into the official app from a private repo (tools/pro.mjs), which sets window.SVJ_PRO. A build
+// of this public repo on its own has every Free feature; a paid feature then says where it comes from.
+const proLoaded = () => typeof window !== 'undefined' && !!window.SVJ_PRO;
+function proGate(feature) {
+  if (!entGate(feature)) return false;
+  if (proLoaded()) return true;
+  const f = ENT_FEATURES[feature];
+  setStatus((f ? f.name : 'This feature') + ' is part of the Strodano VJ app from strodano.live (this build has the Free features only)');
+  return false;
+}
+const agentOn = () => typeof setAgent === 'function' && agent.on;   // not typeof agent: index.html has an element id="agent"
+
 // The plan in force right now.
 function entPlan() {
   if (ENT_DEV && ent.test in ENT_RANK) return ent.test;

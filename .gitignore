@@ -6,3 +6,6 @@ web/stock/
 
 # phone edition build (tools/build-mobile.mjs)
 dist-mobile/
+
+# Strodano VJ Pro, built from the private repo by tools/pro.mjs (closed source: never commit it)
+web/pro/

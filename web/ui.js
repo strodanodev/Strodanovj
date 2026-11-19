@@ -483,8 +483,8 @@ function initMenu() {
     output: () => { $('outModal').hidden = false; renderOutPanels(); },
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),
-    dj: () => toggleDJ(!djUI.open),
-    agent: () => toggleAgentPanel(!agUI.open),
+    dj: () => { if (typeof toggleDJ === 'function') toggleDJ(!djUI.open); else proGate('dj'); },
+    agent: () => { if (typeof toggleAgentPanel === 'function') toggleAgentPanel(!agUI.open); else proGate('agent'); },
     keys: () => toggleKeysHelp(),
     // header Output button: open every screen's output (not the web link: only its own Start puts it on the internet), or close them all when any is live
     outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => { if (screenDevice(s) !== 'vdo') openOnDisplay(i, t[i]); }); } syncOutBtn(); ui.propsDirty = true; },
@@ -600,8 +600,8 @@ function tickUI() {
     if (bar) bar.style.width = a && c && c.video && c.video.duration ? (100 * c.video.currentTime / c.video.duration).toFixed(1) + '%' : '0';
   }));
   const beat = ((Math.floor(comp.beats) % 4) + 4) % 4;
-  tickDJ();
-  tickAgentUI();
+  if (typeof tickDJ === 'function') tickDJ();
+  if (typeof tickAgentUI === 'function') tickAgentUI();
   [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
   if (posSlider && document.activeElement !== posSlider.input && posSlider.video.duration) posSlider.input.value = posSlider.video.currentTime / posSlider.video.duration;
   $('monPrevT').textContent = 'PREVIEW: ' + comp.layers[Math.min(sel.l, comp.layers.length - 1)].name;
@@ -610,7 +610,7 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); initDJ(); buildAgentPanel(); initKeys();
+  initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); if (typeof initDJ === 'function') initDJ(); if (typeof buildAgentPanel === 'function') buildAgentPanel(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) stockComp(); else stockRelink();   // the STRODANO stock show (stock.js) is the default

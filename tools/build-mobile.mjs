@@ -16,6 +16,10 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(ROOT, 'dist-mobile');
 const MEDIA = path.resolve(ROOT, '..', 'website', 'public', 'media'), ASSETS = path.resolve(ROOT, '..', 'strodano assets');
 const fail = m => { console.error('build-mobile: ' + m); process.exit(1); };
 
+// 0. Strodano VJ Pro from the private repo (tools/pro.mjs): the phone site is an official build, so it fails without it
+import { buildPro } from './pro.mjs';
+try { const r = buildPro(); console.log(`build-mobile: Pro ${r.version}, ${r.files} files`); } catch (e) { fail(e.message); }
+
 // start clean, but keep .vercel/ (the link to the Vercel project, so `vercel deploy` keeps deploying to the same one)
 mkdirSync(OUT, { recursive: true });
 for (const f of readdirSync(OUT)) if (f !== '.vercel') rmSync(path.join(OUT, f), { recursive: true, force: true });
@@ -32,7 +36,7 @@ copy('LICENSE', path.join(ROOT, 'LICENSE'));
 
 // 2. the service worker must cache every script the page loads
 const sw = readFileSync(path.join(WEB, 'sw.js'), 'utf8');
-const shell = new Set([...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]));
+const shell = new Set([...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g), ...sw.match(/const OPTIONAL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]));
 const scripts = refs.filter(r => r.endsWith('.js'));
 const uncached = scripts.filter(s => !shell.has(s));
 if (uncached.length) fail('sw.js SHELL is missing ' + uncached.join(', ') + ' (add them and bump VERSION)');

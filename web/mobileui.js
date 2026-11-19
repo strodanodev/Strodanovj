@@ -536,7 +536,8 @@ function renderBroadcast(v) {
 function renderTabs() {
   const t = $('tabs');
   t.textContent = '';
-  for (const [id, label] of TABS) {
+  if (M.tab === 'auto' && !proLoaded()) M.tab = 'perform';   // Agent Mode is Strodano VJ Pro
+  for (const [id, label] of TABS.filter(([id]) => id !== 'auto' || proLoaded())) {
     const b = el('button', { className: M.tab === id ? 'on' : '', ariaLabel: label, onclick: () => { if (M.tab === id) { $('view').scrollTo({ top: 0, behavior: 'smooth' }); return; } M.tab = id; M.dirty = true; $('view').scrollTop = 0; renderTabs(); } });
     const pill = el('span', { className: 'pill' });
     pill.innerHTML = ICONS[id];
@@ -545,12 +546,13 @@ function renderTabs() {
   }
 }
 // What the visible tab is built from. When only thumbnails / playing state / levels change, the view is patched in place.
-const layerSig = () => [M.tab, comp.columns, comp.w, JSON.stringify(comp.agentTags || {}), M.slow, M.prefs.welcomeDone, M.latch, agent.on, agent.hold, agent.vibe, live.src, M.listen, live.fileName,
+const layerSig = () => [M.tab, comp.columns, comp.w, JSON.stringify(comp.agentTags || {}), M.slow, M.prefs.welcomeDone, M.latch, agentOn(), agentOn() && agent.hold, agentOn() && agent.vibe, live.src, M.listen, live.fileName,
   ...comp.layers.map(L => [L.name, L.locked, L.bypass, L.blend, L.fx.length, ...L.clips.map(c => (c ? (c.uid || c.fileName || c.name) + (c.missing ? '!' : '') : ''))].join('|'))].join('§');
 function renderView() {
   const v = $('view'), top = v.scrollTop;
   v.textContent = '';
   M.tiles = []; M.meters = []; M.levels = []; M.scenes = []; M.snapBtns = []; M.layerCards = []; M.goBtn = null;
+  if (M.tab === 'auto' && !proLoaded()) M.tab = 'perform';
   ({ perform: renderPerform, build: renderBuild, library: renderLibrary, auto: renderAuto, broadcast: renderBroadcast })[M.tab](v);
   fillRanges(v);
   v.scrollTop = top;
@@ -612,18 +614,18 @@ function tickUI() {
     M.beatSeen = beat;
     [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
     const r = M.goBtn && M.goBtn.querySelector('.ring');
-    if (r && agent.on) { r.classList.remove('beat'); void r.offsetWidth; r.classList.add('beat'); }
+    if (r && agentOn()) { r.classList.remove('beat'); void r.offsetWidth; r.classList.add('beat'); }
   }
   const bpm = comp.bpm.toFixed(0);
   if ($('bpmVal').textContent !== bpm) $('bpmVal').textContent = bpm;
   // badges over the monitor
-  const isLive = vdoLive().length > 0, badge = (isLive ? 'L' : '') + (agent.on ? 'A' : '') + (safety.black ? 'B' : '');
+  const isLive = vdoLive().length > 0, badge = (isLive ? 'L' : '') + (agentOn() ? 'A' : '') + (safety.black ? 'B' : '');
   if (badge !== M.badge) {
     M.badge = badge;
     const b = $('badge');
     b.textContent = '';
     if (isLive) b.append(el('span', { className: 'live', textContent: 'LIVE' }));
-    if (agent.on) b.append(el('span', { className: 'auto', textContent: 'AUTO' }));
+    if (agentOn()) b.append(el('span', { className: 'auto', textContent: 'AUTO' }));
     if (safety.black) b.append(el('span', { className: 'black', textContent: 'BLACKOUT' }));
   }
   // status messages as a toast
@@ -730,4 +732,4 @@ function resumePlaying() {
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
   loop();
 })();
-window.strodano = { comp, screens, DEFS, mlib, agent, live, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };
+window.strodano = { comp, screens, DEFS, mlib, agent: typeof setAgent === 'function' ? agent : null, live, checkShaders: () => { const bad = []; for (const k of ['fx', 'gen']) for (const d of DEFS[k].values()) { d.tried = false; if (!defProg(d)) bad.push(d.name + ': ' + d.err); } return bad; } };

@@ -57,7 +57,7 @@ const HUE = { magenta: 0.86, cyan: 0.5, yellow: 0.15, violet: 0.75, blue: 0.62 }
 //   STRODANO logo   overlay   locked, always up
 function stockComp() {
   resetComp(5, 8);
-  if (typeof scoreFromJSON === 'function') scoreFromJSON(null);
+  scoreLoad(null);
   if (typeof snapsFromJSON === 'function') snapsFromJSON(null);
   stockMedia();
   const [V, D, S, A, LG] = comp.layers;

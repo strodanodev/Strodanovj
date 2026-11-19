@@ -97,15 +97,17 @@ async function wsFindInFolder() {
 // ---------- the playlist: song order, transition points and mix styles ----------
 // The playlist is remembered per computer by file name + size + date (playlist.js), and a copied file has a new date,
 // so a workspace and a cloud project carry it by file name instead: [{ name, i, o, s, v }] in playing order.
+let wsKeptPlaylist;   // a loaded playlist, kept as it was by a build without Pro (no track list) and saved back unchanged
 function wsPlaylist() {
-  if (typeof crate === 'undefined') return undefined;
+  if (typeof crate === 'undefined') return wsKeptPlaylist;
   const list = crate.tracks.filter(t => t.file).map(t => ({ name: t.file.name, i: typeof t.inAt === 'number' ? +t.inAt.toFixed(3) : undefined, o: typeof t.outAt === 'number' ? +t.outAt.toFixed(3) : undefined,
     s: t.jStyle && t.jStyle !== 'auto' ? t.jStyle : undefined, v: t.jVis && t.jVis !== 'mix' ? t.jVis : undefined }));
   return list.length ? list : undefined;
 }
 // Puts the songs that are in the track list now into the saved order with their saved settings. Returns how many.
 function wsApplyPlaylist(list) {
-  if (!Array.isArray(list) || typeof crate === 'undefined' || !crate.tracks.length) return 0;
+  if (typeof crate === 'undefined') { wsKeptPlaylist = Array.isArray(list) ? list : undefined; return 0; }
+  if (!Array.isArray(list) || !crate.tracks.length) return 0;
   const at = new Map();
   list.slice(0, 5000).forEach((x, i) => { if (x && typeof x.name === 'string' && !at.has(x.name)) at.set(x.name, { i, x }); });
   let n = 0;

@@ -130,7 +130,7 @@ async function connectMidi() {
   if (!navigator.requestMIDIAccess) { setStatus('This browser has no Web MIDI. Use Chrome or Edge.'); return false; }
   try { midi.access = await navigator.requestMIDIAccess(); } catch (e) { setStatus('MIDI access was refused'); return false; }
   // MIDI clock (0xF8 ticks, start / continue / stop, song position) goes to follow.js; everything else is a control
-  const hook = () => { midi.access.inputs.forEach(i => { i.onmidimessage = ev => { if (typeof midiClockMsg === 'function' && midiClockMsg(ev.data, ev.timeStamp)) return; onMidiMessage(ev.data); }; }); ui.propsDirty = true; };
+  const hook = () => { midi.access.inputs.forEach(i => { i.onmidimessage = ev => { if (midiClockMsg(ev.data, ev.timeStamp)) return; onMidiMessage(ev.data); }; }); ui.propsDirty = true; };
   hook();
   midi.access.onstatechange = hook;   // devices plugged in later
   return true;
@@ -172,4 +172,40 @@ function midiPanel() {
     el('button', { textContent: '×', title: 'Remove this mapping', onclick: () => { delete midi.map[k]; saveMidiMap(); markMidi(); ui.propsDirty = true; } }))));
   if (keys.length) box.append(el('button', { textContent: 'Clear all mappings', onclick: () => { midi.map = {}; saveMidiMap(); markMidi(); ui.propsDirty = true; } }));
   return box;
+}
+
+// ---------- MIDI clock in (24 ticks a beat; start, continue, stop, song position): the visuals follow external gear ----------
+const mclk = { ticks: [], count: 0, running: true, lastT: 0, fit: null };
+// Returns true when the message was MIDI clock (midi.js then ignores it).
+function midiClockMsg(data, ts) {
+  const s = data[0], t = (ts || performance.now()) / 1000;
+  if (s === 0xf8) {
+    mclk.count++; mclk.lastT = t;
+    mclk.ticks.push([t, mclk.count / 24]);
+    if (mclk.ticks.length > 97) mclk.ticks.shift();
+    // least-squares line through the last four beats of ticks: steady through USB timing jitter
+    const n = mclk.ticks.length;
+    if (n >= 25) {
+      let tm = 0, bm = 0;
+      for (const [x, y] of mclk.ticks) { tm += x; bm += y; }
+      tm /= n; bm /= n;
+      let sxy = 0, sxx = 0;
+      for (const [x, y] of mclk.ticks) { sxy += (x - tm) * (y - bm); sxx += (x - tm) ** 2; }
+      if (sxx > 0) mclk.fit = { tm, bm, slope: sxy / sxx };
+    }
+    return true;
+  }
+  // start: the first tick after it is beat 0 (a bar start), so count from -1
+  if (s === 0xfa) { mclk.count = -1; mclk.ticks = []; mclk.fit = null; mclk.running = true; return true; }
+  if (s === 0xfb) { mclk.running = true; return true; }
+  if (s === 0xfc) { mclk.running = false; return true; }
+  if (s === 0xf2) { mclk.count = ((data[1] | (data[2] << 7)) * 6) - 1; mclk.ticks = []; mclk.fit = null; return true; }   // song position, in 16ths: the next tick is there
+  return false;
+}
+// { beats, bpm } while clock is arriving (audio.js musicClock asks this after the decks, before the live listener).
+function midiClock() {
+  const now = performance.now() / 1000, f = mclk.fit;
+  if (!f || !mclk.running || now - mclk.lastT > 0.5 || !(f.slope > 0.3 && f.slope < 5)) return null;
+  const t = now - audio.offsetMs / 1000;
+  return { beats: f.bm + (t - f.tm) * f.slope, bpm: f.slope * 60 };
 }

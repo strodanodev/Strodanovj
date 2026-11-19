@@ -64,6 +64,7 @@ async function audiusFile(t) {
 
 // Load a source into the track list / playlist. reorder: put the set in order once its songs are analysed.
 async function audiusLoad(src = audius.src, reorder = true) {
+  if (typeof crate === 'undefined') return;   // the track list is Strodano VJ Pro
   if (audius.busy) { setStatus('Audius: still loading the last set'); return; }
   audius.busy = true; audius.done = 0; audius.total = 0; audius.pending = new Set();   // only this load's songs are put in order
   if (src !== audius.src) { audius.src = src; audius.ordered = false; audiusSave(); }
@@ -142,6 +143,7 @@ function audiusMenu() {
 }
 // On start: the STRODANO set when the track list is still empty once the remembered files are back.
 function initAudius() {
+  if (typeof crate === 'undefined') return;
   if (crate.tracks.length || (audio.decks && audio.decks.some(d => d.file))) return;
   audiusLoad(audius.src, true);   // a set already put in order comes back in that order (playlist.js plSortSaved)
 }

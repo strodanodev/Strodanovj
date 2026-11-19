@@ -32,6 +32,16 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      # Strodano VJ Pro is closed source (private repo, read with a read-only deploy key); the release must have it, so a
+      # missing key or repo fails here rather than shipping a Free-only app.
+      - name: Check out Strodano VJ Pro (private)
+        uses: actions/checkout@v5
+        with:
+          repository: strodanodev/strodano-vj-premium
+          ssh-key: ${{ secrets.PREMIUM_DEPLOY_KEY }}
+          path: premium
+      - name: Build the Pro bundle (web/pro/pro.js)
+        run: node tools/pro.mjs --src premium
       - name: Install
         working-directory: desktop
         run: npm ci

@@ -173,6 +173,7 @@ function monoOf(buf) {
 // Analysis of a track: from the track list's cache when it has one (crate.js), otherwise worked out now.
 async function trackInfo(file, buf) {
   if (typeof crateInfo === 'function') { const i = await crateInfo(file, buf); if (i) return i; }
+  if (typeof analyseAsync !== 'function') throw new Error('Track analysis is part of Strodano VJ Pro');
   return analyseAsync(monoOf(buf), buf.sampleRate);
 }
 // Auto-gain: bring every track's loud part to the same level (-14 dB RMS), within -12..+6 dB.
@@ -195,7 +196,7 @@ musicClock = function () {
   if (!audio.ctx) return null;
   const d = pickClockDeck();
   if (d) return { beats: deckBeats(d, deckHeard(d)), bpm: d.info.bpm * d.rate };
-  const mc = typeof midiClock === 'function' ? midiClock() : null;   // MIDI clock from external gear (follow.js)
+  const mc = midiClock();   // MIDI clock from external gear (midi.js)
   if (mc) return mc;
   return typeof liveClock === 'function' ? liveClock() : null;   // microphone or music file (live.js)
 };
@@ -229,9 +230,10 @@ function audioTick() {
   if (raw.bass > audio.bassAvg + 0.08 && raw.bass > audio.bassPrev + 0.02) audioFeat.kick = 1;
   else audioFeat.kick *= Math.exp(-dt * 9);
   audio.bassPrev = raw.bass;
-  tickMix();   // here rather than in the UI tick, so mixes keep running while the control window is hidden
+  if (typeof tickMix === 'function') tickMix();   // here rather than in the UI tick, so mixes keep running while the control window is hidden
   if (typeof tickFollow === 'function') tickFollow();   // track recognition, before the sections follow it
   if (typeof tickScore === 'function') tickScore();   // before liveTick / agentTick, so they see this frame's deck sections
+  tickTweens();   // look glides: snapshots and section looks (looks.js)
   if (typeof tickCues === 'function') tickCues();     // track score playback
   if (typeof liveTick === 'function') liveTick(dt);
   if (typeof agentTick === 'function') agentTick();
@@ -242,7 +244,7 @@ function audioTick() {
 setInterval(() => { if (audio.ctx && performance.now() - audio.lastT > 250) audioTick(); }, 100);
 // MIDI targets "deck:<A|B>:play | cue | sync | volume | tempo | bass | load" (see midi.js).
 function djMidiTarget(id, what) {
-  if (id === 'mix') return mixMidiTarget(what);
+  if (id === 'mix') return typeof mixMidiTarget === 'function' ? mixMidiTarget(what) : null;
   if (id === 'look') return typeof lookMidiTarget === 'function' ? lookMidiTarget(what) : null;
   const d = audio.decks.find(x => x.id === id);
   if (!d) return null;

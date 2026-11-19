@@ -33,7 +33,7 @@ async function loadMediaFolder() {
   try {
     const before = missingClips(), files = await scanFolder(mediaFolder.handle);
     addMediaFiles(files);
-    crateAdd(files);   // audio files go to the DJ track list
+    if (typeof crateAdd === 'function') crateAdd(files);   // audio files go to the DJ track list (Pro)
     mediaFolder.count = files.length; mediaFolder.state = 'ready';
     const relinked = before - missingClips();
     setStatus(`Media folder "${mediaFolder.handle.name}": ${files.length} file(s)` + (relinked ? `, ${relinked} clip(s) relinked` : '') + (missingClips() ? `, ${missingClips()} still missing` : ''));
@@ -113,7 +113,7 @@ function findMissingFiles() {
 async function readLoose(hs) {
   const files = [];
   for (const h of hs) { try { files.push(await h.getFile()); } catch (e) {} }   // moved or deleted since: skipped
-  if (files.length) { addMediaFiles(files); crateAdd(files); }
+  if (files.length) { addMediaFiles(files); if (typeof crateAdd === 'function') crateAdd(files); }
   return files.length;
 }
 async function reconnectLooseFiles() {

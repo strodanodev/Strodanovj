@@ -26,7 +26,8 @@ See [`web/README.md`](web/README.md) for the full feature guide. In short:
 - **Clips**: in / out points, loop or play-once, and **beat sync** (a clip stretches to 1 beat ... 8 bars and follows the tempo).
 - **Effects**: built-in, camera-reactive "smart" effects, custom GLSL and ISF shaders with a live editor. Any slider can follow a beat LFO, the music, the camera, your hands or a MIDI knob.
 - **Control**: MIDI learn, keyboard shortcuts, **hand gestures** (MediaPipe), 8 **snapshots** (F1-F8), tap tempo.
-- **DJ mode**: two decks with automatic tempo and beat-grid analysis; the visuals follow the music.
+- **Music**: the visuals follow the beat from a microphone, a music file or MIDI clock.
+- **Strodano VJ Pro / Festival** (official app, paid plans): DJ mode with two decks and automatic tempo and beat-grid analysis, auto-mix, section looks, Agent Mode, recording, rekordbox USB import, the premium media pack; Festival adds advanced multi-screen mapping. See [Free and Pro](#free-and-pro).
 - **Output**: multiple screens and slices, corner-pin and mesh warping, masks, soft edges. Each screen goes fullscreen on a display of your choice (it opens by itself when a projector is plugged in), or over the network as **NDI** (Wi-Fi or cable, desktop app; needs the free NDI Tools or NDI Runtime), or over the internet as a **web link** anyone can open in a browser or an OBS Browser Source (peer to peer through [VDO.Ninja](https://vdo.ninja); browser and desktop).
 - **Show safety**: blackout (Shift+B), automatic recovery when the graphics driver resets, the display never sleeps, quitting asks first, autosave.
 
@@ -39,6 +40,8 @@ npm start                 # run the app
 npm run selftest          # boot, shaders, output window, display placement, NDI (if installed), GPU-reset recovery; JSON report
 npm run dist:win          # or dist:mac: installers in desktop/dist
 ```
+
+Building from this repo alone gives the Free app: `npm run dist:*` and the self-test expect the Pro bundle (below), so set `STRODANO_FREE=1` for the self-test and run `npx electron-builder` directly.
 
 `desktop/` is a thin Electron wrapper; the app itself is `web/` (plain HTML + JavaScript, no build step). Releases come from `.github/workflows/desktop.yml`: a `v*` tag builds the installers on Windows and macOS and collects them in a **draft** release.
 
@@ -55,6 +58,10 @@ cmake -S . -B build -G Ninja && cmake --build build
 
 FFGL plugins are scanned from `Documents/Strodano/Plugins`, `Documents/Resolume Arena/Extra Effects`, `Documents/Resolume Avenue/Extra Effects` and a `plugins` folder next to the app.
 
+## Free and Pro
+
+Strodano VJ is **open core**. Everything in this repository is the Free app and stays GPL-3.0. The Pro and Festival features ship only in the official app from [strodano.live](https://www.strodano.live): they are closed source, kept in a private repository and built into the official installers and phone site as `web/pro/pro.js`, and they unlock with a paid plan. A build of this repository has no `pro/pro.js` and runs every Free feature. Versions up to 0.3.6 were released entirely under GPL-3.0 and remain so.
+
 ## License
 
-GPL-3.0. See `LICENSE`. The desktop app uses Electron (MIT), three.js (MIT, `web/vendor/three-LICENSE.txt`) and MediaPipe (Apache-2.0, `web/vendor/mediapipe/LICENSE-Apache-2.0.txt`). The native edition uses FFmpeg, GLFW, Dear ImGui, glad and nlohmann/json under their own licenses.
+This repository: GPL-3.0, see `LICENSE`. The Pro bundle (`web/pro/pro.js`, not in this repository): all rights reserved. The desktop app uses Electron (MIT), three.js (MIT, `web/vendor/three-LICENSE.txt`) and MediaPipe (Apache-2.0, `web/vendor/mediapipe/LICENSE-Apache-2.0.txt`). The native edition uses FFmpeg, GLFW, Dear ImGui, glad and nlohmann/json under their own licenses.

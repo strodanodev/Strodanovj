@@ -703,7 +703,7 @@ function compToJSON() {
     fx: fxJ(comp.fx),
     agentTags: comp.agentTags || {},   // the Agent's column tags (agent.js)
     snapshots: typeof snapsToJSON === 'function' ? snapsToJSON() : undefined,   // snapshots.js
-    score: typeof scoreToJSON === 'function' ? scoreToJSON() : undefined,   // section looks (score.js)
+    score: scoreSave(),   // section looks, cues, segments (Pro: score.js)
     layers: comp.layers.map(L => ({
       name: L.name, locked: L.locked || undefined, agentRole: L.agentRole || undefined, opacity: typeof agentLevel === 'function' ? agentLevel(L) : L.opacity,   /* your level, not the Agent's fade */ blend: L.blend, bypass: L.bypass, solo: L.solo, xfade: L.xfade, scale: L.scale, x: L.x, y: L.y, fit: L.fit, trans: L.trans, transType: L.transType, fx: fxJ(L.fx),
       clips: L.clips.map(c => c && Object.assign(CLIP_TYPES[c.type] ? CLIP_TYPES[c.type].toJSON(c) : c.type === 'gen' ? { type: 'gen', uid: c.uid, gen: c.gen, name: c.name, params: c.params, mod: c.mod } : { type: c.type, name: c.name, fileName: c.fileName, fileSize: c.fileSize || undefined, speed: c.speed, ...(typeof clipOptsJSON === 'function' ? clipOptsJSON(c) : {}) },
@@ -764,14 +764,14 @@ function loadComp(j) {
       }) });
     }
   }
-  if (typeof scoreFromJSON === 'function') scoreFromJSON(j.score);   // after the layers and effects exist: looks refer to them
+  scoreLoad(j.score);   // after the layers and effects exist: looks refer to them
   if (typeof snapsFromJSON === 'function') snapsFromJSON(j.snapshots);
   ui.gridDirty = ui.propsDirty = ui.browserDirty = true;
   return true;
 }
 function demoComp() {
   resetComp(3, 8);
-  if (typeof scoreFromJSON === 'function') scoreFromJSON(null);   // a new composition starts with no section looks
+  scoreLoad(null);   // a new composition starts with no section looks
   if (typeof snapsFromJSON === 'function') snapsFromJSON(null);
   [['Plasma', 'Tunnel', 'Gradient'], ['Lines', 'Checkerboard'], ['Beat Flash']].forEach((row, li) => row.forEach((g, ci) => { comp.layers[li].clips[ci] = genClip(g); }));
   comp.layers[1].blend = 1; comp.layers[2].blend = 1;
@@ -784,3 +784,22 @@ function demoComp() {
   }
   trigger(0, 0);
 }
+
+// Lock a layer: the Agent, section looks and track scores (Strodano VJ Pro) leave it alone. A lock is part of the layer
+// (saved with it), so it holds in any build.
+function toggleLayerLock(li) {
+  const L = comp.layers[li];
+  if (!L) return;
+  L.locked = !L.locked;
+  if (L.locked && typeof agentRelease === 'function') agentRelease(L);   // a layer locked mid-fade gets your level back
+  if (L.locked && typeof quantQ !== 'undefined') quantQ.delete(li);
+  setStatus(L.name + (L.locked ? ' locked: the Agent and auto-score will not touch it' : ' unlocked'));
+  ui.gridDirty = true;
+  if (typeof layerLockChanged === 'function') layerLockChanged();
+}
+
+// Saved parts that belong to Strodano VJ Pro (pro/pro.js). In a build without it they are kept exactly as loaded and
+// written back unchanged, so a save from such a build never wipes a Pro user's section looks, cues or segments.
+const proKept = {};
+const scoreSave = () => (typeof scoreToJSON === 'function' ? scoreToJSON() : proKept.score);
+function scoreLoad(j) { if (typeof scoreFromJSON === 'function') scoreFromJSON(j); else proKept.score = j || undefined; }
