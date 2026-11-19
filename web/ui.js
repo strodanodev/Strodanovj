@@ -252,6 +252,7 @@ function renderOutPanels() {
     el('div', { className: 'fld' }, el('label', { textContent: 'Name' }), el('input', { type: 'text', value: scr.name, onchange: e => { scr.name = e.target.value || scr.name; redo(); } })),
     ...displayPanel(scr, outUI.screen),
     el('button', { textContent: isNdi ? (live ? 'Stop NDI' : 'Start NDI') : isVdo ? (live ? 'Stop web link' : 'Start web link') : live ? 'Close output' : 'Open output', className: live ? 'on' : '', style: { width: '100%' }, onclick: () => { if (live) closeOutput(outUI.screen); else openOnDisplay(outUI.screen, displayFor(outUI.screen)); syncOutBtn(); redo(); } }));
+  if (isNdi && typeof ndiNetSection === 'function') P.append(...ndiNetSection());   // ndi.js: firewall, addresses, adapter / Discovery Server
   const sl = scr.slices[outUI.slice];
   if (!sl) return;
   P.append(el('h4', { textContent: sl.mask ? 'Mask' : 'Slice' }),

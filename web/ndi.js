@@ -58,6 +58,7 @@ async function ndiStart(i) {
   if (s.ndiSend !== n) return false;   // stopped meanwhile
   setStatus('NDI: sending "' + name + '" on the network');
   syncOutBtn(); refreshOutPanels();
+  ndiWarnFirewall();
   return true;
 }
 function ndiStop(s) {
@@ -202,6 +203,106 @@ function ndiPanel(scr, i) {
   else if (n) out.push(el('div', { className: 'hint ndi-meter', textContent: ndiLine(scr) }));
   else out.push(el('div', { className: 'hint', textContent: 'Receivers on the same network (Wi-Fi or cable) see it as "' + ndiName(scr) + '" under this computer\'s name.' }));
   return out;
+}
+// the Network section, under the Start NDI button (ui.js renderOutPanels)
+function ndiNetSection() {
+  const st = ndi.status;
+  if (!ndi.api || (st && !st.ok)) return [];
+  const box = el('div', { className: 'ndi-net' });
+  ndiNetPanel(box);
+  return [el('h4', { textContent: 'Network' }), box];
+}
+
+// --- Network: why another computer may not see the source, and what to do (desktop/ndinet.js, desktop/ndi.js) ---
+// 1. this computer's firewall (checked; Windows: fixed with one admin prompt), 2. the venue network (not fixable from
+// here: the addresses to type into NDI Access Manager on the receiving computer), 3. a Discovery Server and the
+// network adapter NDI uses (app settings; changing them restarts the sender and the running NDI screens).
+ndi.net = null; ndi.netAt = 0; ndi.netBusy = null; ndi.settings = null;
+async function ndiNetCheck(force) {
+  if (!ndi.api || !ndi.api.netcheck) return null;
+  if (ndi.netBusy) return ndi.netBusy;   // one check at a time; callers share it
+  return ndi.netBusy = (async () => {
+    try { ndi.net = await ndi.api.netcheck(!!force); ndi.netAt = Date.now(); }
+    catch (e) { ndi.net = { firewall: { state: 'unknown', error: String(e.message || e) }, addresses: [] }; }
+    finally { ndi.netBusy = null; }
+    return ndi.net;
+  })();
+}
+const ndiFwBad = net => !!net && net.firewall && (net.firewall.state === 'missing' || net.firewall.state === 'blocked');
+function ndiNetPanel(box) {
+  if (!ndi.api.netcheck) { box.append(el('div', { className: 'hint', textContent: 'Update the desktop app for the network check.' })); return; }
+  const fill = () => box.replaceChildren(...ndiNetBody());   // a later fill into a panel rebuilt meanwhile is harmless
+  fill();
+  if (!ndi.net || Date.now() - ndi.netAt > 15000) ndiNetCheck(false).then(fill);
+  if (!ndi.settings) ndi.api.settings().then(s => { ndi.settings = s; fill(); }).catch(() => {});
+}
+function ndiNetBody() {
+  const net = ndi.net, out = [];
+  if (!net) return [el('div', { className: 'hint', textContent: 'Checking the network...' })];
+  const fw = net.firewall || {}, nets = (fw.networks || []).map(n => n.name + ' (' + n.category + ' network)').join(', ');
+  const recheck = el('button', { textContent: 'Check again', onclick: async () => { recheck.disabled = true; await ndiNetCheck(true); refreshOutPanels(); } });
+  // 1. firewall
+  if (fw.state === 'ok') out.push(el('div', { className: 'hint', style: { color: 'var(--ok)' }, textContent: 'Firewall: other computers can connect' + (nets ? ' on ' + nets : '') + '.' }));
+  else if (ndiFwBad(net)) {
+    const fix = el('button', { textContent: 'Allow through the firewall', title: 'Windows asks for admin permission once', onclick: async () => {
+      fix.disabled = true; setStatus('NDI: confirm the Windows prompt to allow Strodano VJ through the firewall');
+      const r = await ndi.api.fixFirewall().catch(e => ({ ok: false, error: String(e.message || e) }));
+      setStatus(r && r.ok ? 'NDI: Strodano VJ is allowed through the firewall' : r && r.cancelled ? 'NDI: the firewall was not changed (the Windows prompt was declined)' : 'NDI: could not change the firewall (' + ((r && r.error) || 'error') + ')');
+      await ndiNetCheck(true); refreshOutPanels();
+    } });
+    out.push(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: (fw.state === 'blocked' ? 'Windows Firewall is set to block Strodano VJ' : 'Windows Firewall has no rule for Strodano VJ') + (nets ? ' on ' + nets : '') + ': other computers cannot see the NDI source (this one still can).' }),
+      el('div', { className: 'fld' }, fix, recheck));
+  } else if (fw.state === 'ask') out.push(el('div', { className: 'hint', textContent: 'macOS firewall is on: when it asks, click Allow. If you clicked Deny: System Settings > Network > Firewall > Options.' }));
+  else if (fw.state === 'offline') out.push(el('div', { className: 'hint', style: { color: 'var(--warn)' }, textContent: 'This computer is not on a network.' }));
+  else out.push(el('div', { className: 'hint', textContent: 'Could not read the firewall. If other computers do not see the source, allow Strodano VJ through it' + (fw.error ? ' (' + fw.error + ')' : '') + '.' }));
+  // 2. addresses, for a receiver that does not find the source by itself
+  const addrs = net.addresses || [], real = addrs.filter(a => !a.virtual && !a.linkLocal);
+  if (addrs.length) {
+    const list = el('div', { className: 'hint', style: { fontFamily: 'var(--mono, monospace)', color: 'var(--fg, inherit)' } });
+    for (const a of addrs) list.append(el('div', { textContent: a.address + '  ' + a.name + (a.linkLocal ? '  (no network)' : a.virtual ? '  (virtual)' : '') }));
+    const copy = el('button', { textContent: 'Copy address', onclick: () => { const t = (real[0] || addrs[0]).address; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => setStatus('Address copied: ' + t), () => setStatus('This computer\'s address: ' + t)); } });
+    out.push(el('div', { className: 'hint', textContent: 'This computer (' + (net.host || '') + '):' }), list,
+      el('div', { className: 'fld' }, copy, ndiFwBad(net) ? null : recheck),
+      el('div', { className: 'hint', textContent: 'Source not showing up on the other computer? There, open NDI Access Manager (free NDI Tools) > Remote Sources, add this address, then restart Resolume / OBS / VDMX. Venue or guest Wi-Fi often keeps devices apart: a cable or your own router is the sure way.' }));
+  }
+  // 3. settings: adapter and Discovery Server
+  const s = ndi.settings;
+  if (s) {
+    const names = [...new Set(real.map(a => a.name))];
+    if (s.adapter && !names.includes(s.adapter)) names.push(s.adapter);
+    const ad = el('select');
+    ad.append(el('option', { value: '', textContent: 'Automatic (all)' }));
+    for (const n of names) ad.append(el('option', { value: n, textContent: n + (real.some(a => a.name === n) ? '' : ' (not connected)') }));
+    ad.value = s.adapter || '';
+    const ds = el('input', { type: 'text', value: s.discovery || '', placeholder: 'none: found automatically', maxLength: 300 });
+    const apply = el('button', { textContent: 'Apply', disabled: true, onclick: () => ndiApplySettings({ adapter: ad.value, discovery: ds.value.trim() }) });
+    const dirty = () => { apply.disabled = ad.value === (s.adapter || '') && ds.value.trim() === (s.discovery || ''); };
+    ad.onchange = dirty; ds.oninput = dirty;
+    out.push(el('div', { className: 'fld' }, el('label', { textContent: 'Adapter' }), ad),
+      el('div', { className: 'fld' }, el('label', { textContent: 'Discovery', title: 'NDI Discovery Server' }), ds),
+      el('div', { className: 'fld' }, apply));
+    if (s.adapterMissing) out.push(el('div', { className: 'hint', style: { color: 'var(--warn)' }, textContent: 'Adapter "' + s.adapter + '" is not connected: NDI uses every adapter.' }));
+    else if (!s.adapter && addrs.some(a => a.virtual)) out.push(el('div', { className: 'hint', textContent: 'This computer has virtual adapters (VPN, WSL, Docker...). If a receiver lists the source but shows no picture, pick the real adapter here.' }));
+    out.push(el('div', { className: 'hint', textContent: 'Discovery Server: only when the venue runs one (address like 192.168.1.10). Every receiver must use the same server (NDI Access Manager > Advanced); NDI apps without it will no longer see this source. Applying restarts NDI: receivers reconnect in a few seconds.' }));
+  }
+  return out;
+}
+// change the adapter / Discovery Server: the desktop restarts the sender, so the running NDI screens are restarted too
+async function ndiApplySettings(s) {
+  const live = [];
+  screens.forEach((x, i) => { if (x.ndiSend) { live.push(i); ndiStop(x); } });
+  let r;
+  try { r = await ndi.api.setSettings(s); } catch (e) { r = { ok: false, error: String(e.message || e) }; }
+  ndi.status = null; ndi.settings = null;
+  for (const i of live) await ndiStart(i);
+  ndi.settings = await ndi.api.settings().catch(() => null);
+  setStatus(r && r.ok ? 'NDI: network settings applied' + (live.length ? ', sources restarted' : '') : 'NDI: ' + ((r && r.error) || 'settings not applied'));
+  refreshOutPanels();
+}
+// once an NDI source is running: say so when this computer's firewall keeps other computers out
+async function ndiWarnFirewall() {
+  const net = await ndiNetCheck(false);
+  if (ndiFwBad(net) && ndiLive().length) setStatus('NDI is on, but Windows Firewall keeps other computers out: Advanced Output > NDI > Allow through the firewall');
 }
 function ndiLine(s) {
   const n = s.ndiSend;

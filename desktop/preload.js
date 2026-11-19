@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     status: () => ipcRenderer.invoke('ndi:status'),
     start: (id, name) => ipcRenderer.invoke('ndi:start', { id: String(id), name: String(name).slice(0, 120) }),
     stop: id => ipcRenderer.invoke('ndi:stop', String(id)),
+    // network check (desktop/ndinet.js): firewall state, this computer's addresses; fix = one Windows admin prompt
+    netcheck: force => ipcRenderer.invoke('ndi:netcheck', !!force),
+    fixFirewall: () => ipcRenderer.invoke('ndi:firewallfix'),
+    // Discovery Server / adapter (desktop/ndi.js); setting them restarts the sender, the page restarts its sources
+    settings: () => ipcRenderer.invoke('ndi:settings'),
+    setSettings: s => ipcRenderer.invoke('ndi:setsettings', { discovery: String((s && s.discovery) || '').slice(0, 300), adapter: String((s && s.adapter) || '').slice(0, 200) }),
   },
   // updates (desktop/updater.js, web/update.js): the state, and the three things the page may ask for
   update: {

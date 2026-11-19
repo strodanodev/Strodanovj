@@ -31,6 +31,7 @@
       "preload.js",
       "ndi.js",
       "ndi-worker.js",
+      "ndinet.js",
       "updater.js",
       "rekordbox.js",
       "package.json",
@@ -67,7 +68,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Strodano VJ"
+      "shortcutName": "Strodano VJ",
+      "include": "res/installer.nsh"
     },
     "mac": {
       "target": [

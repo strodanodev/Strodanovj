@@ -9,6 +9,7 @@
 const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, screen, ipcMain } = require('electron');
 const path = require('path');
 const { setupNdi, stopNdi } = require('./ndi');
+const { setupNdiNet } = require('./ndinet');
 const { setupUpdater } = require('./updater');
 const { setupRekordbox, stopRekordbox } = require('./rekordbox');
 
@@ -195,6 +196,7 @@ app.whenReady().then(() => {
   buildMenu();
   createWindow();
   setupNdi(() => win);
+  setupNdiNet();   // desktop/ndinet.js: NDI network check (firewall, addresses) for the NDI panel
   setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
   updater = setupUpdater(() => win, { selftest, beforeInstall: () => { quitting = true; } });   // desktop/updater.js
   screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
