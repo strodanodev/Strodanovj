@@ -53,7 +53,7 @@ async function vdoInConnect(s) {
       ui.gridDirty = ui.propsDirty = true;
     });
     sdk.addEventListener('peerDisconnected', () => { s.track = null; vdoInWait(s); });
-    sdk.addEventListener('reconnectFailed', () => { s.state = 'error'; s.error = 'lost the connection to vdo.ninja'; vdoInWait(s); });
+    sdk.addEventListener('reconnectFailed', () => { s.state = 'error'; s.error = 'lost the connection to the server'; vdoInWait(s); });
     await sdk.connect();
     if (s.closed) { sdk.disconnect().catch(() => {}); return; }
     await vdoInView(s);
@@ -97,7 +97,7 @@ function vdoInLine(c) {
   if (!s) return '';
   if (s.state === 'live' && s.track) return `Receiving ${c.w ? c.w + ' x ' + c.h : ''} from ${s.p.id}`;
   if (s.state === 'error') return 'Web link input: ' + (s.error || 'error') + ' (trying again)';
-  if (s.state === 'connecting') return 'Connecting to vdo.ninja...';
+  if (s.state === 'connecting') return 'Connecting...';
   return 'Waiting for ' + s.p.id + ' to start sending (press Go live on the phone)';
 }
 CLIP_TYPES.vdoin = {
@@ -110,7 +110,7 @@ CLIP_TYPES.vdoin = {
 // One click: a new top layer called Phone, playing the link
 function vdoInToLayer(link) {
   const c = vdoInClip(link);
-  if (!c) { setStatus('That is not a web link: paste the link the phone shows (https://vdo.ninja/?view=...&password=...)'); return; }
+  if (!c) { setStatus('That is not a web link: paste the link the phone shows'); return; }
   addLayer();
   const li = comp.layers.length - 1;
   comp.layers[li].name = 'Phone';
@@ -130,7 +130,7 @@ SOURCE_PANELS.push(() => {
   box.append(el('div', { className: 'fld' }, inp),
     el('div', { className: 'fld' }, el('button', { textContent: 'Show on a layer', title: 'Adds a top layer playing this web link', onclick: () => vdoInToLayer(inp.value) })),
     el('div', { className: 'list' }, item),
-    el('div', { className: 'hint', textContent: 'Shows a phone running Strodano VJ mobile (or any vdo.ninja link). Set a screen to NDI to pass it on to your NDI network.' }));
+    el('div', { className: 'hint', textContent: 'Shows a phone running Strodano VJ mobile (paste the link it shows). Set a screen to NDI to pass it on to your NDI network.' }));
   return [box];
 });
 setInterval(() => { const m = document.querySelector('.vdoin-line'); if (m) { const c = comp.layers[sel.l] && comp.layers[sel.l].clips[sel.c]; if (c && c.type === 'vdoin') { const t = vdoInLine(c); if (m.textContent !== t) m.textContent = t; } } }, 1000);

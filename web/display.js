@@ -167,7 +167,7 @@ function displayPanel(scr, i) {
   } });
   sel.append(el('option', { value: 'auto', textContent: 'Auto (next external display)' }), el('option', { value: 'window', textContent: 'Window (drag it yourself)' }),
     el('option', { value: 'ndi', textContent: 'NDI (network, Wi-Fi)' + (ndi.api ? '' : ' - desktop app only'), disabled: !ndi.api && screenDevice(scr) !== 'ndi' }),
-    el('option', { value: 'vdo', textContent: 'Web link (internet, vdo.ninja)' }));
+    el('option', { value: 'vdo', textContent: 'Web link (internet)' }));
   for (const d of display.list) sel.append(el('option', { value: d.key, textContent: displayName(d) + ' - ' + displayInfo(d) }));
   const dev = screenDevice(scr);
   if (dev !== 'auto' && dev !== 'window' && dev !== 'ndi' && dev !== 'vdo' && !display.list.some(d => d.key === dev)) sel.append(el('option', { value: dev, textContent: dev.slice(0, dev.lastIndexOf('@')) + ' (not connected)' }));

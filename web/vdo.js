@@ -90,7 +90,7 @@ async function vdoStart(i) {
     sdk.addEventListener('peerDisconnected', e => { n.viewers.delete(e.detail.uuid); upd(); });
     sdk.addEventListener('reconnecting', () => { n.state = 'reconnecting'; });
     sdk.addEventListener('reconnected', () => { n.state = 'live'; });
-    sdk.addEventListener('reconnectFailed', () => { n.state = 'error'; n.error = 'lost the connection to vdo.ninja'; upd(); });
+    sdk.addEventListener('reconnectFailed', () => { n.state = 'error'; n.error = 'lost the connection to the server'; upd(); });
     sdk.addEventListener('error', e => { n.error = String((e.detail && (e.detail.message || e.detail.error)) || 'error'); });
     await sdk.connect();
     if (s.vdoSend !== n) { sdk.disconnect().catch(() => {}); return false; }
@@ -162,14 +162,14 @@ function vdoPanel(scr, i) {
     el('div', { className: 'fld' }, el('label', { textContent: 'Sound' }), el('label', { style: { flex: '1', color: 'var(--dim)' } },
       el('input', { type: 'checkbox', checked: !!scr.vdoAudio, onchange: e => { scr.vdoAudio = e.target.checked; vdoRestart(i); } }), ' Send the music mix')));
   if (n) out.push(el('div', { className: 'hint vdo-meter', textContent: vdoLine(scr) }));
-  else out.push(el('div', { className: 'hint', textContent: 'Peer to peer through vdo.ninja: each viewer takes about ' + ((scr.vdoKbps || 2500) / 1000) + ' Mbps of this computer\'s upload. Anyone with the link can watch.' }));
+  else out.push(el('div', { className: 'hint', textContent: 'Each viewer takes about ' + ((scr.vdoKbps || 2500) / 1000) + ' Mbps of this computer\'s upload. Anyone with the link can watch.' }));
   return out;
 }
 function vdoLine(s) {
   const n = s.vdoSend;
   if (!n) return '';
   if (n.error && n.state !== 'live') return 'Web link error: ' + n.error;
-  if (n.state === 'connecting') return 'Connecting to vdo.ninja...';
+  if (n.state === 'connecting') return 'Connecting...';
   if (n.state === 'reconnecting') return 'Connection lost, reconnecting...';
   const v = n.viewers.size;
   return `Live ${n.w} x ${n.h} at ${n.fpsOut.toFixed(0)} fps, ${v} viewer${v === 1 ? '' : 's'}` + (n.relayed ? ` (${n.relayed} relayed)` : '') + (v ? '' : ' (none yet: open the link)');

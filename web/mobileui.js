@@ -497,7 +497,7 @@ function liveSummary(s) {
   const n = s.vdoSend;
   if (!n) return ['Not live', 'Go live to start sending your output'];
   if (n.error && n.state !== 'live') return ['Problem', n.error];
-  if (n.state === 'connecting') return ['Connecting…', 'Reaching vdo.ninja'];
+  if (n.state === 'connecting') return ['Connecting…', 'Reaching the server'];
   if (n.state === 'reconnecting') return ['Reconnecting…', 'The connection dropped'];
   return ['Live', `${n.w} x ${n.h} at ${n.fpsOut.toFixed(0)} fps` + (n.relayed ? ` · ${n.relayed} relayed` : '')];
 }
