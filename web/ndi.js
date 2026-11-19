@@ -11,7 +11,9 @@
 // 0 dropped); 1080p 18-21 fps (Chromium's loopback upload, ~70 ms per 4 MB frame, is the limit). Tried first and
 // dropped: RGBA through Electron IPC (~25 ms of render thread per 1080p frame), MessagePortMain (stalls the main
 // process), an offscreen window (Electron does not paint offscreen pop-ups), a WebSocket (no faster than POST).
-// At most 2 frames on their way; past that frames are dropped, never queued, so the receiver never lags behind.
+// At most NDI_INFLIGHT (3) frames on their way; past that frames are dropped, never queued, so the receiver never lags
+// behind. Measured 2026-11-19 (same laptop, 165 Hz display, NDI receiver timing every frame): 720p30 30.0 fps, 1 ms
+// spread, 0 dropped; 720p60 ~41 fps and 1080p30 ~21 fps (the loopback upload, ~90 MB/s, is the cap).
 // Screen fields (saved): ndiName, ndiRes 'WxH' | 'comp', ndiFps. Live state (not saved): s.ndiSend.
 'use strict';
 const ndi = {
@@ -24,6 +26,9 @@ const ndi = {
 // 720p30 is the steady one (Wi-Fi: ~60-90 Mbit/s); 1080p reaches ~20 fps (the page's loopback upload is the limit)
 const NDI_SIZES = [['1280x720', '1280 x 720 (best for Wi-Fi)'], ['960x540', '960 x 540 (weak Wi-Fi)'], ['1920x1080', '1920 x 1080 (about 20 fps)'], ['comp', 'Composition size']];
 const NDI_FPS = [25, 30, 50, 60];
+// frames on their way to the sender at once: the loopback round trip is ~30 ms at 720p and ~80 ms at 1080p, so 2 capped
+// 720p60 at ~35 fps and 1080p30 at ~17
+const NDI_INFLIGHT = 3;
 const ndiName = s => (s.ndiName || 'Strodano VJ ' + s.name).trim().slice(0, 100);
 function ndiSize(s) {
   const r = s.ndiRes || '1280x720';
@@ -44,7 +49,7 @@ async function ndiStart(i) {
   const st = await ndiStatus();
   if (!st.ok) { setStatus(st.error); ui.propsDirty = true; refreshOutPanels(); return false; }
   if (s.ndiSend) return true;   // started twice while the status was coming
-  const name = ndiName(s), n = { id: name, name, fbo: null, pack: null, pbos: [], pending: [], k: 0, next: 0, inflight: 0, conns: 0, sent: 0, dropped: 0, fpsOut: 0, n0: 0, t0: performance.now(), w: 0, h: 0, error: '' };
+  const name = ndiName(s), n = { id: name, name, fbo: null, pack: null, pbos: [], pending: [], k: 0, next: 0, inflight: 0, conns: 0, sent: 0, dropped: 0, dropGpu: 0, dropNet: 0, rttMax: 0, fpsOut: 0, n0: 0, t0: performance.now(), w: 0, h: 0, error: '' };
   s.ndiSend = n;
   try {
     const r = await ndi.api.start(name, name);
@@ -105,7 +110,7 @@ onmessage = async e => {
     n.inflight--;
     if (!screens.some(x => x.ndiSend === n)) return;   // stopped meanwhile
     if (!r || r.ok === false) { n.error = (r && r.error) || 'NDI error'; return; }
-    n.error = ''; n.sent++; n.conns = r.conns | 0; n.ms = r.ms; n.rtt = performance.now() - key.at;
+    n.error = ''; n.sent++; n.conns = r.conns | 0; n.ms = r.ms; n.rtt = performance.now() - key.at; if (n.rtt > n.rttMax) n.rttMax = n.rtt;
   };
   return ndi.worker;
 }
@@ -113,14 +118,19 @@ ndi.byKey = new Map(); ndi.seq = 0;
 
 // called from the frame loop (ui.js) after the output windows are drawn
 function ndiTick(now) {
+  // the display's frame interval (smoothed): a send is due on the display frame NEAREST its time, not the first one at or
+  // after it, or display frames landing right on the boundary flip between early and late (16 / 50 ms gaps at 30 on 60 Hz)
+  const tick = ndi.lastNow ? now - ndi.lastNow : 0;
+  ndi.lastNow = now;
+  if (tick > 0 && tick < 100) ndi.tickDt = ndi.tickDt ? ndi.tickDt * 0.95 + tick * 0.05 : tick;
   for (const s of screens) {
     const n = s.ndiSend;
     if (!n) continue;
     ndiCollect(n, s);
     const per = 1000 / (s.ndiFps || 30);
-    if (now < n.next) continue;
+    if (now < n.next - Math.min(per, ndi.tickDt || 0) / 2) continue;
     n.next = now - n.next > per * 3 ? now + per : n.next + per;   // steady pacing; after a stall, start again from now
-    if (n.pending.length >= 2) { n.dropped++; continue; }   // the GPU has not caught up with the last two reads
+    if (n.pending.length >= 2) { n.dropped++; n.dropGpu++; continue; }   // the GPU has not caught up with the last two reads
     const [w, h] = ndiSize(s), size = w * h * 2;
     if (n.w !== w || n.h !== h) { ndiFree(n); n.w = w; n.h = h; }
     if (!n.fbo) { n.fbo = mkFbo(w, h); n.pack = mkFbo(w / 2, h); }
@@ -145,7 +155,7 @@ function ndiCollect(n, s) {
     if (st === gl.TIMEOUT_EXPIRED) return;
     n.pending.shift(); gl.deleteSync(p.fence);
     if (st === gl.WAIT_FAILED || p.w !== n.w || p.h !== n.h) continue;
-    if (n.inflight >= 2) { n.dropped++; continue; }   // the network side is still busy: skip, never queue
+    if (n.inflight >= NDI_INFLIGHT) { n.dropped++; n.dropNet++; continue; }   // the network side is still busy: skip, never queue
     const size = p.w * p.h * 2, i = ndi.pool.findIndex(b => b.byteLength === size);
     const buf = i >= 0 ? ndi.pool.splice(i, 1)[0] : new ArrayBuffer(size);
     const r0 = performance.now();

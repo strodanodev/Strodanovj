@@ -1,16 +1,19 @@
-// Strodano VJ NDI sender thread. GPL-3.0.
+// Strodano VJ NDI sender process (Electron utilityProcess, started by ndi.js). GPL-3.0.
 // Talks to the NDI Runtime the user installed (ndi.video/tools), found at run time and called through koffi (FFI):
 // the NDI SDK is not compiled in or shipped with this GPL app. NDI(R) is a registered trademark of Vizrt NDI AB.
 // Messages in:  {op:'init'} | {op:'create', id, name, groups} | {op:'destroy', id} | {op:'list'}
 // Messages out: {seq, ok, ...result} answering each message's `seq`.
 // Frames do not come through Electron IPC (an 8 MB frame through the context bridge and IPC took ~15 ms of the page's
 // render thread, and MessagePortMain stalled the main process): the page's Web Worker POSTs them straight to this
-// thread's HTTP endpoint on 127.0.0.1 (random port, random token, loopback only):
+// process's HTTP endpoint on 127.0.0.1 (random port, random token, loopback only):
 //   POST /frame?t=<token>&id=<source id>&w=<width>&h=<height>&fps=<rate>   body = UYVY 4:2:2, top row first, w*h*2 bytes
 // -> {ok, conns, ms}. The GPU packs and flips the frame, so this thread hands it to NDI as is (UYVY is NDI's own format).
-// Frames are sent with the synchronous NDI call: it compresses here, on this thread, and its return is the back-pressure.
+// Frames are sent with the synchronous NDI call: it compresses here, in this process, and its return is the back-pressure.
+// clock_video on: NDI holds each send to the frame rate, which evens out the loopback's arrival jitter (measured at
+// 720p30 on the receiver: 1 ms spread, 43 ms worst gap with it; 10 ms spread, 80 ms worst without) for ~1 frame of latency.
 'use strict';
-const { parentPort } = require('worker_threads');
+// utilityProcess: messages arrive as {data}; a worker_threads parent (kept for tools) sends the message itself
+const wt = require('worker_threads').parentPort, parentPort = wt || process.parentPort;
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -71,7 +74,7 @@ function create(id, name, groups) {
   const old = senders.get(id);
   if (old && old.name === name) return { reused: true };   // the page reloaded (GPU reset): receivers stay connected
   if (old) destroy(id);
-  const inst = api.create({ p_ndi_name: name, p_groups: groups || null, clock_video: false, clock_audio: false });
+  const inst = api.create({ p_ndi_name: name, p_groups: groups || null, clock_video: true, clock_audio: false });
   if (!inst) throw new Error('NDI could not create the source "' + name + '" (is the name already used?)');
   senders.set(id, { inst, name });
   return { reused: false };
@@ -115,7 +118,8 @@ function destroy(id) {
   api.destroy(s.inst);
 }
 
-parentPort.on('message', async m => {
+parentPort.on('message', async e => {
+  const m = wt ? e : e.data;
   const reply = (ok, r) => parentPort.postMessage({ seq: m.seq, ok, ...r });
   try {
     if (m.op === 'init') {

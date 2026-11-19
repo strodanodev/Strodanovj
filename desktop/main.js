@@ -164,7 +164,7 @@ function runSelftest() {
         report.ndi = await js(`(async () => { const st = await ndiStatus(); if (!st.ok) return { available: false, error: st.error };
           screens.push({ name: 'NDI test', device: 'ndi', ndiName: 'Strodano VJ selftest', ndiRes: '1280x720', ndiFps: 30, win: null, ctx: null, slices: [newSlice('Slice 1')] });
           const i = screens.length - 1, s = screens[i]; out.testPattern = true; await ndiStart(i); const t0 = performance.now(); await new Promise(r => setTimeout(r, 8000));
-          const n = s.ndiSend || {}, r = { available: true, version: st.version, sent: n.sent, fps: +(n.sent * 1000 / (performance.now() - t0)).toFixed(1), conns: n.conns, dropped: n.dropped, workerMs: n.ms, rttMs: Math.round(n.rtt), readMs: +(n.readMs || 0).toFixed(1), error: n.error || '', label: document.getElementById('outBtn').textContent };
+          const n = s.ndiSend || {}, r = { available: true, version: st.version, sent: n.sent, fps: +(n.sent * 1000 / (performance.now() - t0)).toFixed(1), conns: n.conns, dropped: n.dropped, dropGpu: n.dropGpu, dropNet: n.dropNet, rttMaxMs: Math.round(n.rttMax), workerMs: n.ms, rttMs: Math.round(n.rtt), readMs: +(n.readMs || 0).toFixed(1), error: n.error || '', label: document.getElementById('outBtn').textContent };
           closeOutput(i); screens.splice(i, 1); out.testPattern = false; return r; })()`);
         // rekordbox stick (only where one is plugged in): found by the drive scan, database read, one playlist's songs handed over as files
         report.rekordbox = await js(`(async () => { const st = await window.strodanoDesktop.rekordbox.list(); if (!st.length) return { sticks: 0 };
