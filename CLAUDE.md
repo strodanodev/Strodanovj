@@ -13,7 +13,10 @@ joins them into `web/pro/pro.js` (gitignored, never commit it), which index.html
 in engine.js, `wsKeptPlaylist` in workspace.js). Official builds fail without the private repo: `npm run dist:*`
 (predist), `tools/build-mobile.mjs`, and desktop.yml (checks it out with the read-only deploy key in the
 `PREMIUM_DEPLOY_KEY` secret); the packaged selftest reports `pro` and fails without it unless `STRODANO_FREE=1`.
-Development: `node tools/pro.mjs --watch` rebuilds on every save in the private repo; `--clean` gives the Free build.
+The bundle is minified with esbuild (desktop devDependency, so `npm ci` in desktop/ first; top-level names are kept,
+which the core relies on, and the analysis Worker's `analyseTrack.toString()` still runs on its own; checked 2026-11-20).
+Development: `node tools/pro.mjs --watch` rebuilds unminified on every save in the private repo (`--dev` once);
+`--clean` gives the Free build.
 Never move Free behaviour into the private repo, and never describe Pro internals here.
 
 ## Two editions in this repo

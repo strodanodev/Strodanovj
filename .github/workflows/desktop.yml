@@ -40,11 +40,11 @@ jobs:
           repository: strodanodev/strodano-vj-premium
           ssh-key: ${{ secrets.PREMIUM_DEPLOY_KEY }}
           path: premium
-      - name: Build the Pro bundle (web/pro/pro.js)
-        run: node tools/pro.mjs --src premium
       - name: Install
         working-directory: desktop
         run: npm ci
+      - name: Build the Pro bundle (web/pro/pro.js, minified with desktop's esbuild)
+        run: node tools/pro.mjs --src premium
       - name: Self-test (boot, shaders, output window, GPU-reset recovery)
         working-directory: desktop
         timeout-minutes: 5

@@ -1,7 +1,7 @@
 {
   "name": "strodano-vj",
   "productName": "Strodano VJ",
-  "version": "0.3.6",
+  "version": "0.4.0",
   "description": "Strodano VJ: live visuals, VJ and DJ in one app",
   "main": "main.js",
   "license": "GPL-3.0-only",
@@ -19,7 +19,8 @@
   },
   "devDependencies": {
     "electron": "43.8.10",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "esbuild": "0.25.5"
   },
   "build": {
     "appId": "dev.strodano.vj",
