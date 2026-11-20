@@ -5,7 +5,16 @@ glc.width = 1920; glc.height = 1080;
 const gl = glc.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; throw new Error('WebGL 2 is not available'); }
 const ui = { gridDirty: true, propsDirty: true, browserDirty: true, status: '' };
-function setStatus(s) { ui.status = s; const el = document.getElementById('status'); if (el) el.textContent = s; }
+// The last message (#status). On the desktop page it lights up when it changes and then settles (index.html .fresh);
+// the full text is in its tooltip, because the header cuts a long one short.
+function setStatus(s) {
+  ui.status = s;
+  const el = document.getElementById('status');
+  if (!el) return;
+  el.textContent = s; el.title = s;
+  el.classList.toggle('bad', /^(Error|Could not)|refused|keeps failing/.test(s));
+  el.classList.remove('fresh'); void el.offsetWidth; el.classList.add('fresh');
+}
 
 // ---------- GL helpers ----------
 const VS = `#version 300 es

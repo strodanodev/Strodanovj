@@ -199,7 +199,7 @@ async function wsOpenFolder() {
     wsApplyPlaylist(j.workspace && j.workspace.playlist);
     wsAfterLoad();
     const left = wsWanted().length;
-    setStatus('Opened the workspace "' + dir.name + '"' + (left ? ': ' + left + ' clip file(s) are not in it (Workspace > Find missing files)' : ': every clip found its file') + '. It is now your Media folder.');
+    setStatus('Opened the workspace "' + dir.name + '"' + (left ? ': ' + left + ' clip file(s) are not in it (Project > Find missing files)' : ': every clip found its file') + '. It is now your Media folder.');
   } finally { ws.busy = false; }
 }
 
@@ -235,7 +235,7 @@ async function wsCloud(note) {
     wsAfterLoad(); entClose();
     if (typeof stockRelink === 'function') stockRelink();
     const left = wsWanted().length;
-    setStatus('Opened "' + p.name + '" from the cloud' + (left ? ': ' + left + (typeof M !== 'undefined' ? ' clip file(s) are not on this phone yet: import them in Library.' : ' clip file(s) are not on this computer yet. Use Workspace > Open a workspace folder, or Find missing files.') : ''));
+    setStatus('Opened "' + p.name + '" from the cloud' + (left ? ': ' + left + (typeof M !== 'undefined' ? ' clip file(s) are not on this phone yet: import them in Library.' : ' clip file(s) are not on this computer yet. Use Project > Open a workspace folder, or Find missing files.') : ''));
   };
   const rows = projects.map(p => el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderTop: '1px solid var(--line)', flexWrap: 'wrap' } },
     el('div', { style: { flex: '1 1 120px', minWidth: '0' } },
@@ -267,6 +267,11 @@ function wsToggleMenu() {
     style: { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: '0', background: 'none', height: 'auto', opacity: off ? '.5' : '1' } },
     el('div', { textContent: title }), el('div', { textContent: hint, style: { color: 'var(--dim)', fontSize: '12px', whiteSpace: 'normal' } }));
   ws.menu = el('div', { role: 'menu', style: { position: 'fixed', left: Math.max(8, Math.min(r.left, innerWidth - 328)) + 'px', top: r.bottom + 4 + 'px', zIndex: '20', width: '320px', boxSizing: 'border-box', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '4px', boxShadow: '0 12px 40px rgba(0,0,0,.7)' } },
+    item('New project', 'Start again from the starter show', () => entDialog('PROJECT', 'Start a new project?', 'It replaces the project on screen. Save it first if you want to keep it.',
+      [entBtn('Cancel', entClose), entBtn('New project', () => { entClose(); menuAct('new'); }, true)])),
+    item('Open a project file...', 'Load a .svj file from this computer', () => menuAct('open')),
+    item('Save as a file', 'Download composition.svj (the Save button)', () => menuAct('save')),
+    el('div', { style: { height: '1px', background: 'var(--line)', margin: '4px 8px' } }),
     item('Cloud projects...', 'Save this project to your account, or open one you saved', () => wsCloud()),
     item('Collect files into a folder...', 'Copy the project and every file it uses into one folder, for a USB stick', wsCollect, !canPickFolder),
     item('Open a workspace folder...', 'Load a collected folder: the project and all its files', wsOpenFolder, !canPickFolder),

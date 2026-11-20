@@ -17,29 +17,54 @@ const KEYS_HELP = [
   ['\\', 'Speed of that clip back to 1x'],
   ['Space', 'Tap tempo'],
   ['R', 'Resync the beat'],
-  ['?', 'Show or hide this list'],
+  ['?', 'Show or hide this list (Settings > Shortcuts)'],
 ];
 function typingIn(t) {
   if (!t || !t.tagName) return false;
   if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
   return t.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'file'].includes(t.type);
 }
-// The Shortcuts popup: Keyboard (this list) and Controllers (ctlmap.js: every control of a device and what it does).
-let keysTab = 'keys';
+// The Settings popup (#keysModal): General (prefsUI below: the app's preferences in one place), Shortcuts (the list
+// above) and Controllers (midi.js midiPanel: devices, pickup, export; ctlmap.js: every control of a device and what it does).
+// No `show` = toggle, but asking for another tab while it is open switches to that tab instead of closing.
+let keysTab = 'prefs';
 function toggleKeysHelp(show, tab) {
-  const m = $('keysModal');
+  const m = $('keysModal'), other = !!tab && tab !== keysTab;
   if (tab) keysTab = tab;
-  m.hidden = show === undefined ? !m.hidden : !show;
+  m.hidden = show === undefined ? (other ? false : !m.hidden) : !show;
   if (!m.hidden) drawKeysTabs();
 }
 function drawKeysTabs() {
-  const ctl = keysTab === 'ctl' && typeof ctlMapUI === 'function';
-  $('keysTabs').replaceChildren(tabs([['keys', 'Keyboard'], ['ctl', 'Controllers']], ctl ? 'ctl' : 'keys', t => { keysTab = t; drawKeysTabs(); }));
-  $('keysModal').classList.toggle('wide', ctl);
-  $('keysBody').hidden = ctl;
-  $('ctlMapBody').hidden = !ctl;
-  if (ctl) ctlMapUI();
+  const t = keysTab === 'ctl' && typeof ctlMapUI !== 'function' ? 'keys' : keysTab;
+  $('keysTabs').replaceChildren(tabs([['prefs', 'General'], ['keys', 'Shortcuts'], ['ctl', 'Controllers']], t, x => { keysTab = x; drawKeysTabs(); }));
+  $('keysModal').classList.toggle('wide', t === 'ctl');
+  $('prefsBody').hidden = t !== 'prefs';
+  $('keysBody').hidden = t !== 'keys';
+  $('ctlTab').hidden = t !== 'ctl';
+  if (t === 'ctl') { $('ctlSetBody').replaceChildren(midiPanel(true)); ctlMapUI(); }
+  if (t === 'prefs') prefsUI();
 }
+// General tab. The theme swatches (theme.js) and the resolution list (ui.js) are fixed elements in index.html; the
+// rest is drawn here from the modules that own each preference, so nothing is stored twice.
+function prefsUI() {
+  const box = $('prefsDyn'), close = () => toggleKeysHelp(false);
+  const row = (label, ...kids) => el('div', { className: 'fld' }, el('label', { textContent: label }), ...kids);
+  const text = s => el('span', { textContent: s });
+  box.replaceChildren(
+    el('h4', { textContent: 'Output' }),
+    row('Displays', el('label', { className: 'chk', title: 'Open outputs fullscreen when their display is connected, close them when it is unplugged' },
+      el('input', { type: 'checkbox', checked: display.autoOut, onchange: e => { display.autoOut = e.target.checked; saveDisplayPref(); if (display.autoOut) syncDisplays(display.list.map(d => d.key)); if (!$('outModal').hidden) renderOutPanels(); } }),
+      ' Auto output: open on a display when it is connected')),
+    row('Mapping', text('Screens, slices, warping and masks'), el('button', { textContent: 'Advanced Output...', onclick: () => { close(); $('outModal').hidden = false; renderOutPanels(); } })),
+    el('h4', { textContent: 'Window' }),
+    row('Panels', text('Sizes and minimised panels'), el('button', { textContent: 'Reset layout', title: 'Every panel back to its automatic size, none minimised', onclick: () => { pnl.sizes = {}; pnl.min = {}; panelSave(); panelSync(); setStatus('Panels are back to their automatic sizes'); } })),
+    row('Full screen', text('Hides the menu bar for more room (F11)'), el('button', { textContent: 'Full screen', onclick: () => appFullscreen() })),
+    el('h4', { textContent: 'Account' }),
+    row('Plan', text(ent.token ? 'Signed in: ' + ENT_NAMES[entPlan()] : 'Not signed in (Free)'), el('button', { textContent: ent.token ? 'Account...' : 'Sign in', className: ent.token ? '' : 'on', onclick: entAccount })));
+  if (upd.api) box.append(el('h4', { textContent: 'Updates' }),
+    row('Version', text(upd.s && upd.s.current ? 'Strodano VJ ' + upd.s.current : 'Strodano VJ'), el('button', { textContent: 'Check for updates', onclick: () => { upd.api.check(); setStatus('Checking for a newer version...'); } })));
+}
+window.addEventListener('strodano-plan', () => { if (!$('keysModal').hidden && keysTab === 'prefs') prefsUI(); });
 // Full screen for the control window: the desktop app hides its menu bar too (desktop/main.js); a browser uses the page's.
 function appFullscreen(on) {
   const d = window.strodanoDesktop && window.strodanoDesktop.fullscreen;
@@ -59,7 +84,7 @@ function setCrossfade(v) { comp.crossfade = Math.min(1, Math.max(0, v)); reflect
 function onShortcut(e) {
   if (e.key === 'Escape' && !$('keysModal').hidden) { toggleKeysHelp(false); return true; }
   if (e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target) || !$('shModal').hidden) return false;
-  if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) { toggleKeysHelp(); return true; }
+  if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) { toggleKeysHelp(undefined, 'keys'); return true; }
   const L = comp.layers[sel.l], digit = /^Digit(\d)$/.exec(e.code), fkey = /^F([1-8])$/.exec(e.code);
   if (fkey) { if (!e.repeat) { if (e.shiftKey) snapStore(+fkey[1] - 1); else snapRecall(+fkey[1] - 1); } return true; }   // snapshots.js
   if (digit) {

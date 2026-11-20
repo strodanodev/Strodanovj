@@ -457,7 +457,7 @@ function ctlSend(dev, msg) {
 function ctlGreet(dev) {
   const d = midi.devs[dev], p = d.profile;
   for (const k in fb.sent) if (k.startsWith(dev + '|')) delete fb.sent[k];   // a re-plugged device starts dark: send every LED again
-  if (!p) { setStatus('New MIDI device: ' + d.name + '. Set it up in one go under Composition > Controllers > Set up, or map controls one by one with the MIDI button.'); return; }
+  if (!p) { setStatus('New MIDI device: ' + d.name + '. Set it up in one go under Settings > Controllers > Set up, or map controls one by one with the MIDI button.'); return; }
   if (p.grid) { ctlWin.w = p.grid.w; ctlWin.h = p.grid.h; }
   midi.shiftHeld[dev] = false;
   let ok = true;
@@ -606,7 +606,7 @@ if (typeof window !== 'undefined') {
 }
 
 // ---------- the Controllers section of the Composition tab: devices, mappings, pickup, export / import ----------
-function ctlChanged() { saveMidiMap(); markMidi(); ui.propsDirty = true; }
+function ctlChanged() { saveMidiMap(); markMidi(); ui.propsDirty = true; if (typeof drawKeysTabs === 'function' && !$('keysModal').hidden) drawKeysTabs(); }
 // A device's own mappings follow it to a new device id (a profile made for it, or deleted). Existing ones there win.
 function ctlMoveKeys(from, to) {
   if (from === to) return;
@@ -637,17 +637,18 @@ function ctlImportFile() {
   };
   inp.click();
 }
-function midiPanel() {
-  const box = el('div', null, el('h4', { textContent: 'Controllers' }));
+// inTab: drawn at the top of Settings > Controllers (keys.js), right above the mapping editor
+function midiPanel(inTab) {
+  const box = el('div', null, el('h4', { textContent: inTab ? 'Devices' : 'Controllers' }));
   const devs = Object.keys(midi.devs);
   box.append(el('div', { className: 'hint', textContent: devs.length ? 'Connected: ' + devs.map(d => midi.devs[d].name + (midi.devs[d].profile && midi.devs[d].profile.name !== midi.devs[d].name ? ' (' + midi.devs[d].profile.name + ' profile)' : '')).join(', ')
     : !navigator.requestMIDIAccess ? 'Web MIDI is not available in this browser. A gamepad works: press any button on it.'
-    : !midi.access ? 'Click MIDI in the menu bar to connect a MIDI controller and map controls, or press a button on a gamepad.' : 'No controller connected.' }));
+    : !midi.access ? 'Click the MIDI button in the sidebar to connect a MIDI controller and map controls, or press a button on a gamepad.' : 'No controller connected.' }));
   box.append(el('div', { className: 'hint', textContent: ctlSignedIn() ? 'Synced with your Strodano account' + (ctlSync.dirty ? ' (changes waiting to be sent)' : '') : 'Sign in to keep these mappings on every computer you use' }));
   box.append(el('label', { className: 'chk', title: 'A knob or fader that does not match the value on screen takes over only when it reaches it, so nothing jumps' },
     el('input', { type: 'checkbox', checked: midi.pickup, onchange: e => { midi.pickup = e.target.checked; saveMidiMap(); } }), ' Pickup: faders take over only when they reach the value'));
-  if (typeof ctlMapUI === 'function') box.append(el('div', { className: 'fld' }, el('span', { textContent: Object.keys(midi.map).length + ' mapping' + (Object.keys(midi.map).length === 1 ? '' : 's') + ' made by hand', style: { flex: '1' } }),
-    el('button', { className: 'on', textContent: 'Edit mappings...', title: 'Every control of each device and what it does (also in the Shortcuts popup, ?)', onclick: () => toggleKeysHelp(true, 'ctl') })));
+  if (typeof ctlMapUI === 'function' && !inTab) box.append(el('div', { className: 'fld' }, el('span', { textContent: Object.keys(midi.map).length + ' mapping' + (Object.keys(midi.map).length === 1 ? '' : 's') + ' made by hand', style: { flex: '1' } }),
+    el('button', { className: 'on', textContent: 'Edit mappings...', title: 'Every control of each device and what it does (Settings > Controllers)', onclick: () => toggleKeysHelp(true, 'ctl') })));
   // mappings, grouped by device (the phone page, which has no Controllers tab)
   const byDev = {};
   if (typeof ctlMapUI !== 'function')

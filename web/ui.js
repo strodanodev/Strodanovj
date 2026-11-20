@@ -125,7 +125,8 @@ function renderProps() {
     const fm = fld('Master', 0, 1, 0.001, () => comp.master, v => { comp.master = v; reflectMidi('master', v); });
     const fx = fld('Crossfader', 0, 1, 0.001, () => comp.crossfade, v => { comp.crossfade = v; $('xf').value = v; });
     fm.slider.dataset.midi = 'master'; fx.slider.dataset.midi = 'crossfade';
-    p.append(fm, fx, el('div', { className: 'hint', textContent: `Resolution ${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }), chainUI(comp.fx), snapPanel(), midiPanel());
+    p.append(fm, fx, el('div', { className: 'fld' }, el('span', { className: 'hint', style: { flex: '1' }, textContent: `${comp.w} x ${comp.h}, ${comp.layers.length} layers, ${comp.columns} columns` }),
+      el('button', { textContent: 'Resolution...', title: 'Change the composition resolution (Settings)', onclick: () => toggleKeysHelp(true, 'prefs') })), chainUI(comp.fx), snapPanel());
   } else if (propTab === 'layer') {
     const fo = fld('Opacity', 0, 1, 0.001, () => L.opacity, v => { L.opacity = v; reflectMidi('layer:' + sel.l + ':opacity', v); });
     fo.slider.dataset.midi = 'layer:' + sel.l + ':opacity';
@@ -476,6 +477,7 @@ function syncOutBtn() {
   const where = on ? outputWhere() : '', t = 'Output' + (where ? ' > ' + where : '');
   if (b.lastChild.textContent !== t) b.lastChild.textContent = t;
 }
+let menuAct = () => {};   // run a menu action by name from another module (the Project menu, workspace.js)
 function initMenu() {
   const acts = {
     new: () => { stockComp(); sel.l = 0; sel.c = -1; },
@@ -487,17 +489,17 @@ function initMenu() {
     media: addMediaPicker,
     addLayer: () => { addLayer(); sel.l = comp.layers.length - 1; sel.c = -1; ui.propsDirty = true; },
     addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
-    delLayer: () => { const L = comp.layers[sel.l]; if (L) armThen($('delLayerBtn'), 'delete ' + L.name + ' (the selected layer)', () => deleteLayer(sel.l)); },
     output: () => { $('outModal').hidden = false; renderOutPanels(); },
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),
     dj: () => { if (typeof toggleDJ === 'function') toggleDJ(!djUI.open); else proGate('dj'); },
     agent: () => { if (typeof toggleAgentPanel === 'function') toggleAgentPanel(!agUI.open); else proGate('agent'); },
-    keys: () => toggleKeysHelp(),
+    settings: () => toggleKeysHelp(undefined, 'prefs'),
     fullscreen: () => appFullscreen(),
     // header Output button: open every screen's output (not the web link: only its own Start puts it on the internet), or close them all when any is live
     outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => { if (screenDevice(s) !== 'vdo') openOnDisplay(i, t[i]); }); } syncOutBtn(); ui.propsDirty = true; },
   };
+  menuAct = a => { if (acts[a]) acts[a](); };
   const onAct = e => { const b = e.target.closest && e.target.closest('[data-act]'), a = b && b.dataset.act; if (a && acts[a]) acts[a](); };
   $('menubar').addEventListener('click', onAct); $('sidebar').addEventListener('click', onAct);
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
