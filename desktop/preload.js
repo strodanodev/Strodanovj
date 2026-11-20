@@ -42,5 +42,11 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     load: () => ipcRenderer.sendSync('pro:load'),
     save: b => ipcRenderer.invoke('pro:save', { manifest: String(b && b.manifest), sig: String(b && b.sig), code: String(b && b.code) }),
   },
+  // the control window's full screen (the menu bar hides while it is on; the state is kept across starts)
+  fullscreen: {
+    get: () => ipcRenderer.invoke('window:fullscreen', null),
+    set: on => ipcRenderer.invoke('window:fullscreen', !!on),
+    onChange: fn => { ipcRenderer.on('window:fullscreen', (e, on) => fn(!!on)); },
+  },
   identify: marks => ipcRenderer.invoke('displays:identify', (Array.isArray(marks) ? marks : []).slice(0, 16).map(m => ({ id: Number(m.id), text: String(m.text).slice(0, 80) }))),
 });

@@ -24,10 +24,31 @@ function typingIn(t) {
   if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
   return t.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'file'].includes(t.type);
 }
-function toggleKeysHelp(show) {
+// The Shortcuts popup: Keyboard (this list) and Controllers (ctlmap.js: every control of a device and what it does).
+let keysTab = 'keys';
+function toggleKeysHelp(show, tab) {
   const m = $('keysModal');
+  if (tab) keysTab = tab;
   m.hidden = show === undefined ? !m.hidden : !show;
+  if (!m.hidden) drawKeysTabs();
 }
+function drawKeysTabs() {
+  const ctl = keysTab === 'ctl' && typeof ctlMapUI === 'function';
+  $('keysTabs').replaceChildren(tabs([['keys', 'Keyboard'], ['ctl', 'Controllers']], ctl ? 'ctl' : 'keys', t => { keysTab = t; drawKeysTabs(); }));
+  $('keysModal').classList.toggle('wide', ctl);
+  $('keysBody').hidden = ctl;
+  $('ctlMapBody').hidden = !ctl;
+  if (ctl) ctlMapUI();
+}
+// Full screen for the control window: the desktop app hides its menu bar too (desktop/main.js); a browser uses the page's.
+function appFullscreen(on) {
+  const d = window.strodanoDesktop && window.strodanoDesktop.fullscreen;
+  if (d) { d.get().then(cur => d.set(on === undefined ? !cur : on)); return; }
+  const cur = !!document.fullscreenElement, want = on === undefined ? !cur : on;
+  if (want && !cur) document.documentElement.requestFullscreen().catch(() => setStatus('Full screen was refused: press F11'));
+  else if (!want && cur) document.exitFullscreen().catch(() => {});
+}
+function fsReflect(on) { const b = $('fsBtn'); if (b) { b.classList.toggle('on', on); b.title = on ? 'Leave full screen (F11)' : 'Full screen (F11): hides the menu bar for more room'; } }
 function selectLayer(i) {
   i = Math.min(comp.layers.length - 1, Math.max(0, i));
   if (i === sel.l) return;
@@ -71,6 +92,8 @@ function initKeys() {
   $('keysBody').append(...KEYS_HELP.map(([k, what]) => el('div', { className: 'fld' }, el('label', { textContent: k }), el('span', { textContent: what }))));
   // Capture phase, so a focused slider or button does not also act on the key (arrows, Space).
   document.addEventListener('keydown', e => { if (onShortcut(e)) e.preventDefault(); }, true);
+  const d = window.strodanoDesktop && window.strodanoDesktop.fullscreen;
+  if (d) { d.get().then(fsReflect); d.onChange(fsReflect); } else document.addEventListener('fullscreenchange', () => fsReflect(!!document.fullscreenElement));
   // a nudge key let go ends its push, even when focus moved to a text field meanwhile; leaving the window ends every key push
   document.addEventListener('keyup', e => { if (e.code === 'Comma' || e.code === 'Period') nudgeSet('key:' + e.code, 0, 0); }, true);
   window.addEventListener('blur', () => nudgeEnd('key:'));

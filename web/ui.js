@@ -494,6 +494,7 @@ function initMenu() {
     dj: () => { if (typeof toggleDJ === 'function') toggleDJ(!djUI.open); else proGate('dj'); },
     agent: () => { if (typeof toggleAgentPanel === 'function') toggleAgentPanel(!agUI.open); else proGate('agent'); },
     keys: () => toggleKeysHelp(),
+    fullscreen: () => appFullscreen(),
     // header Output button: open every screen's output (not the web link: only its own Start puts it on the internet), or close them all when any is live
     outWin: () => { if (liveScreens().length || ndiLive().length || vdoLive().length) screens.forEach((s, i) => closeOutput(i)); else { const t = displayTargets(); screens.forEach((s, i) => { if (screenDevice(s) !== 'vdo') openOnDisplay(i, t[i]); }); } syncOutBtn(); ui.propsDirty = true; },
   };

@@ -81,7 +81,21 @@
     if (!shift) rows.push(['Master', 'master'], ['Crossfader', 'crossfade'], ['Stop All Clips', 'stopall'], ['Tap · Nudge − / +', null, 'Tap tempo · nudge the selected layer\'s clip'], ['Tempo knob', 'bpm'], ['Play · Record', null, 'Resync · record']);
     return rows;
   }
+  // Names for the Controllers tab (ctlmap.js)
+  const NAMES = { 81: 'Stop All Clips', 91: 'Play', 93: 'Record', 94: 'Bank ▲', 95: 'Bank ▼', 96: 'Bank ▶', 97: 'Bank ◀', 98: 'Shift', 99: 'Tap Tempo', 100: 'Nudge −', 101: 'Nudge +',
+    58: 'Device ◀', 59: 'Device ▶', 60: 'Bank ◀ (device)', 61: 'Bank ▶ (device)', 62: 'Device On/Off', 63: 'Device Lock', 64: 'Clip/Device View', 65: 'Detail View',
+    87: 'Pan', 88: 'Sends', 89: 'User', 90: 'Metronome', 102: 'Session' };
+  const TRACK = { 48: 'Record Arm', 49: 'Solo', 50: 'Activator', 51: 'Track Select', 52: 'Clip Stop' };
+  function label(k) {
+    const [t, ch, n] = k.split(':').map((v, i) => (i ? +v : v));
+    if (t === 'note' && n < 40 && ch === 0) return 'Pad ' + (n % 8 + 1) + ', row ' + (5 - Math.floor(n / 8));
+    if (t === 'note' && n >= 82 && n <= 86) return 'Scene launch ' + (n - 81);
+    if (t === 'note' && TRACK[n]) return TRACK[n] + ' ' + (ch + 1);
+    if (t === 'note' && NAMES[n]) return NAMES[n];
+    return null;
+  }
   registerProfile({
+    label,
     id: 'apc40mk2', name: 'AKAI APC40 mkII', match: { midiPort: '^APC40 mkII' }, overlay, overlayOnShift: true,
     init: [[0xf0, 0x47, 0x7f, 0x29, 0x60, 0x00, 0x04, 0x41, 0x01, 0x00, 0x00, 0xf7]],   // Ableton Live mode
     grid: { w: 8, h: 5 }, shift: 'note:0:98', controls, defaults, shiftDefaults, leds,

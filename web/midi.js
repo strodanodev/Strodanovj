@@ -22,7 +22,7 @@ const ENC_STYLES = ['twos', 'sign', 'offset'];
 const encDelta = (r, style) => (style === 'offset' ? r - 64 : r === 0 || r === 64 ? 0 : r < 64 ? r : style === 'sign' ? -(r - 64) : r - 128);
 // map: full key -> target id ('' = switched off: hides a profile's default). devs: dev id -> { kind, name, profile, input, output }
 // capture: { dev, fn(type, ch, n, val, raw) } while the setup wizard (ctlwizard.js) listens to a device: its input drives nothing
-const midi = { capture: null, access: null, sysex: false, map: {}, kinds: {}, stick: {}, pickup: true, userProfiles: [], learn: false, target: null, devs: {}, shiftHeld: {} };
+const midi = { capture: null, pick: null, access: null, sysex: false, map: {}, kinds: {}, stick: {}, pickup: true, userProfiles: [], learn: false, target: null, devs: {}, shiftHeld: {} };
 const CONTROLLER_PROFILES = [];               // built-in profiles (registerProfile); user profiles live in midi.userProfiles
 function registerProfile(p) { if (validProfile(p)) CONTROLLER_PROFILES.push(p); }
 const allProfiles = () => CONTROLLER_PROFILES.concat(midi.userProfiles);
@@ -99,6 +99,7 @@ function midiTarget(id) {
   if (a === 'win') return { fire: () => ctlWinMove(b) };
   if (a === 'focus') return focusTarget(b);
   if (a === 'stopall') return { fire: () => comp.layers.forEach((_, i) => eject(i)) };
+  if (a === 'fullscreen') return typeof appFullscreen === 'function' ? { fire: () => appFullscreen() } : null;
   if (a === 'bpm') return { step: n => { comp.bpm = Math.min(300, Math.max(20, Math.round((comp.bpm + n * 0.1) * 10) / 10)); if (typeof syncTransport === 'function') syncTransport(); } };
   if (a === 'fx') {
     const f = findFx(b);
@@ -141,6 +142,7 @@ function midiLabel(id) {
   if (a === 'win') return 'Move the controller grid ' + b;
   if (a === 'focus') return /^\d+$/.test(b) ? 'Focused parameter ' + (+b + 1) : { reset: 'Focused parameters to default', prev: 'Previous effect', next: 'Next effect', 'page-': 'Previous parameters', 'page+': 'Next parameters', bypass: 'Focused effect on/off' }[b] || b;
   if (a === 'stopall') return 'Stop all clips';
+  if (a === 'fullscreen') return 'Full screen on / off';
   if (a === 'bpm') return 'Tempo';
   if (a === 'layer' && c === 'select') return ln(b) + ' select';
   if (a === 'fx') {
@@ -254,6 +256,7 @@ function onInputEvent(type, ch, n, val, dev = '*', raw) {
   if (midi.capture && midi.capture.dev === dev) { midi.capture.fn(type, ch, n, val, raw ?? Math.round(val * 127)); return; }   // the setup wizard listens
   let k = type + ':' + ch + ':' + n;
   if (p && typeof p.alias === 'function') k = p.alias(k) || k;   // one key for a control that sends on several channels
+  if (typeof ctlMapSeen === 'function') ctlMapSeen(dev, k);   // the Controllers tab lights this control's row
   if (p && p.shift === k) {   // the profile's Shift button only switches layers (and, held, shows the overlay when the profile says so)
     midi.shiftHeld[dev] = val > 0;
     if (p.overlayOnShift) ctlOverlay(dev, val > 0, 400); else if (ovl.dev === dev) ctlOverlayDraw();
@@ -527,16 +530,17 @@ async function setMidiLearn(on) {
 }
 function initMidi() {
   // In learn mode a click on a mappable control picks it as the target instead of using it.
-  const block = e => { if (midi.learn && e.target.closest && e.target.closest('[data-midi]')) { e.preventDefault(); e.stopPropagation(); } };
+  const block = e => { if ((midi.learn || midi.pick) && e.target.closest && e.target.closest('[data-midi]')) { e.preventDefault(); e.stopPropagation(); } };
   ['pointerdown', 'mousedown', 'touchstart', 'dblclick', 'contextmenu'].forEach(t => document.addEventListener(t, block, { capture: true, passive: false }));
   document.addEventListener('click', e => {
-    const t = midi.learn && e.target.closest && e.target.closest('[data-midi]');
+    const t = (midi.learn || midi.pick) && e.target.closest && e.target.closest('[data-midi]');
     if (!t) return;
     e.preventDefault(); e.stopPropagation();
+    if (midi.pick) { ctlMapPicked(t.dataset.midi); return; }   // ctlmap.js: control first, then the screen control
     midi.target = t.dataset.midi; markMidi();
     setStatus('MIDI learn: now move a knob or press a pad for ' + midiLabel(midi.target));
   }, true);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && midi.learn) setMidiLearn(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && midi.pick) ctlMapPicked(null); else if (e.key === 'Escape' && midi.learn) setMidiLearn(false); });
   // Reconnect silently on start when the browser already allows MIDI; otherwise wait for the MIDI button.
   if (navigator.requestMIDIAccess && navigator.permissions) navigator.permissions.query({ name: 'midi', sysex: wantSysex() }).then(p => { if (p.state === 'granted') connectMidi(); }).catch(() => {});
 }
@@ -642,8 +646,11 @@ function midiPanel() {
   box.append(el('div', { className: 'hint', textContent: ctlSignedIn() ? 'Synced with your Strodano account' + (ctlSync.dirty ? ' (changes waiting to be sent)' : '') : 'Sign in to keep these mappings on every computer you use' }));
   box.append(el('label', { className: 'chk', title: 'A knob or fader that does not match the value on screen takes over only when it reaches it, so nothing jumps' },
     el('input', { type: 'checkbox', checked: midi.pickup, onchange: e => { midi.pickup = e.target.checked; saveMidiMap(); } }), ' Pickup: faders take over only when they reach the value'));
-  // mappings, grouped by device
+  if (typeof ctlMapUI === 'function') box.append(el('div', { className: 'fld' }, el('span', { textContent: Object.keys(midi.map).length + ' mapping' + (Object.keys(midi.map).length === 1 ? '' : 's') + ' made by hand', style: { flex: '1' } }),
+    el('button', { className: 'on', textContent: 'Edit mappings...', title: 'Every control of each device and what it does (also in the Shortcuts popup, ?)', onclick: () => toggleKeysHelp(true, 'ctl') })));
+  // mappings, grouped by device (the phone page, which has no Controllers tab)
   const byDev = {};
+  if (typeof ctlMapUI !== 'function')
   for (const k of Object.keys(midi.map).sort()) { const d = k.slice(0, k.indexOf('|')); (byDev[d] = byDev[d] || []).push(k); }
   for (const d of Object.keys(byDev)) {
     box.append(el('div', { className: 'hint', textContent: devLabel(d), style: { marginTop: '6px', fontWeight: '600' } }));
@@ -665,7 +672,7 @@ function midiPanel() {
         el('button', { textContent: '×', title: 'Delete this profile (its device goes back to no profile)', onclick: e => armThen(e.currentTarget, 'delete the ' + p.name + ' profile', () => { midi.userProfiles = midi.userProfiles.filter(x => x !== p); if (dev) ctlMoveKeys(p.id, 'midi:' + midi.devs[dev].name); saveMidiMap(); if (midi.access) midiHook(); ctlChanged(); }) })));
     }
   }
-  if (typeof gpPanelRows === 'function') box.append(...gpPanelRows());   // gamepad.js: Nudge / Spring per stick
+  if (typeof gpPanelRows === 'function' && typeof ctlMapUI !== 'function') box.append(...gpPanelRows());   // gamepad.js: Nudge / Spring per stick
   for (const d of devs) { const p = midi.devs[d].profile; if (p && p.defaults) box.append(el('div', { className: 'hint', textContent: p.name + ': ' + Object.keys(p.defaults).length + ' controls mapped by its profile (map one again to change it)' })); }
   box.append(el('div', { className: 'fld' },
     el('button', { textContent: 'Export', title: 'Save every controller mapping to a file (backup, or take them to another computer)', onclick: ctlExportFile }),

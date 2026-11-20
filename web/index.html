@@ -140,6 +140,12 @@ h4{margin:var(--m) 0 var(--s);font-size:14px;font-weight:500;color:var(--dim);bo
 /* modals */
 .modal{position:fixed;inset:4vh 4vw;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 20px 80px rgba(0,0,0,.8);display:grid;grid-template-rows:auto 1fr;z-index:10;overflow:hidden}
 .modal.small{inset:auto;left:50%;top:10vh;transform:translateX(-50%);width:min(560px,92vw);grid-template-rows:auto auto}
+#keysModal .mh #keysTabs{flex:1} #keysModal .mh #keysTabs .tabs{margin:0} #keysModal .mh b{flex:0 0 auto}
+#keysModal.wide{width:min(980px,94vw)} #ctlMapBody{padding:var(--s) var(--m) var(--m);max-height:74vh;overflow:auto}
+.cm-devs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:var(--s)} .cm-rows,.cm-group{display:flex;flex-direction:column;gap:2px}
+.cm-row{display:flex;align-items:center;gap:var(--s);padding:3px 6px;border-radius:var(--r-ctl);transition:background .6s}
+.cm-row>b{flex:0 0 190px;font-weight:500} .cm-row>select:first-of-type{flex:1;min-width:0} .cm-row .cm-kind{flex:0 0 90px} .cm-row.seen{background:var(--acc-muted);transition:none}
+.cm-group{margin-top:var(--s)} .cm-group summary{cursor:pointer;color:var(--dim);padding:4px 6px}
 #keysBody{padding:var(--s) var(--m) var(--m)} #keysBody label{flex:0 0 170px;color:var(--txt);font:12px var(--mono)}
 .modal[hidden]{display:none} .modal>.mh{display:flex;align-items:center;gap:var(--s);height:48px;padding:0 var(--m);background:var(--top);border-bottom:1px solid var(--line)}
 .modal>.mh b{flex:1;font-size:16px;font-weight:500} .modal>.mh label{display:flex;align-items:center;gap:6px;color:var(--dim)} .modal>.mh .hint{margin:0}
@@ -320,7 +326,8 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <button id="djBtn" data-act="dj" title="DJ mode: two decks whose music drives the visuals" aria-label="DJ mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3a9 9 0 0 1 9 9" opacity=".5"/></svg></button>
     <button id="agentBtn" data-act="agent" title="Agent mode: an autopilot that listens and directs the visuals, records and renders" aria-label="Agent mode"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 7V4M9.5 12h.01M14.5 12h.01M9.5 15h5M3 11v3M21 11v3"/></svg></button>
     <button id="midiBtn" data-act="midi" title="MIDI learn: click a control, then move a knob or press a pad" aria-label="MIDI learn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="7.5" cy="12" r=".6"/><circle cx="16.5" cy="12" r=".6"/><circle cx="9" cy="8.5" r=".6"/><circle cx="15" cy="8.5" r=".6"/><circle cx="12" cy="7" r=".6"/><path d="M10 17h4"/></svg></button>
-    <button class="end" data-act="keys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M8 14h8"/></svg></button>
+    <button class="end" id="fsBtn" data-act="fullscreen" title="Full screen (F11): hides the menu bar for more room" aria-label="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button data-act="keys" title="Shortcuts and controller mappings (?)" aria-label="Shortcuts and controller mappings"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M8 14h8"/></svg></button>
   </nav>
   <div id="main">
   <div id="menubar">
@@ -367,8 +374,9 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <div class="hint">Effects define <code>vec4 fx()</code> and read <code>texture(tex, uv)</code>; generators define <code>vec4 gen()</code>. Available: <code>uv, res, time, beat, bar, phrase, p.xyzw, q.xyzw</code>, music levels <code>audio.xyzw</code> (bass, mid, high, level) and <code>kick</code>, <code>hsv2rgb()</code>, <code>luma()</code>, <code>hash()</code>. Declare sliders with <code>// @param Name 0.5</code> (first four map to p, next four to q).</div></div></div>
 </div>
 <div class="modal small" id="keysModal" hidden>
-  <div class="mh"><b>Keyboard shortcuts</b><button data-close="keysModal">Close</button></div>
+  <div class="mh"><b>Shortcuts</b><span id="keysTabs"></span><button data-close="keysModal">Close</button></div>
   <div id="keysBody"></div>
+  <div id="ctlMapBody" hidden></div>
 </div>
 <input type="file" id="mediaInput" multiple accept="video/*,image/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
 <input type="file" id="crateInput" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff" multiple hidden>
@@ -385,6 +393,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="apc40.js"></script>
 <script src="gamepad.js"></script>
 <script src="ctlwizard.js"></script>
+<script src="ctlmap.js"></script>
 <script src="audio.js"></script>
 <script src="live.js"></script>
 <script src="looks.js"></script>

@@ -27,7 +27,7 @@ const GP_PROFILE = (() => {
     'axis:0:0': 'crossfade', 'axis:0:1': 'master', 'axis:0:2': 'focus:0', 'axis:0:3': 'focus:1',
   };
   const shiftDefaults = { 'btn:0:0': 'snap:0', 'btn:0:1': 'snap:1', 'btn:0:2': 'snap:2', 'btn:0:3': 'snap:3',
-    'btn:0:12': 'snap:4', 'btn:0:13': 'snap:5', 'btn:0:14': 'snap:6', 'btn:0:15': 'snap:7', 'btn:0:5': 'resync' };
+    'btn:0:12': 'snap:4', 'btn:0:13': 'snap:5', 'btn:0:14': 'snap:6', 'btn:0:15': 'snap:7', 'btn:0:5': 'resync', 'btn:0:9': 'fullscreen' };
   const controls = [
     { key: 'btn:0:6', kind: 'pad', analog: true, sign: -1, label: 'LT' }, { key: 'btn:0:7', kind: 'pad', analog: true, sign: 1, label: 'RT' },
     { key: 'btn:0:10', kind: 'pad', holdMs: 500, label: 'L3' },   // blackout only after half a second: never by accident
@@ -52,7 +52,7 @@ const GP_PROFILE = (() => {
 })();
 registerProfile(GP_PROFILE);
 const gpCtl = k => GP_PROFILE.controls.find(c => c.key === k) || {};
-const gpName = id => String(id || 'Gamepad').replace(/\s*\((STANDARD GAMEPAD )?Vendor: \w+ Product: \w+\)\s*$/i, '').trim() || 'Gamepad';
+const gpName = id => String(id || 'Gamepad').replace(/\s*\((STANDARD GAMEPAD )?Vendor: \w+ Product: \w+\)\s*$/i, '').replace(/\s*\((XInput )?STANDARD GAMEPAD[^)]*\)\s*$/i, '').trim() || 'Gamepad';   // Chromium adds "(XInput STANDARD GAMEPAD)" or "(... Vendor: ... Product: ...)"
 
 // Each frame: read every standard pad (a button counts as pressed on any pad, a stick takes the pad pushed furthest).
 function gpTick(dt) {
@@ -105,6 +105,7 @@ function gpStick(n, v, dt) {
   const k = 'axis:0:' + n, key = GP_DEV + '|' + k, st = gp.axis[n] || (gp.axis[n] = { v: 0, rest: null, on: false, acc: 0 });
   const was = st.v;
   st.v = v;
+  if (Math.abs(v) > 0.5 && Math.abs(was) <= 0.5 && typeof ctlMapSeen === 'function') ctlMapSeen(GP_DEV, k);
   if (midi.learn) { if (midi.target && Math.abs(v) > 0.6 && Math.abs(was) <= 0.6) bindMidi(key, midi.target); return; }
   const m = ctlLookup(GP_DEV, k), t = m && m.id && midiTarget(m.id);
   if (!t) return;

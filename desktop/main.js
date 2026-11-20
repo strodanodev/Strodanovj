@@ -8,6 +8,7 @@
 'use strict';
 const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, screen, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { setupNdi, stopNdi } = require('./ndi');
 const { setupNdiNet } = require('./ndinet');
 const { setupPower } = require('./power');
@@ -37,7 +38,20 @@ let win = null, quitting = false, updater = null;
 const outputs = new Map();   // output window name ('strodano_out_N') -> BrowserWindow
 const ALLOWED = new Set(['media', 'midi', 'midiSysex', 'fullscreen', 'fileSystem', 'clipboard-sanitized-write', 'window-management', 'pointerLock']);
 
+// The control window's full screen state is kept across starts (userData/window.json), so a handheld (ROG Ally) that
+// was set to full screen opens that way. In full screen the menu bar (File, Edit, View, Help) is hidden: F11, the
+// sidebar's full screen button or Shift + Menu on a gamepad goes back.
+const winStateFile = () => path.join(app.getPath('userData'), 'window.json');
+function readWinState() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')) || {}; } catch (e) { return {}; } }
+function writeWinState(st) { try { fs.writeFileSync(winStateFile(), JSON.stringify(st)); } catch (e) {} }
+function setFull(on) {
+  if (!win || win.isDestroyed()) return;
+  win.setFullScreen(!!on);
+}
+ipcMain.handle('window:fullscreen', (e, on) => { if (on === null || on === undefined) return !!(win && win.isFullScreen()); setFull(on); return !!on; });
+
 function createWindow() {
+  const st = selftest ? {} : readWinState(), wa = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
     width: 1600, height: 1000, minWidth: 1000, minHeight: 640, backgroundColor: '#0a0a0a', title: 'Strodano VJ', show: !selftest,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false, devTools, preload: path.join(__dirname, 'preload.js') },
@@ -55,6 +69,16 @@ function createWindow() {
     const name = d && d.frameName;
     if (name && name.startsWith('strodano_out_')) { outputs.set(name, child); child.on('closed', () => { if (outputs.get(name) === child) outputs.delete(name); }); }
   });
+  // a screen smaller than the window (a handheld at 150 % scaling): use all of it
+  if (!selftest && (wa.width < 1600 || wa.height < 1000)) win.maximize();
+  const fsChanged = on => {
+    win.setMenuBarVisibility(!on);   // more room: no File / Edit / View / Help in full screen
+    writeWinState({ ...readWinState(), fullscreen: on });
+    win.webContents.send('window:fullscreen', on);
+  };
+  win.on('enter-full-screen', () => fsChanged(true));
+  win.on('leave-full-screen', () => fsChanged(false));
+  if (st.fullscreen) win.once('ready-to-show', () => { win.setMenuBarVisibility(false); win.setFullScreen(true); });
   // the control window moved to another display: which displays count as "external" changes
   let movedT = 0;
   win.on('moved', () => { clearTimeout(movedT); movedT = setTimeout(sendDisplays, 300); });
