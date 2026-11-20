@@ -16,7 +16,7 @@ let cellEls = [];                       // mix.js marks clip cells while a launc
 const outUI = { screen: 0 };            // vdo.js / ndi.js read the Advanced Output selection
 function syncOutBtn() { M.badge = null; M.dirty = true; }
 function renderProps() { M.dirty = true; }
-window.addEventListener('strodano-plan', () => { M.dirty = true; });   // plan.js: the plan in force may have changed
+window.addEventListener('strodano-plan', () => { M.dirty = true; if (M.sheet && M.sheet.title === 'Settings') refreshSheet(); });   // plan.js: the plan in force may have changed
 const holding = () => false;
 
 const PREFS_KEY = 'strodano-vj-mobile-prefs';
@@ -24,7 +24,7 @@ const M = {
   tab: 'perform', dirty: true, sheet: null, latch: false, held: new Map(), listen: 'mic', lastEvent: '', sig: '',
   statusAt: 0, statusShown: '', install: null, mon: $('mon').getContext('2d', { alpha: false }),
   tiles: [], snapBtns: [], meters: [], levels: [], scenes: [], layerCards: [], goBtn: null, badge: null, beatSeen: -1,
-  prefs: { fpsCap: 60, welcomeDone: false, slowDismissed: false }, slow: 0, slowFps: 0,
+  prefs: { fpsCap: 60, welcomeDone: false, slowDismissed: false, monSmall: false }, slow: 0, slowFps: 0,
 };
 try { Object.assign(M.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(M.prefs)); } catch (e) {} };
@@ -48,6 +48,9 @@ const I = {
   eyeOff: SVG('<path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.1 3.6M6.3 7.4C3.6 9.1 2 12 2 12s3.5 6 10 6a9.6 9.6 0 0 0 4.3-1"/>'),
   x: SVG('<path d="M6 6l12 12M18 6L6 18"/>'),
   gear: SVG('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>'),
+  sliders: SVG('<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>'),
+  stopSq: SVG('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>'),
+  chevUp: SVG('<path d="M6 15l6-6 6 6"/>'),
   play: SVG('<path d="M7 4.5v15l12-7.5z"/>'),
   share: SVG('<path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>'),
   copy: SVG('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
@@ -163,7 +166,7 @@ function slowCard(v) {
 function renderPerform(v) {
   welcomeCard(v); slowCard(v);
   const cols = Array.from({ length: comp.columns }, (_, ci) => ci).filter(ci => comp.layers.some(L => L.clips[ci]));
-  v.append(h3('Scenes', el('span', { className: 'x hint', textContent: 'plays a whole column' })));
+  v.append(h3('Scenes', el('span', { className: 'x hint', textContent: 'one tap changes every layer' })));
   const sc = el('div', { className: 'scenes' });
   for (const ci of cols) {
     const tag = comp.agentTags && comp.agentTags[ci];
@@ -185,7 +188,7 @@ function renderPerform(v) {
           nudgeButton('«', li, -1, -1, { title: 'Hold: slow the playing clip down', ariaLabel: 'Nudge slower' }),
           nudgeButton('»', li, -1, 1, { title: 'Hold: speed the playing clip up', ariaLabel: 'Nudge faster' })] : []),
         ibtn(L.bypass ? I.eyeOff : I.eye, L.bypass ? 'Show this layer' : 'Hide this layer', () => { L.bypass = !L.bypass; M.dirty = true; }, L.bypass ? 'on' : ''),
-        ibtn(I.x, 'Clear this layer', () => { eject(li); buzz(); })),
+        ibtn(I.stopSq, 'Stop this layer (clears what is playing)', () => { eject(li); buzz(); })),
       el('div', { className: 'lvl' }, lvl, lvlOut));
     card._now = now; card._L = L;
     const strip = el('div', { className: 'strip' });
@@ -316,7 +319,7 @@ function layerSheet(li) {
 function renderBuild(v) {
   v.append(el('div', { className: 'row', style: { marginTop: '4px' } },
     btn('+ Layer', () => { addLayer(); M.dirty = true; }), btn('+ Slot', () => setColumns(comp.columns + 1)), btn('− Slot', () => setColumns(comp.columns - 1), '', { disabled: comp.columns <= 1 })),
-  hint('Tap + to fill a slot. Tap a clip to change it, ⚙ for the layer.'));
+  hint('Tap + to fill a slot, tap a clip to change it. The button beside a layer\'s name opens its settings.'));
   for (let li = comp.layers.length - 1; li >= 0; li--) {
     const L = comp.layers[li], strip = el('div', { className: 'strip' });
     for (let ci = 0; ci < comp.columns; ci++) {
@@ -325,16 +328,35 @@ function renderBuild(v) {
     }
     const info = [L.blend ? 'blend ' + BLENDS[L.blend].toLowerCase() : '', L.fx.length ? L.fx.length + ' effect' + (L.fx.length > 1 ? 's' : '') : '', L.locked ? 'locked' : ''].filter(Boolean).join(' · ');
     v.append(el('div', { className: 'layer' }, el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: L.name }), el('small', { textContent: info || L.clips.filter(Boolean).length + ' clips' })),
-      ibtn(I.gear, 'Layer settings', () => layerSheet(li))), strip));
+      ibtn(I.sliders, 'Layer settings', () => layerSheet(li))), strip));
   }
+  v.append(hint('Picture size, saving, cloud projects and your account are in Settings (top of the screen).'));
+}
+// ---------- Settings (header button): everything that is about the app or the whole project, in one sheet ----------
+function settingsSheet() {
+  openSheet('Settings', s => {
+    const sw = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: 'Colour theme' }, ...THEMES.map(t => {
+      const b = el('button', { className: THEME.id === t.id ? 'on' : '', title: t.name, ariaLabel: t.name + ' theme', onclick: () => { applyTheme(t.id); refreshSheet(); } });
+      b.style.setProperty('--sw', `rgb(${t.rgb.join(',')})`);
+      return b;
+    }));
+    s.append(h3('Colour'), sw);
+    settingsProject(s);
+    s.append(h3('Account'), el('div', { className: 'card' }, el('div', { className: 'setting' }, el('span', { textContent: ent.token ? 'Signed in: ' + ENT_NAMES[entPlan()] : 'Free (not signed in)' }),
+      btn(ent.token ? 'Account' : 'Sign in', () => { closeSheet(); entAccount(); }, ent.token ? '' : 'pri'))));
+  });
+}
+function settingsProject(v) {
   const res = comp.w + 'x' + comp.h;
-  v.append(h3('Project'), el('div', { className: 'card' },
+  v.append(h3('Picture'), el('div', { className: 'card' },
     setting('Picture size', choice([['960x540', '960 x 540 (smoothest)'], ['1280x720', '1280 x 720'], ['1920x1080', '1920 x 1080 (new phones)']].concat(['960x540', '1280x720', '1920x1080'].includes(res) ? [] : [[res, res.replace('x', ' x ')]]), res,
       x => { const [w, h] = x.split('x').map(Number); resizeComp(w, h); M.slow = 0; M.dirty = true; })),
-    setting('Frame rate', choice([[60, '60 fps'], [30, '30 fps (saves battery)']], M.prefs.fpsCap, x => { M.prefs.fpsCap = +x; savePrefs(); }))),
-    el('div', { className: 'row' }, btn('Save project', saveProject), btn('Open project', () => $('compInput').click())),
-    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Account and plan', entAccount), btn('Cloud projects', () => wsCloud())),
-    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Start over', e => armThen(e.currentTarget, 'start a new project (your library stays)', () => { mobileDemo(); M.dirty = true; }), 'danger')),
+    setting('Frame rate', choice([[60, '60 fps'], [30, '30 fps (saves battery)']], M.prefs.fpsCap, x => { M.prefs.fpsCap = +x; savePrefs(); })),
+    setting('Small monitor (more room for controls)', toggle(() => M.prefs.monSmall, x => setMonSmall(x)))),
+    h3('Project'),
+    el('div', { className: 'row' }, btn('Save project', saveProject), btn('Open project', () => { closeSheet(); $('compInput').click(); })),
+    el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Cloud projects', () => { closeSheet(); wsCloud(); }),
+      btn('Start over', e => armThen(e.currentTarget, 'start a new project (your library stays)', () => { mobileDemo(); closeSheet(); }), 'danger')),
     hint('Projects keep the layout; photos and videos stay in the Library and relink by name. Cloud projects open on any phone or computer you sign in on.'));
 }
 function saveProject() {
@@ -642,6 +664,7 @@ const _setStatus = setStatus;
 setStatus = function (s) { _setStatus(s); M.statusShown = ''; };   // eslint-disable-line no-global-assign
 
 // ---------- header ----------
+function setMonSmall(on) { M.prefs.monSmall = !!on; savePrefs(); $('stage').classList.toggle('small', !!on); }
 (function initHeader() {
   const taps = [];
   $('bpmBtn').addEventListener('click', () => {
@@ -654,6 +677,9 @@ setStatus = function (s) { _setStatus(s); M.statusShown = ''; };   // eslint-dis
     buzz(5);
   });
   $('blackBtn').addEventListener('click', () => { setBlackout(); buzz(20); });
+  $('setBtn').innerHTML = I.sliders; $('setBtn').addEventListener('click', settingsSheet);
+  $('monBtn').innerHTML = I.chevUp; $('monBtn').addEventListener('click', () => setMonSmall(!M.prefs.monSmall));
+  setMonSmall(M.prefs.monSmall);
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); M.install = e; $('installBtn').hidden = false; });
   $('installBtn').addEventListener('click', async () => { const e = M.install; if (!e) return; M.install = null; $('installBtn').hidden = true; e.prompt(); try { await e.userChoice; } catch (err) {} });
   window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; setStatus('Installed: open Strodano VJ from your home screen'); });
