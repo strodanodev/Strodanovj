@@ -364,13 +364,12 @@ function renderLibrary(v) {
 // The premium pack (starter.js): download for Pro / Festival, the upgrade prompt for Free
 function premiumCard() {
   const have = premiumHave(), unlocked = entCan('pack'), p = premiumState;
-  const label = p.busy ? (p.total ? `Downloading ${Math.min(p.total, p.done + 1)} of ${p.total}…` : 'Checking your plan…')
-    : have ? (comp.layers.some(L => L.name === 'Premium') ? 'In your library' : 'Put it on a layer') : unlocked ? 'Download the pack' : 'Unlock with Pro';
+  const go = have ? btn('Open the 3D show', e => armThen(e.currentTarget, 'replace your project with the STRODANO 3D show (your library stays)', () => { premiumOpenShow(); M.tab = 'perform'; renderTabs(); M.dirty = true; }), 'big pri', { style: { marginTop: '8px' } })
+    : btn(p.busy ? (p.total ? `Downloading ${Math.min(p.total, p.done + 1)} of ${p.total}…` : 'Checking your plan…') : unlocked ? 'Download the pack' : 'Unlock with Pro', () => premiumGet(), 'big pri', { disabled: p.busy, style: { marginTop: '8px' } });
   return el('div', { className: 'card' },
-    el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: 'STRODANO premium pack' })), el('i', { className: 'k', textContent: 'PRO' })),
-    hint(`${PREMIUM_FILES.length} clips: festival footage, booth and press photos, logos. Copied into your library, so they work offline.`),
-    p.note && !p.busy && !have ? hint(p.note) : null,
-    btn(label, () => premiumGet(), have ? 'big' : 'big pri', { disabled: p.busy || (have && comp.layers.some(L => L.name === 'Premium')), style: { marginTop: '8px' } }));
+    el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: 'STRODANO 3D show' })), el('i', { className: 'k', textContent: 'PRO' })),
+    hint('Six scenes built on the advanced 3D visualizers (particle pictures, terrain, harmonograph, supernova, fireworks, text shatter) with STRODANO footage in full HD.'),
+    p.note && !p.busy && !have ? hint(p.note) : null, go);
 }
 function libSheet(it, m) {
   openSheet(it.name, s => {

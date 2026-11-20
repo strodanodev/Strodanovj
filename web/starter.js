@@ -10,28 +10,28 @@ const STARTER_BASE = 'starter/';
 const STARTER_FILES = [
   ['strodano-hero.mp4', 'STRODANO live'], ['strodano-stage.mp4', 'Club set'],
   ['strodano-live-1.webp', 'LED wall'], ['strodano-live-2.webp', 'Lasers'],
-  ['strodano-artists.webp', 'STRO + Sedano'], ['strodano-duo.webp', 'Duo'],
-  ['strodano-logo.webp', 'STRODANO logo'], ['strodano-neon.webp', 'Neon logo'],
+  ['strodano-duo.webp', 'STRO + Sedano'], ['strodano-logo.webp', 'STRODANO logo'], ['strodano-neon.webp', 'Neon logo'],
 ];
 const starterKind = f => (/\.mp4$/.test(f) ? 'video' : 'image');
-// The project: 4 layers x 6 scenes, columns tagged for the Agent (calm -> drop from left to right)
+// Clip helpers shared by the starter and the premium show. Placement (c.tr): x / y = offset in frames (0.3 = 30% of
+// the frame), y up; s = size. Brand pictures sit in the lower third or the centre, never over the faces in the footage.
+const LOWER = { tr: { s: 0.32, y: -0.29 } }, CENTRE = { tr: { s: 0.62 } }, DUO = { tr: { s: 0.92, y: -0.1 } };
+const packClip = (list, file, extra) => ({ type: starterKind(file), fileName: file, name: (list.find(x => x[0] === file) || [0, file])[1], speed: 1, ...extra });
+const d3 = (scene, extra) => ({ type: '3d', scene, ...extra });
+// The project: 3 layers x 6 scenes, calm -> drop from left to right (the column tags drive Auto). Footage or a 3D world
+// at the back, a soft 3D glow screened over it in some scenes, and ONE brand element per scene on top.
 function starterProject() {
-  const m = (file, extra) => ({ type: starterKind(file), fileName: file, name: (STARTER_FILES.find(x => x[0] === file) || [0, file])[1], speed: 1, ...extra });
-  const d3 = scene => ({ type: '3d', scene });
-  const gen = g => ({ type: 'gen', gen: g, name: g });
-  const txt = (text, anim) => ({ type: 'text', text, anim });
+  const m = (file, extra) => packClip(STARTER_FILES, file, extra);
   return {
     app: 'Strodano VJ', version: 2, w: 1280, h: 720, columns: 6, master: 1, crossfade: 0.5, bpm: 126,
     agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Groove', 3: 'Peak', 4: 'Peak', 5: 'Drop' },
     layers: [
       { name: 'Footage', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
         clips: [m('strodano-hero.mp4'), m('strodano-stage.mp4'), d3('stars'), m('strodano-live-1.webp'), m('strodano-live-2.webp'), d3('tunnel')] },
-      { name: 'Smart 3D', opacity: 0.7, blend: 1, fit: 0, trans: 1, transType: 5,
-        clips: [d3('bokeh'), d3('waves'), gen('Tunnel'), d3('blob'), d3('vortex'), gen('Beat Flash')] },
-      { name: 'Artists', opacity: 1, blend: 0, fit: 1, scale: 0.9, y: -0.08, trans: 1, transType: 0,
-        clips: [null, m('strodano-artists.webp'), m('strodano-duo.webp'), null, m('strodano-artists.webp'), m('strodano-duo.webp')] },
-      { name: 'Logo', opacity: 1, blend: 0, fit: 1, scale: 0.5, trans: 0.5, transType: 0,
-        clips: [m('strodano-logo.webp'), m('strodano-neon.webp'), txt('STRODANO', 1), m('strodano-logo.webp'), m('strodano-neon.webp'), txt('STRODANO\nVJ', 1)] },
+      { name: 'Glow', opacity: 0.6, blend: 4, fit: 0, trans: 1, transType: 0,
+        clips: [d3('bokeh'), null, d3('waves'), d3('embers'), null, { type: 'gen', gen: 'Beat Flash', name: 'Beat Flash' }] },
+      { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
+        clips: [m('strodano-logo.webp', LOWER), m('strodano-neon.webp', LOWER), m('strodano-duo.webp', DUO), m('strodano-logo.webp', CENTRE), m('strodano-duo.webp', DUO), m('strodano-neon.webp', CENTRE)] },
     ],
     screens: [{ name: 'Web link', device: 'vdo', slices: [] }],
   };
@@ -45,7 +45,7 @@ function loadStarter() {
   starterPlay();
   return true;
 }
-function starterPlay() { [[0, 0], [1, 0], [3, 0]].forEach(([li, ci]) => { const L = comp.layers[li]; if (L && L.active < 0 && L.pendingCol < 0) trigger(li, ci); }); }
+function starterPlay() { [[0, 0], [1, 0], [2, 0]].forEach(([li, ci]) => { const L = comp.layers[li]; if (L && L.active < 0 && L.pendingCol < 0) trigger(li, ci); }); }
 const starterState = { busy: false, done: 0, total: 0 };
 // Download the pack files the project needs and the library does not have yet; then copy them in (relinks the clips)
 async function starterFetch() {
@@ -74,18 +74,13 @@ async function starterFetch() {
 }
 
 // ---------- the STRODANO premium pack (Pro and Festival) ----------
-// More STRODANO footage and photos for paying plans. The files are on the phone site under premium/ (built by
+// The STRODANO 3D show for paying plans: its HD footage and lockup. The files are on the phone site under premium/ (built by
 // tools/build-mobile.mjs, never in the repository) behind a check at the edge (middleware.js) that only lets a request
 // through with a fresh signature. The website gives that signature (GET /api/app/pack) only to an app signed in to a
 // Pro or Festival account, so the pack cannot be had by editing this code: the lock is on the server.
 // Once downloaded, the files live in the phone's library like any import and stay there offline.
 const PREMIUM_BASE = 'premium/';
-const PREMIUM_FILES = [
-  ['strodano-pro-crowd.mp4', 'Crowd'], ['strodano-pro-stage.mp4', 'Main stage'],
-  ['strodano-pro-booth-1.webp', 'Booth'], ['strodano-pro-booth-2.webp', 'Booth 2'],
-  ['strodano-pro-press-1.webp', 'Press 1'], ['strodano-pro-press-2.webp', 'Press 2'], ['strodano-pro-press-3.webp', 'Press 3'], ['strodano-pro-press-4.webp', 'Press 4'],
-  ['strodano-pro-uwu.webp', 'UwU'], ['strodano-pro-avatar.webp', 'Avatar logo'], ['strodano-pro-mark.webp', 'Supporting logo'],
-];
+const PREMIUM_FILES = [['strodano-pro-visors-hd.mp4', 'Visors HD'], ['strodano-pro-club-hd.mp4', 'Club set HD'], ['strodano-pro-lockup.webp', 'STRODANO lockup']];
 const premiumState = { busy: false, done: 0, total: 0, note: '' };
 const premiumMissing = () => PREMIUM_FILES.map(f => f[0]).filter(n => !mlib.items.some(x => x.name === n));
 const premiumHave = () => mlib.ready && !premiumMissing().length;
@@ -95,7 +90,7 @@ async function premiumGet() {
   if (!entGate('pack')) return;
   if (!ent.token) { premiumNote('Sign in to your Strodano account to download the premium pack'); entAccount(); return; }
   const need = premiumMissing();
-  if (!need.length) { premiumToLayer(); return; }
+  if (!need.length) return;
   premiumState.busy = true; premiumState.done = 0; premiumState.total = need.length; premiumNote('Checking your plan...');
   try {
     let r = null;
@@ -120,17 +115,34 @@ async function premiumGet() {
     }
     if (files.length) await mlibImport(files);
     if (files.length < need.length) return premiumNote(files.length ? 'Part of the premium pack could not be downloaded: tap again for the rest' : 'The premium pack could not be downloaded. Try again in a moment.');
-    premiumToLayer();
-    premiumNote('Premium pack ready: it is in your Library and on a new layer "Premium"');
+    premiumNote('Premium pack ready: tap Open the 3D show. The HD clips are in your Library, offline too.');
   } finally { premiumState.busy = false; if (typeof M !== 'undefined') M.dirty = true; }
 }
-// A new top layer "Premium" with the pack's clips across the scenes (only once; the files stay in the Library either way)
-function premiumToLayer() {
-  if (comp.layers.some(L => L.name === 'Premium')) { setStatus('The premium clips are on the layer "Premium" and in your Library'); return; }
-  const clips = PREMIUM_FILES.map(([n, title]) => { const m = media.find(x => x.name === n); if (!m) return null; const c = mediaClip(m); c.name = title; return c; }).filter(Boolean);
-  if (!clips.length) return;
-  addLayer();
-  const li = comp.layers.length - 1, L = comp.layers[li];
-  L.name = 'Premium'; L.opacity = 0.85;
-  for (let ci = 0; ci < comp.columns && ci < clips.length; ci++) setClip(li, ci, clips[ci]);
+// The premium 3D show: the advanced three.js visualizers (Picture Particles fed by the HD footage, Audio History Terrain,
+// Harmonograph, Particle Morph, Strange Attractor, Beat Fireworks, Drop Supernova, Text Shatter) with the HD clips.
+function premiumProject() {
+  const m = (file, extra) => packClip(PREMIUM_FILES, file, extra);
+  return {
+    app: 'Strodano VJ', version: 2, w: 1280, h: 720, columns: 6, master: 1, crossfade: 0.5, bpm: 126,
+    agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Groove', 3: 'Peak', 4: 'Peak', 5: 'Drop' },
+    layers: [
+      { name: 'World', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
+        clips: [m('strodano-pro-visors-hd.mp4'), d3('terrain'), m('strodano-pro-club-hd.mp4'), d3('attractor'), m('strodano-pro-visors-hd.mp4'), d3('supernova')] },
+      { name: '3D', opacity: 0.9, blend: 4, fit: 0, trans: 1, transType: 0,
+        clips: [d3('picture'), d3('harmono'), d3('morph'), null, d3('fireworks'), d3('shatter', { src: 'text', text: 'STRODANO' })] },
+      { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
+        clips: [null, m('strodano-pro-lockup.webp', LOWER), null, m('strodano-pro-lockup.webp', CENTRE), null, null] },
+    ],
+    screens: [{ name: 'Web link', device: 'vdo', slices: [] }],
+  };
+}
+// Replaces the current project (the library stays; the Library card asks for a second tap first); the HD clips relink
+// by name from the library
+function premiumOpenShow() {
+  const j = premiumProject();
+  j.layers.forEach(l => { l.clips = l.clips.map(c => (c && c.type === '3d' && typeof SCENES3D !== 'undefined' && !SCENES3D[c.scene] ? null : c)); });
+  if (!loadComp(j)) return;
+  if (!screens[0].slices.length) screens[0].slices.push(newSlice('Slice 1'));
+  [0, 1].forEach(li => trigger(li, 0));
+  setStatus('STRODANO 3D: tap the scenes on Perform, or let Auto play them');
 }

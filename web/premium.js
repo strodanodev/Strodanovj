@@ -8,12 +8,7 @@
 // put back into the media pool on every start, where saved clips relink to them by name like any added file.
 'use strict';
 const PREMIUM_SITE = 'https://vj.strodano.live/premium/';
-const PREMIUM_PACK = [
-  ['strodano-pro-crowd.mp4', 'Crowd'], ['strodano-pro-stage.mp4', 'Main stage'],
-  ['strodano-pro-booth-1.webp', 'Booth'], ['strodano-pro-booth-2.webp', 'Booth 2'],
-  ['strodano-pro-press-1.webp', 'Press 1'], ['strodano-pro-press-2.webp', 'Press 2'], ['strodano-pro-press-3.webp', 'Press 3'], ['strodano-pro-press-4.webp', 'Press 4'],
-  ['strodano-pro-uwu.webp', 'UwU'], ['strodano-pro-avatar.webp', 'Avatar logo'], ['strodano-pro-mark.webp', 'Supporting logo'],
-];
+const PREMIUM_PACK = [['strodano-pro-visors-hd.mp4', 'Visors HD'], ['strodano-pro-club-hd.mp4', 'Club set HD'], ['strodano-pro-lockup.webp', 'STRODANO lockup']];
 const premium = { busy: false, done: 0, total: 0, have: new Set(), ready: false };
 // On a development page (plan.js ENT_DEV) localStorage `strodano-vj-pack` can point at another copy of the files.
 const premiumBase = () => { let b = ''; try { b = (ENT_DEV && localStorage.getItem('strodano-vj-pack')) || ''; } catch (e) {} return b || PREMIUM_SITE; };
@@ -82,6 +77,6 @@ function premiumRow() {
   if (!premium.ready || !premiumMissing().length) return null;
   const paid = entCan('pack');
   return el('div', { className: 'fld' },
-    el('span', { className: 'hint', style: { flex: '1' }, textContent: premium.busy ? 'Premium pack: ' + premium.done + ' of ' + premium.total + ' downloaded' : 'STRODANO premium pack: ' + PREMIUM_PACK.length + ' more clips' + (paid ? '' : ' (Pro and Festival)') }),
-    el('button', { className: paid ? 'on' : '', disabled: premium.busy, textContent: premium.busy ? 'Downloading...' : premium.have.size ? 'Get the rest' : 'Premium pack', title: 'Download STRODANO footage and photos for Pro and Festival into Files (about 11 MB, once)', onclick: premiumGet }));
+    el('span', { className: 'hint', style: { flex: '1' }, textContent: premium.busy ? 'Premium pack: ' + premium.done + ' of ' + premium.total + ' downloaded' : 'STRODANO premium pack: ' + PREMIUM_PACK.length + ' HD clips' + (paid ? '' : ' (Pro and Festival)') }),
+    el('button', { className: paid ? 'on' : '', disabled: premium.busy, textContent: premium.busy ? 'Downloading...' : premium.have.size ? 'Get the rest' : 'Premium pack', title: 'Download STRODANO footage in full HD and the duo + logo lockup for Pro and Festival into Files (once)', onclick: premiumGet }));
 }
