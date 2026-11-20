@@ -16,9 +16,11 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(ROOT, 'dist-mobile');
 const MEDIA = path.resolve(ROOT, '..', 'website', 'public', 'media'), ASSETS = path.resolve(ROOT, '..', 'strodano assets');
 const fail = m => { console.error('build-mobile: ' + m); process.exit(1); };
 
-// 0. Strodano VJ Pro from the private repo (tools/pro.mjs): the phone site is an official build, so it fails without it
+// 0. Strodano VJ Pro from the private repo (tools/pro.mjs). It is published only behind /premium/ (below), where the
+// apps download it after sign-in (web/prodl.js); the phone site is where every app gets it, so this fails without it.
 import { buildPro } from './pro.mjs';
-try { const r = buildPro(); console.log(`build-mobile: Pro ${r.version}, ${r.files} files`); } catch (e) { fail(e.message); }
+let pro;
+try { pro = buildPro(); console.log(`build-mobile: Pro ${pro.version}, ${pro.files} files`); } catch (e) { fail(e.message); }
 
 // start clean, but keep .vercel/ (the link to the Vercel project, so `vercel deploy` keeps deploying to the same one)
 mkdirSync(OUT, { recursive: true });
@@ -36,7 +38,7 @@ copy('LICENSE', path.join(ROOT, 'LICENSE'));
 
 // 2. the service worker must cache every script the page loads
 const sw = readFileSync(path.join(WEB, 'sw.js'), 'utf8');
-const shell = new Set([...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g), ...sw.match(/const OPTIONAL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]));
+const shell = new Set([...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]));
 const scripts = refs.filter(r => r.endsWith('.js'));
 const uncached = scripts.filter(s => !shell.has(s));
 if (uncached.length) fail('sw.js SHELL is missing ' + uncached.join(', ') + ' (add them and bump VERSION)');
@@ -89,6 +91,28 @@ const premiumMissing = premiumNames.filter(n => !existsSync(path.join(OUT, 'prem
 if (premiumMissing.length || premiumNames.length !== PREMIUM.length) fail('starter.js PREMIUM_FILES and the premium pack do not match: ' + (premiumMissing.join(', ') || 'different counts'));
 const deskNames = [...readFileSync(path.join(WEB, 'premium.js'), 'utf8').matchAll(/\['(strodano-pro-[^']+)'/g)].map(m => m[1]);
 if (deskNames.join() !== premiumNames.join()) fail('premium.js PREMIUM_PACK (desktop) and starter.js PREMIUM_FILES (phone) list different files');
+// 3c. Strodano VJ Pro: premium/pro-<version>.js + premium/pro-api<N>.json = { manifest, sig }. The manifest
+// {v, api, version, file, sha256, size} is signed with MODULE_SIGNING_KEY (ECDSA P-256, raw r|s; env, else
+// ../website/.env.local; the apps check it against PRO_PUBKEY in web/prodl.js and desktop/pro.js). One manifest per
+// PRO_API, so an app only ever sees bundles made for it.
+{
+  const api = +(readFileSync(path.join(WEB, 'prodl.js'), 'utf8').match(/const PRO_API = (\d+);/) || [])[1];
+  const deskApi = +(readFileSync(path.join(ROOT, 'desktop', 'pro.js'), 'utf8').match(/const PRO_API = (\d+);/) || [])[1];
+  const proJson = JSON.parse(readFileSync(path.join(ROOT, '..', 'strodano-vj-premium', 'pro.json'), 'utf8'));
+  if (!api || api !== deskApi || proJson.api !== api) fail(`PRO_API differs: web/prodl.js ${api}, desktop/pro.js ${deskApi}, private pro.json ${proJson.api}`);
+  let keyText = process.env.MODULE_SIGNING_KEY || '';
+  if (!keyText) { try { keyText = (readFileSync(path.resolve(ROOT, '..', 'website', '.env.local'), 'utf8').match(/^MODULE_SIGNING_KEY=(.+)$/m) || [])[1] || ''; } catch (e) {} }
+  if (!keyText) fail('MODULE_SIGNING_KEY is not set (env or ../website/.env.local): the Pro bundle cannot be signed');
+  const { createPrivateKey, createHash, sign } = await import('node:crypto');
+  const key = createPrivateKey(keyText.includes('BEGIN') ? keyText.replace(/\\n/g, '\n') : Buffer.from(keyText.trim(), 'base64').toString('utf8'));
+  const code = readFileSync(path.join(WEB, 'pro', 'pro.js'));
+  const file = 'pro-' + pro.version + '.js';
+  writeFileSync(path.join(OUT, 'premium', file), code);
+  const manifest = JSON.stringify({ v: 1, api, version: pro.version, file, sha256: createHash('sha256').update(code).digest('hex'), size: code.length, built: new Date().toISOString() });
+  const sig = sign('sha256', Buffer.from(manifest), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  writeFileSync(path.join(OUT, 'premium', 'pro-api' + api + '.json'), JSON.stringify({ manifest, sig }));
+  console.log(`build-mobile: Pro ${pro.version} signed for API ${api} (${(code.length / 1024).toFixed(0)} KB) behind /premium/`);
+}
 writeFileSync(path.join(OUT, 'premium', 'README.txt'), 'STRODANO premium pack (c) STRODANO. All rights reserved. For Strodano VJ Pro and Festival subscribers only.\n');
 // Vercel Routing Middleware: a premium file is served only with a fresh signature from the website (GET /api/app/pack),
 // ?e=<unix expiry>&s=<base64url HMAC-SHA256 of "premium:<e>">, keyed with PACK_SECRET (set on both Vercel projects)

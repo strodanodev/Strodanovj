@@ -6,17 +6,28 @@ Open-source, lightweight Resolume-style live-visuals (VJ) app. GPL-3.0. Owner: S
 analysis, track list, auto-mix, sections and section looks, segments, track scores, track recognition; Agent Mode and
 its playlist; recording; rekordbox import) are closed source in the private repo `strodanodev/strodano-vj-premium`
 (checked out beside this one as `../strodano-vj-premium`, with its own CLAUDE.md for their internals). `tools/pro.mjs`
-joins them into `web/pro/pro.js` (gitignored, never commit it), which index.html and mobile.html load right after
-`looks.js` and which sets `window.SVJ_PRO`. Without it every Free feature works: core code reaches Pro only through
-`typeof X === 'function'` guards (never `typeof agent`: index.html has an element `id="agent"`, a global), `proGate` /
-`proLoaded` / `agentOn` (plan.js), and saved Pro data passes through untouched (`proKept` / `scoreSave` / `scoreLoad`
-in engine.js, `wsKeptPlaylist` in workspace.js). Official builds fail without the private repo: `npm run dist:*`
-(predist), `tools/build-mobile.mjs`, and desktop.yml (checks it out with the read-only deploy key in the
-`PREMIUM_DEPLOY_KEY` secret); the packaged selftest reports `pro` and fails without it unless `STRODANO_FREE=1`.
-The bundle is minified with esbuild (desktop devDependency, so `npm ci` in desktop/ first; top-level names are kept,
-which the core relies on, and the analysis Worker's `analyseTrack.toString()` still runs on its own; checked 2026-11-20).
-Development: `node tools/pro.mjs --watch` rebuilds unminified on every save in the private repo (`--dev` once);
-`--clean` gives the Free build.
+joins them into one classic script (minified with esbuild, a desktop devDependency: `npm ci` in desktop/ first; top-level
+names are kept, which the core relies on) that sets `window.SVJ_PRO`. **Since 0.4.1 no release contains it**: `web/prodl.js`
+(core, loaded where the bundle used to be, right after `looks.js`) puts the stored bundle into the page synchronously at
+start-up, and downloads it once the app is signed in to a paid plan (`proFetch`, on `entReady` and every `strodano-plan`):
+the premium pack's signed link from `GET /api/app/pack`, then `vj.strodano.live/premium/pro-api<PRO_API>.json` = {manifest,
+sig} and the file it names. The manifest {v, api, version, file, sha256, size} is signed with `MODULE_SIGNING_KEY` (ECDSA
+P-256, private half in website/.env.local only: back it up; public half `PRO_PUBKEY` in web/prodl.js AND desktop/pro.js).
+Desktop: `desktop/pro.js` keeps it in userData/pro and hands it over with `sendSync('pro:load')` only after checking the
+signature, SHA-256 and size, so a changed copy never runs. Browser / phone: localStorage `strodano-vj-pro`, checked right
+after it runs; a bad copy is deleted and the page reloads. A first download reloads the page when no show is live
+(`proShowLive`), else waits for the next start. `tools/build-mobile.mjs` builds, signs and publishes it behind the
+`/premium/` middleware (fails without the private repo or the key; checks PRO_API in prodl.js, desktop/pro.js and the
+private pro.json agree). Development loads `web/pro/pro.js` directly (`npm start` = unpackaged, or a localhost page;
+localStorage `strodano-vj-pro-test` = 'download' plus `strodano-vj-pack` exercise the released path), so run
+`node tools/pro.mjs --watch` (unminified) while working; CI's selftest runs unpackaged with it. The packaged selftest
+reports `pro` ('' until an account downloaded it). Without the bundle every Free feature works: core code reaches Pro only
+through `typeof X === 'function'` guards (never `typeof agent`: index.html has an element `id="agent"`, a global),
+`proGate` / `proLoaded` / `agentOn` (plan.js), and saved Pro data passes through untouched (`proKept` / `scoreSave` /
+`scoreLoad` in engine.js, `wsKeptPlaylist` in workspace.js). Tested 2026-11-20: signed / tampered / other-API bundles
+against desktop/pro.js; in the browser a stubbed paid account downloading, the automatic restart into Pro, a tampered
+copy removed, the phone page with the stored bundle; the packaged Windows app with no bundle, a genuine one (pro 0.4.0)
+and a changed one (refused). Not tested: a real paid account against the live site end to end, macOS.
 Never move Free behaviour into the private repo, and never describe Pro internals here.
 
 ## Two editions in this repo

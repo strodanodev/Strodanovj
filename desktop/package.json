@@ -1,7 +1,7 @@
 {
   "name": "strodano-vj",
   "productName": "Strodano VJ",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Strodano VJ: live visuals, VJ and DJ in one app",
   "main": "main.js",
   "license": "GPL-3.0-only",
@@ -12,8 +12,6 @@
     "start": "electron .",
     "selftest": "electron . --selftest",
     "pro": "node ../tools/pro.mjs",
-    "predist:win": "node ../tools/pro.mjs",
-    "predist:mac": "node ../tools/pro.mjs",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never"
   },
@@ -38,6 +36,7 @@
       "ndinet.js",
       "updater.js",
       "rekordbox.js",
+      "pro.js",
       "package.json",
       "!node_modules/koffi/{src,vendor,doc}/**",
       "!node_modules/koffi/build/koffi/!(${platform}_${arch})/**",
@@ -46,7 +45,8 @@
         "to": "web",
         "filter": [
           "**/*",
-          "!**/*.md"
+          "!**/*.md",
+          "!pro/**"
         ]
       }
     ],

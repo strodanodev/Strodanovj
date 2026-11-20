@@ -36,5 +36,11 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     read: (id, rel) => ipcRenderer.invoke('rekordbox:read', { id: String(id).slice(0, 80), rel: String(rel).slice(0, 2048) }),
     files: (id, rels, inputId) => ipcRenderer.invoke('rekordbox:files', { id: String(id).slice(0, 80), rels: (Array.isArray(rels) ? rels : []).slice(0, 50000).map(r => String(r).slice(0, 2048)), inputId: String(inputId).slice(0, 40) }),
   },
+  // Strodano VJ Pro (desktop/pro.js, web/prodl.js): the stored bundle, checked by the main process (sync, at start-up),
+  // and keeping a downloaded one (the main process checks it again)
+  pro: {
+    load: () => ipcRenderer.sendSync('pro:load'),
+    save: b => ipcRenderer.invoke('pro:save', { manifest: String(b && b.manifest), sig: String(b && b.sig), code: String(b && b.code) }),
+  },
   identify: marks => ipcRenderer.invoke('displays:identify', (Array.isArray(marks) ? marks : []).slice(0, 16).map(m => ({ id: Number(m.id), text: String(m.text).slice(0, 80) }))),
 });

@@ -12,6 +12,7 @@ const { setupNdi, stopNdi } = require('./ndi');
 const { setupNdiNet } = require('./ndinet');
 const { setupUpdater } = require('./updater');
 const { setupRekordbox, stopRekordbox } = require('./rekordbox');
+const { setupPro } = require('./pro');
 
 const selftest = process.argv.includes('--selftest');
 // Packaged, the page is inside app.asar (package.json build.files), whose hash the Electron binary checks on start
@@ -182,9 +183,10 @@ function runSelftest() {
       } else {
         report.recovered = await js(`({ recovery: window.vjRecovered || '', status: document.getElementById('status').textContent, outputLive: liveScreens().length, lost: gl.isContextLost() })`);
         const b = report.boot, o = report.output, r = report.recovered;
-        // Pro bundle (web/pro/pro.js, tools/pro.mjs): an official build must have it; STRODANO_FREE=1 tests a build of this repo alone
+        // Pro: development (npm start, CI) loads web/pro/pro.js from tools/pro.mjs and must have it (STRODANO_FREE=1 tests this repo
+        // alone); a packaged app has Pro only once an account downloaded it (web/prodl.js), so there it is reported, not required
         report.pro = await js(`window.SVJ_PRO ? window.SVJ_PRO.version : ''`);
-        const proOk = !!report.pro || process.env.STRODANO_FREE === '1';
+        const proOk = !!report.pro || app.isPackaged || process.env.STRODANO_FREE === '1';
         const ok = proOk && report.displays && report.displays.count > 0 && report.displays.bridge && (report.place.ok || isMac) && report.ndi.ok && report.rekordbox.ok && b.webgl2 && !b.badShaders.length && b.three && o.opened && o.live && !r.lost && r.outputLive > 0 && r.recovery === 'ok';
         finish(ok, ok ? '' : 'a check failed');
       }
@@ -193,6 +195,7 @@ function runSelftest() {
 }
 
 app.whenReady().then(() => {
+  setupPro();   // desktop/pro.js: the downloaded Strodano VJ Pro bundle, before the page asks for it
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(ALLOWED.has(perm)));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => ALLOWED.has(perm));
   if (!selftest) powerSaveBlocker.start('prevent-display-sleep');

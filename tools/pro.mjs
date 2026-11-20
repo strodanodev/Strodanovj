@@ -9,8 +9,9 @@
 //   node tools/pro.mjs --watch         build again whenever a file there changes (development: edit, then reload; --dev)
 //   node tools/pro.mjs --clean         remove web/pro (test the Free build)
 //
-// The official builds call it first (desktop: npm run dist:*, phone: tools/build-mobile.mjs, CI: desktop.yml) and fail
-// when the private repo is missing, so a release never ships without its paid features by accident.
+// Released apps do not contain it: tools/build-mobile.mjs builds it, signs it and publishes it behind vj.strodano.live/premium/,
+// where apps on a paid plan download it (web/prodl.js). Development (npm start, a localhost page, CI's selftest) loads
+// web/pro/pro.js directly.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
