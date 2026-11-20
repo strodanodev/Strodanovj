@@ -1,7 +1,7 @@
 {
   "name": "strodano-vj",
   "productName": "Strodano VJ",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Strodano VJ: live visuals, VJ and DJ in one app",
   "main": "main.js",
   "license": "GPL-3.0-only",
