@@ -16,7 +16,7 @@
   --side:#000;--top:#050505;--field:#000;
   --acc:#cc6688;--acc-muted:rgba(204,102,136,.2);--acc-btn:rgba(204,102,136,.15);--acc-soft:rgba(204,102,136,.1);
   --txt:#fff;--dim:#888;--term:#a8a8a8;
-  --ok:#2ea44f;--ok-muted:rgba(46,164,79,.2);--ok-soft:rgba(46,164,79,.1);--warn:#d29922;--bad:#cb2431;
+  --ctl-focus:#ff6a3d;--ok:#2ea44f;--ok-muted:rgba(46,164,79,.2);--ok-soft:rgba(46,164,79,.1);--warn:#d29922;--bad:#cb2431;
   --sans:Inter,system-ui,sans-serif;--mono:Consolas,ui-monospace,monospace;
   --s:8px;--m:16px;--l:24px;--r-card:8px;--r-ctl:4px;
   /* older names, kept so inline styles in the scripts still resolve */
@@ -30,7 +30,7 @@ code{font:12px var(--mono);color:var(--acc)}
 /* buttons: secondary by default, .on is the primary/active state */
 button{background:var(--ctl);border:1px solid var(--ctl-line);border-radius:var(--r-ctl);padding:4px 10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
 button:hover{background:var(--surface-hover);border-color:#444}
-button.on{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)}
+button.on{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)} button.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 button.on.red{background:rgba(203,36,49,.3);color:#fff;border-color:var(--bad)} button.on.yel{background:rgba(210,153,34,.3);color:#fff;border-color:var(--warn)}
 button:focus-visible{outline:1px solid var(--acc);outline-offset:1px}
 
@@ -154,6 +154,16 @@ h4{margin:var(--m) 0 var(--s);font-size:14px;font-weight:500;color:var(--dim);bo
 
 /* MIDI learn overlay */
 body.midi-learn [data-midi]{outline:1px dashed var(--acc);outline-offset:-2px;cursor:cell} body.midi-learn [data-midi].midi-mapped{outline:2px solid var(--ok)}
+/* controller focus (midi.js ctlOutline): the frame around the grid cells a controller's pads cover, and the sliders its knobs drive */
+#grid{position:relative} #ctlWinBox{position:absolute;pointer-events:none;z-index:3;border:2px solid var(--ctl-focus);border-radius:8px}
+.ctl-focus{outline:2px solid var(--ctl-focus);outline-offset:1px;border-radius:4px}
+/* controller setup wizard (ctlwizard.js) */
+#ctlWiz .wz-body{padding:var(--s) var(--m) var(--m)} #ctlWiz p{margin:0 0 var(--s)} .wz-list{display:flex;flex-direction:column;gap:2px;max-height:40vh;overflow:auto;margin-bottom:var(--s)}
+.wz-row{display:flex;align-items:center;gap:var(--s);padding:3px 6px;border-radius:var(--r-ctl);transition:background .4s} .wz-row span:first-of-type{flex:1} .wz-row.flash{background:var(--acc-muted)}
+.wz-nav{display:flex;justify-content:flex-end;gap:var(--s);margin-top:var(--s)} .wz-sum{margin:var(--s) 0;padding-left:20px;color:var(--txt)}
+/* controller overlay (midi.js ctlOverlay): held View / Share or Shift shows what each control does now */
+#ctlOverlay{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1000;pointer-events:none;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:2px solid var(--ctl-focus);border-radius:var(--r-card);padding:var(--m);box-shadow:0 12px 40px rgba(0,0,0,.6)}
+#ctlOverlay h3{margin:0 0 var(--s);font-size:15px} #ctlOverlay .rows{display:grid;grid-template-columns:minmax(120px,auto) 1fr;gap:4px var(--m)} #ctlOverlay b{font-weight:600;color:var(--dim)}
 body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:inset 0 0 0 100px var(--acc-soft)}
 
 /* DJ decks */
@@ -372,6 +382,9 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="engine.js"></script>
 <script src="mediafolder.js"></script>
 <script src="midi.js"></script>
+<script src="apc40.js"></script>
+<script src="gamepad.js"></script>
+<script src="ctlwizard.js"></script>
 <script src="audio.js"></script>
 <script src="live.js"></script>
 <script src="looks.js"></script>

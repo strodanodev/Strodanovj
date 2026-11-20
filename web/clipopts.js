@@ -93,13 +93,87 @@ function clipFillCrop(c) {
   t.x = (t.cr - t.cl) / 2 * t.s; t.y = (t.ct - t.cb) / 2 * t.s;
 }
 
+// ---------- nudge: push a playing video clip ahead or hold it back for a moment, like a DJ jog nudge, to get it back in sync ----------
+// Every input that pushes (a held key, a MIDI pad, an on-screen button, a knob or a gamepad stick) is one source with a signed
+// amount -1..1; the sources on a layer add up. The layer's playing clip runs at its speed x (1 + NUDGE_DEPTH x amount), and only
+// while pushed: c.speed is untouched, so it springs back on release. A beat-synced clip has its phase moved instead, so it stays
+// where it was pushed to. The persistent counterpart is clipSpeedStep (a fine speed trim that is saved with the clip).
+// Nothing here is saved: nudges are a performance gesture.
+const NUDGE_DEPTH = 0.5;   // amount 1 = 50 % faster, -1 = 50 % slower
+const NUDGE_HOLD = 0.4;    // what a button or key held down pushes (20 %); Shift on the keyboard pushes harder (NUDGE_HOLD_HARD)
+const NUDGE_HOLD_HARD = 1;
+const nudges = new Map();  // source -> { li, ci (-1: whatever plays on the layer), amt }
+const clampAmt = a => Math.max(-1, Math.min(1, +a || 0));
+// Start, change or (amt 0) end one source's push. src is any string that names the input, e.g. 'key:Period' or 'midi:note:0:52'.
+function nudgeSet(src, li, amt, ci = -1) {
+  amt = clampAmt(amt);
+  if (Math.abs(amt) < 0.02) nudges.delete(src);
+  else nudges.set(src, { li, ci, amt });
+}
+function nudgeEnd(prefix) { for (const k of [...nudges.keys()]) if (!prefix || k.startsWith(prefix)) nudges.delete(k); }
+// The total push on layer li right now (-1..1). Clip-bound sources only count while that clip is the one playing.
+function nudgeAmt(li) {
+  const L = comp.layers[li];
+  let a = 0;
+  for (const n of nudges.values()) if (n.li === li && (n.ci < 0 || (L && L.active === n.ci))) a += n.amt;
+  return clampAmt(a);
+}
+const nudgeFactor = li => 1 + NUDGE_DEPTH * nudgeAmt(li);
+const clipBaseRate = c => Math.min(16, Math.max(0.0625, c.speed || 1));
+// Persistent speed trim: change a clip's saved speed by d (e.g. +0.01x), the way a DJ moves the pitch fader.
+function clipSpeedStep(c, d) {
+  if (!c || c.type !== 'video') return;
+  c.speed = Math.round(Math.min(4, Math.max(0.05, (c.speed || 1) + d)) * 100) / 100;
+  if (c.video && !c.syncBeats) c.video.playbackRate = clipBaseRate(c);
+  ui.propsDirty = true;
+  setStatus(c.name + ': speed ' + c.speed.toFixed(2) + 'x' + (c.syncBeats ? ' (beat sync is on, so the tempo sets the speed: use nudge to shift it)' : ''));
+}
+function clipSpeedReset(c) { if (c && c.type === 'video') { c.speed = 1; clipSpeedStep(c, 0); } }
+// The clip a layer-wide control acts on: the one playing on layer li, or the one in column ci.
+const nudgeClip = (li, ci = -1) => { const L = comp.layers[li]; return L && L.clips[ci >= 0 ? ci : L.active]; };
+// MIDI / gamepad target for a nudge or a speed trim (midi.js midiTarget). kind: 'nudge+' | 'nudge-' (momentary: hold()),
+// 'nudge' (bipolar: set(v) with 0.5 = centre for a knob or fader, bend(a) with -1..1 for a stick), 'speed+' | 'speed-' | 'speed1' (fire()).
+function nudgeTarget(li, ci, kind) {
+  const src = 'tgt:' + li + ':' + ci + ':' + kind + ':';
+  if (kind === 'nudge+' || kind === 'nudge-') {
+    const sign = kind === 'nudge+' ? 1 : -1;
+    return { hold: (down, from = '') => nudgeSet(src + from, li, down ? sign * NUDGE_HOLD : 0, ci) };
+  }
+  if (kind === 'nudge') {
+    const bend = (a, from = '') => nudgeSet(src + from, li, a, ci);
+    return { set: (v, from) => { const a = (v - 0.5) * 2; bend(Math.abs(a) < 0.04 ? 0 : a, from); }, bend };   // small dead zone round the centre
+  }
+  if (kind === 'speed+' || kind === 'speed-') return { fire: () => clipSpeedStep(nudgeClip(li, ci), kind === 'speed+' ? 0.01 : -0.01) };
+  if (kind === 'speed1') return { fire: () => clipSpeedReset(nudgeClip(li, ci)) };
+  return null;
+}
+const NUDGE_KINDS = { 'nudge+': 'nudge faster (hold)', 'nudge-': 'nudge slower (hold)', nudge: 'nudge (centre = none)', 'speed+': 'speed +0.01x', 'speed-': 'speed -0.01x', speed1: 'speed back to 1x' };
+// A button that nudges while it is held (desktop Clip tab, phone Perform and clip sheet). Pointer capture keeps the release.
+function nudgeButton(text, li, ci, sign, extra = {}) {
+  const src = 'btn:' + li + ':' + ci + ':' + sign, b = el('button', { textContent: text, ...extra });
+  b.addEventListener('pointerdown', e => {
+    if (typeof midi !== 'undefined' && midi.learn) return;   // Map mode: the click picks the control
+    nudgeSet(src, li, sign * NUDGE_HOLD, ci); b.classList.add('held');
+    try { b.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  const up = () => { nudgeSet(src, li, 0); b.classList.remove('held'); };
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+  return b;
+}
+
 // Called every frame (vjTick): keeps the playing video clips inside their in / out points, and in time when beat-synced.
-function clipOptsTick() {
+function clipOptsTick(dt = 1 / 60) {
   comp.layers.forEach((L, li) => {
     const c = L.clips[L.active], v = c && c.video;
     if (!v || c.type !== 'video' || !c.ready) return;
-    const custom = clipCustom(c);
+    const custom = clipCustom(c), nf = nudgeFactor(li);
     v.loop = !custom;   // the browser's own loop is the smoothest when nothing is set
+    // speed (with any nudge) for clips that are not beat-synced; the beat-sync branch below sets its own rate
+    if (!(c.syncBeats > 0 && comp.bpm > 0) && c.speed > 0 && !c.done) {
+      const r = Math.min(16, Math.max(0.0625, clipBaseRate(c) * nf));
+      if (Math.abs(v.playbackRate - r) > r * 0.002) v.playbackRate = r;
+    }
     if (!custom || !clipDur(c)) return;
     const a = clipStart(c), b = Math.max(a + 0.05, clipEnd(c)), len = b - a, t = v.currentTime;
     const mode = c.loopMode || 'loop';
@@ -111,6 +185,8 @@ function clipOptsTick() {
       return;
     }
     if (c.syncBeats > 0 && !c.done && comp.bpm > 0) {
+      // a nudge moves the clip's phase against the beat: it plays faster / slower for as long as it is pushed, and stays there
+      if (nf !== 1) c.sync0 = (c.sync0 ?? comp.beats) - (nf - 1) * Math.min(dt, 0.1) * comp.bpm / 60;
       const loopSec = c.syncBeats * 60 / comp.bpm, rate = len / loopSec;
       let cyc = (comp.beats - (c.sync0 ?? comp.beats)) / c.syncBeats;
       if (mode !== 'loop' && cyc >= 1) cyc = 0.999;

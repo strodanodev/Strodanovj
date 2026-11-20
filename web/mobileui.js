@@ -181,6 +181,9 @@ function renderPerform(v) {
     M.levels.push({ i: lvl, o: lvlOut, L });
     const card = el('div', { className: 'layer' + (L.bypass ? ' off' : '') },
       el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: L.name + (L.locked ? '  🔒' : '') }), now),
+        ...(L.clips.some(c => c && c.type === 'video') ? [   // nudge the playing video while held, to bring it back in time (clipopts.js)
+          nudgeButton('«', li, -1, -1, { title: 'Hold: slow the playing clip down', ariaLabel: 'Nudge slower' }),
+          nudgeButton('»', li, -1, 1, { title: 'Hold: speed the playing clip up', ariaLabel: 'Nudge faster' })] : []),
         ibtn(L.bypass ? I.eyeOff : I.eye, L.bypass ? 'Show this layer' : 'Hide this layer', () => { L.bypass = !L.bypass; M.dirty = true; }, L.bypass ? 'on' : ''),
         ibtn(I.x, 'Clear this layer', () => { eject(li); buzz(); })),
       el('div', { className: 'lvl' }, lvl, lvlOut));
@@ -256,6 +259,9 @@ function clipSheet(li, ci) {
     if (c.type === 'video' && !c.missing) {
       s.append(h3('When it ends'), segCtl([['loop', 'Loop'], ['hold', 'Hold last frame'], ['eject', 'Clear']], c.loopMode || 'loop', x => { c.loopMode = x; refreshSheet(); }),
         h3('Speed'), el('div', { className: 'lvl' }, slider(0.25, 2, 0.05, () => c.speed || 1, x => { c.speed = x; if (c.video) c.video.playbackRate = x; })),
+        el('div', { className: 'row' }, btn('−0.01', () => { clipSpeedStep(c, -0.01); refreshSheet(); }), btn('1x', () => { clipSpeedReset(c); refreshSheet(); }), btn('+0.01', () => { clipSpeedStep(c, 0.01); refreshSheet(); })),
+        h3('Nudge', el('span', { className: 'x hint', textContent: 'hold while it plays' })),
+        el('div', { className: 'row' }, nudgeButton('« Slower', li, ci, -1), nudgeButton('Faster »', li, ci, 1)),
         h3('Follow the beat', el('span', { className: 'x hint', textContent: 'stretch it to' })), segCtl([[0, 'Off'], [4, '1 bar'], [8, '2'], [16, '4'], [32, '8 bars']], c.syncBeats || 0, x => { c.syncBeats = +x; c.sync0 = comp.beats; refreshSheet(); }));
     } else if (c.type === 'gen') {
       const d = DEFS.gen.get(c.gen);

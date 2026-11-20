@@ -12,6 +12,9 @@ const KEYS_HELP = [
   ['F1 ... F8', 'Recall snapshot 1 ... 8 (Shift: store)'],
   ['Left / Right', 'Crossfader a step toward A / B'],
   ['Shift + Left / Right', 'Crossfader all the way to A / B'],
+  [',  /  .  (hold)', 'Nudge the playing clip of the selected layer slower / faster while held (Shift: harder)'],
+  ['[  /  ]', 'Speed of that clip -0.01x / +0.01x, kept (Shift: 0.1x)'],
+  ['\\', 'Speed of that clip back to 1x'],
   ['Space', 'Tap tempo'],
   ['R', 'Resync the beat'],
   ['?', 'Show or hide this list'],
@@ -55,6 +58,11 @@ function onShortcut(e) {
     case 'KeyX': if (!e.repeat) { if (e.shiftKey) comp.layers.forEach((_, i) => eject(i)); else eject(sel.l); } return true;
     case 'Space': if (!e.repeat) $('tap').click(); return true;
     case 'KeyR': if (!e.repeat) $('resync').click(); return true;
+    case 'Comma': case 'Period':   // nudge while held (clipopts.js); the keyup handler below lets go
+      if (!e.repeat && L) nudgeSet('key:' + e.code, sel.l, (e.code === 'Period' ? 1 : -1) * (e.shiftKey ? NUDGE_HOLD_HARD : NUDGE_HOLD));
+      return true;
+    case 'BracketLeft': case 'BracketRight': if (L) clipSpeedStep(L.clips[L.active], (e.code === 'BracketRight' ? 1 : -1) * (e.shiftKey ? 0.1 : 0.01)); return true;
+    case 'Backslash': if (!e.repeat && L) clipSpeedReset(L.clips[L.active]); return true;
     case 'KeyN': if (!e.repeat && L) textNextLine(L.clips[L.active], e.shiftKey ? -1 : 1); return true;
   }
   return false;
@@ -63,5 +71,8 @@ function initKeys() {
   $('keysBody').append(...KEYS_HELP.map(([k, what]) => el('div', { className: 'fld' }, el('label', { textContent: k }), el('span', { textContent: what }))));
   // Capture phase, so a focused slider or button does not also act on the key (arrows, Space).
   document.addEventListener('keydown', e => { if (onShortcut(e)) e.preventDefault(); }, true);
+  // a nudge key let go ends its push, even when focus moved to a text field meanwhile; leaving the window ends every key push
+  document.addEventListener('keyup', e => { if (e.code === 'Comma' || e.code === 'Period') nudgeSet('key:' + e.code, 0, 0); }, true);
+  window.addEventListener('blur', () => nudgeEnd('key:'));
   document.addEventListener('keyup', e => { if (e.code === 'Space' && !typingIn(e.target) && $('shModal').hidden) e.preventDefault(); }, true);
 }

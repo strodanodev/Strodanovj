@@ -152,7 +152,15 @@ function renderProps() {
       posSlider = { input: pos.slider, video: v };
       p.append(pos, el('div', { className: 'fld' },
         el('button', { textContent: 'Play / Pause', onclick: () => { if (v.paused) v.play().catch(() => {}); else v.pause(); } }),
-        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = clipStart(c); c.sync0 = comp.beats; c.done = false; } }), el('button', { textContent: '1x', onclick: () => { c.speed = 1; v.playbackRate = 1; ui.propsDirty = true; } })),
+        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = clipStart(c); c.sync0 = comp.beats; c.done = false; } }),
+        el('button', { textContent: '1x', title: 'Speed back to 1x', dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':speed1' }, onclick: () => clipSpeedReset(c) })),
+      // nudge (held, while this clip plays) and a fine speed trim: clipopts.js. Map mode maps each button to a pad.
+      el('div', { className: 'fld', title: 'Hold to push the playing clip ahead or hold it back (like a DJ nudge), to bring it back in time. Keys: , and . (Shift: harder); [ and ] trim the speed.' },
+        el('label', { textContent: 'Nudge' }),
+        nudgeButton('◀ Slower', sel.l, sel.c, -1, { dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':nudge-' } }),
+        nudgeButton('Faster ▶', sel.l, sel.c, 1, { dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':nudge+' } }),
+        el('button', { textContent: '−', title: 'Speed -0.01x (kept)', dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':speed-' }, onclick: () => clipSpeedStep(c, -0.01) }),
+        el('button', { textContent: '+', title: 'Speed +0.01x (kept)', dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':speed+' }, onclick: () => clipSpeedStep(c, 0.01) })),
         ...videoClipOpts(c, L));
     } else if (c.type === 'image') p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}` }));
     else if (c.type === 'gen') {
@@ -537,12 +545,24 @@ function initTransport() {
 // ---------- main loop ----------
 let lastT = performance.now(), lastFrameAt = 0, fpsN = 0, fpsT = lastT, costSum = 0, loopWin = null;
 const monOut = $('monOut').getContext('2d'), monPrev = $('monPrev').getContext('2d');
-function frame() {
-  const t0 = performance.now(), realDt = Math.max(0, (t0 - lastT) / 1000), dt = Math.min(realDt, 0.1);
+// Frames come from requestAnimationFrame, but Chromium gives a window that Windows sees as covered (OBS or anything else
+// in front of it) about one animation frame per second, background throttling off or not (measured 2026-11-20: page
+// visible, timers at full rate, rAF 1.3/s). With the control window behind OBS that dropped NDI to 1-3 fps, a picture up to
+// a second old. So while something is live (output window, NDI, web link) and animation frames stop coming, a timer runs
+// the frames (below schedule()), without the control-window monitors (nobody sees them then). Rendering is capped at RENDER_FPS:
+// a 144 / 165 Hz control display would otherwise render the show 2-3 times as often as any output needs, heating a laptop
+// GPU into thermal throttling. A frame is due at the display frame NEAREST its time (half a display frame of slack).
+const RENDER_FPS = 60;
+let rafLast = 0, rafDt = 0, renderDue = 0;
+function frame(fromTimer) {
+  const t0 = performance.now(), per = 1000 / RENDER_FPS;
+  if (t0 < renderDue - Math.min(per, rafDt || per) / 2) { schedule(); return; }
+  renderDue = t0 - renderDue > per * 3 ? t0 + per : renderDue + per;
+  const realDt = Math.max(0, (t0 - lastT) / 1000), dt = Math.min(realDt, 0.1);
   lastT = t0; lastFrameAt = t0;
   try {
     coreTick(t0, dt, realDt);   // core.js: music, inputs, clock, composition, output windows, NDI, web link
-    if (!document.hidden) {
+    if (!document.hidden && fromTimer !== true) {
       const mw = 480, mh = Math.round(480 * comp.h / comp.w);
       for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
       present(comp.outTex, mw, mh); grab(monOut, mw, mh);
@@ -573,8 +593,20 @@ function schedule() {
   if (rafId && loopWin === w) return;
   if (rafId && loopWin && !loopWin.closed) { try { loopWin.cancelAnimationFrame(rafId); } catch (e) {} }
   loopWin = w;
-  rafId = w.requestAnimationFrame(ts => { rafId = 0; frame(ts); });
+  rafId = w.requestAnimationFrame(() => {
+    rafId = 0;
+    const now = performance.now();
+    if (rafLast) { const d = now - rafLast; if (d > 0 && d < 100) rafDt = rafDt ? rafDt * 0.9 + d * 0.1 : d; }
+    rafLast = now;
+    frame(false);
+  });
 }
+// the timer side of the loop (see above frame()): runs a due frame only while animation frames have stopped coming
+setInterval(() => {
+  const now = performance.now(), per = 1000 / RENDER_FPS;
+  if (now - rafLast < per * 2 || now < renderDue - 1) return;
+  if (liveScreens().length || ndiLive().length || vdoLive().length) frame(true);
+}, 4);
 setInterval(() => { if (performance.now() - lastFrameAt > 600) schedule(); }, 300);
 
 // genThumbFor (generator thumbnails) is in core.js
