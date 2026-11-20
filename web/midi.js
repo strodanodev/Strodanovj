@@ -114,7 +114,10 @@ function midiTarget(id) {
   }
   if (a === 'master') return { set: v => { comp.master = v; }, get: () => comp.master };
   if (a === 'crossfade') return { set: v => { comp.crossfade = v; }, get: () => comp.crossfade };
-  if (a === 'tap' || a === 'resync') return { fire: () => $(a).click() };
+  if (a === 'tap' || a === 'resync') return { fire: () => {   // the phone page has no #tap / #resync: its BPM button taps
+    const b = $(a) || (a === 'tap' ? $('bpmBtn') : null);
+    if (b) b.click(); else if (a === 'resync') comp.beats = 0;
+  } };
   if (a === 'column') return +b < comp.columns ? { fire: () => triggerColumn(+b) } : null;
   if (a === 'clip' && d) return L && +c < comp.columns && typeof nudgeTarget === 'function' ? nudgeTarget(+b, +c, d) : null;   // clipopts.js
   if (a === 'clip') return L && +c < comp.columns ? { fire: () => trigger(+b, +c) } : null;
@@ -678,7 +681,7 @@ function midiPanel(inTab) {
   box.append(el('div', { className: 'fld' },
     el('button', { textContent: 'Export', title: 'Save every controller mapping to a file (backup, or take them to another computer)', onclick: ctlExportFile }),
     el('button', { textContent: 'Import', title: 'Add the mappings from an exported file (they replace mappings of the same controls)', onclick: ctlImportFile }),
-    Object.keys(midi.map).length ? el('button', { textContent: 'Clear all mappings', onclick: e => armThen(e.currentTarget, 'remove every mapping', () => { midi.map = {}; midi.kinds = {}; ctlChanged(); }) }) : null));
+    Object.keys(midi.map).length || Object.keys(midi.stick).length ? el('button', { textContent: 'Clear all mappings', onclick: e => armThen(e.currentTarget, 'remove every mapping', () => { midi.map = {}; midi.kinds = {}; midi.stick = {}; ctlChanged(); }) }) : null));
   return box;
 }
 
