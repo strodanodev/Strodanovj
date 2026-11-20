@@ -34,6 +34,7 @@
       "ndi.js",
       "ndi-worker.js",
       "ndinet.js",
+      "power.js",
       "updater.js",
       "rekordbox.js",
       "pro.js",

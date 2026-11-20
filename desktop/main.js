@@ -10,6 +10,7 @@ const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, scre
 const path = require('path');
 const { setupNdi, stopNdi } = require('./ndi');
 const { setupNdiNet } = require('./ndinet');
+const { setupPower } = require('./power');
 const { setupUpdater } = require('./updater');
 const { setupRekordbox, stopRekordbox } = require('./rekordbox');
 const { setupPro } = require('./pro');
@@ -203,6 +204,7 @@ app.whenReady().then(() => {
   createWindow();
   setupNdi(() => win);
   setupNdiNet();   // desktop/ndinet.js: NDI network check (firewall, addresses) for the NDI panel
+  setupPower();   // desktop/power.js: Windows must not slow the app down while its window is minimized or covered
   setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
   updater = setupUpdater(() => win, { selftest, beforeInstall: () => { quitting = true; } });   // desktop/updater.js
   screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
