@@ -564,11 +564,13 @@ function frame(fromTimer) {
   try {
     coreTick(t0, dt, realDt);   // core.js: music, inputs, clock, composition, output windows, NDI, web link
     if (!document.hidden && fromTimer !== true) {
-      const mw = 480, mh = Math.round(480 * comp.h / comp.w);
-      for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
-      present(comp.outTex, mw, mh); grab(monOut, mw, mh);
-      const L = comp.layers[Math.min(sel.l, comp.layers.length - 1)];
-      present(L.outTex, mw, mh); grab(monPrev, mw, mh);
+      if (!$('bottom').classList.contains('pmin')) {   // the monitors are not drawn while the bottom row is minimised
+        const mw = 480, mh = Math.round(480 * comp.h / comp.w);
+        for (const cv of [monOut.canvas, monPrev.canvas]) if (cv.height !== mh) cv.height = mh;
+        present(comp.outTex, mw, mh); grab(monOut, mw, mh);
+        const L = comp.layers[Math.min(sel.l, comp.layers.length - 1)];
+        present(L.outTex, mw, mh); grab(monPrev, mw, mh);
+      }
       drawLayerMons();
       if (!$('outModal').hidden) drawOutCanvas();
       tickUI();
