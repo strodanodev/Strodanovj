@@ -396,7 +396,7 @@ function premiumCard() {
     : btn(p.busy ? (p.total ? `Downloading ${Math.min(p.total, p.done + 1)} of ${p.total}…` : 'Checking your plan…') : unlocked ? 'Download the pack' : 'Unlock with Pro', () => premiumGet(), 'big pri', { disabled: p.busy, style: { marginTop: '8px' } });
   return el('div', { className: 'card' },
     el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: 'STRODANO 3D show' })), el('i', { className: 'k', textContent: 'PRO' })),
-    hint('Six scenes built on the advanced 3D visualizers (particle pictures, terrain, harmonograph, supernova, fireworks, text shatter) with STRODANO footage in full HD.'),
+    hint('Six scenes built on the advanced 3D visualizers (particle pictures, terrain, harmonograph, crystals, supernova, text shatter) with STRODANO footage in full HD.'),
     p.note && !p.busy && !have ? hint(p.note) : null, go);
 }
 function libSheet(it, m) {

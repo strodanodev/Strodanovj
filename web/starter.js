@@ -127,7 +127,7 @@ async function premiumGet() {
   } finally { premiumState.busy = false; if (typeof M !== 'undefined') M.dirty = true; }
 }
 // The premium 3D show: the advanced three.js visualizers (Picture Particles fed by the HD footage, Audio History Terrain,
-// Harmonograph, Particle Morph, Strange Attractor, Beat Fireworks, Drop Supernova, Text Shatter) with the HD clips.
+// Harmonograph, Particle Morph, Strange Attractor, Crystal Field, Drop Supernova, Text Shatter) with the HD clips.
 function premiumProject() {
   const m = (file, extra) => packClip(PREMIUM_FILES, file, extra);
   return {
@@ -137,7 +137,7 @@ function premiumProject() {
       { name: 'World', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
         clips: [m('strodano-pro-visors-hd.mp4'), d3('terrain'), m('strodano-pro-club-hd.mp4'), d3('attractor'), m('strodano-pro-visors-hd.mp4'), d3('supernova')] },
       { name: '3D', opacity: 0.9, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('picture'), d3('harmono'), d3('morph'), null, d3('fireworks'), d3('shatter', { src: 'text', text: 'STRODANO' })] },
+        clips: [d3('picture'), d3('harmono'), d3('morph'), null, d3('crystals'), d3('shatter', { src: 'text', text: 'STRODANO' })] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
         clips: [null, m('strodano-pro-lockup.webp', LOWER), null, m('strodano-pro-lockup.webp', CENTRE), null, null] },
     ],
