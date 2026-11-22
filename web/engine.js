@@ -217,10 +217,11 @@ void main(){ vec2 s = (uv - 0.5 - off) / scl + 0.5;
  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) { o = vec4(0.0); return; }
  o = texture(tex, s); }`);
 // The same with a crop: inset = how much of the picture is cut off at the left, bottom, right and top (fractions of its size).
-const cropProg = mkProg(HEAD + `uniform sampler2D tex; uniform vec2 scl; uniform vec2 off; uniform vec4 inset; in vec2 uv; out vec4 o;
+// unpremul = 1 for a premultiplied texture (still images, see uploadClip): filtered premultiplied, then back to straight alpha.
+const cropProg = mkProg(HEAD + `uniform sampler2D tex; uniform vec2 scl; uniform vec2 off; uniform vec4 inset; uniform float unpremul; in vec2 uv; out vec4 o;
 void main(){ vec2 s = (uv - 0.5 - off) / scl + 0.5;
  if (s.x < inset.x || s.x > 1.0 - inset.z || s.y < inset.y || s.y > 1.0 - inset.w) { o = vec4(0.0); return; }
- o = texture(tex, s); }`);
+ vec4 c = texture(tex, s); if (unpremul > 0.5) c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); o = c; }`);
 const blendProg = mkProg(HEAD + `uniform sampler2D base; uniform sampler2D top; uniform float opacity; uniform int mode; in vec2 uv; out vec4 o;
 void main(){ vec4 b = texture(base, uv); vec4 t = texture(top, uv); float a = t.a * opacity; vec3 r;
  if (mode == 1) r = b.rgb + t.rgb; else if (mode == 2) r = b.rgb - t.rgb; else if (mode == 3) r = b.rgb * t.rgb;
@@ -331,9 +332,15 @@ function uploadClip(c) {
   const src = c.video || c.img;
   if (!c.tex) c.tex = mkTex(0, 0);
   gl.bindTexture(gl.TEXTURE_2D, c.tex);
+  // Still images go up premultiplied: a PNG's transparent pixels keep whatever colour they were saved with (often white),
+  // and straight-alpha linear filtering pulled it into the edges (a white halo, wider under Blur) and into the layer
+  // monitor (solid white). cropProg divides it back out (c.premul). Videos keep the straight upload.
+  c.premul = !c.video;
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  if (c.premul) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  if (c.premul) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   c.ready = true;
   c.texAt = c.video ? c.video.currentTime : 0;   // which video frame the texture holds (posterClip / trigger)
 }
@@ -490,6 +497,7 @@ function drawClip(L, c, f) {
   gl.uniform2f(cropProg.loc('scl'), s * (t ? t.w : 1) * ls, s * (t ? t.h : 1) * ls);
   gl.uniform2f(cropProg.loc('off'), (t ? t.x : 0) * ls + (media ? L.x : 0), (t ? t.y : 0) * ls + (media ? L.y : 0));
   if (t && !media) gl.uniform4f(cropProg.loc('inset'), t.cl, t.cb, t.cr, t.ct); else gl.uniform4f(cropProg.loc('inset'), 0, 0, 0, 0);
+  gl.uniform1f(cropProg.loc('unpremul'), 0);   // clipRT holds straight alpha
   tri();
   return true;
 }
@@ -517,6 +525,7 @@ function drawSource(L, c, f, flat) {
   gl.uniform2f(cropProg.loc('scl'), sx * ls * ts * (t && !flat ? t.w : 1), sy * ls * ts * (t && !flat ? t.h : 1));
   gl.uniform2f(cropProg.loc('off'), flat ? 0 : (t ? t.x : 0) * ls + L.x, flat ? 0 : (t ? t.y : 0) * ls + L.y);
   if (t) gl.uniform4f(cropProg.loc('inset'), t.cl, t.cb, t.cr, t.ct); else gl.uniform4f(cropProg.loc('inset'), 0, 0, 0, 0);
+  gl.uniform1f(cropProg.loc('unpremul'), c.premul ? 1 : 0);
   tri();
   return true;
 }
