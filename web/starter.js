@@ -30,14 +30,16 @@ function starterProject() {
     app: 'Strodano VJ', version: 2, w: 1280, h: 720, columns: 4, master: 1, crossfade: 0.5, bpm: 126,
     agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Peak', 3: 'Drop' },
     layers: [
+      // the bold, music-driven 3D scenes (checked with a real track: Bokeh, Star Warp, Embers and Fireworks read too faint)
       { name: 'Visuals', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
-        clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('stars'),
+        clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('waves', { fx: [packFx('Hue Rotate', [0, 0.15])] }),
           m('strodano-stage.mp4', { fx: [packFx('Audio Pulse', [0.2, 0.15, 0])] }), d3('tunnel')] },
-      { name: '3D', opacity: 0.65, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('bokeh'), null, d3('embers'), d3('fireworks')] },
+      { name: '3D', opacity: 0.85, blend: 4, fit: 0, trans: 1, transType: 0,
+        clips: [d3('vortex'), null, d3('wire'), d3('rings', { fx: [packFx('Kaleidoscope', [0.3, 0, 0.15])] })] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
         clips: [m('strodano-logo.webp', LOWER), m('strodano-duo.webp', DUO),
-          m('strodano-logo.webp', { ...CENTRE, fx: [packFx('RGB Shift', [0.03, 0], { 0: onKick(0.5) })] }), m('strodano-duo.webp', DUO)] },
+          m('strodano-logo.webp', { ...CENTRE, fx: [packFx('RGB Shift', [0.03, 0], { 0: onKick(0.5) })] }),
+          m('strodano-duo.webp', { ...DUO, fx: [packFx('RGB Shift', [0.01, 0.25], { 0: onKick(0.08) })] })] },
     ],
     screens: [{ name: 'Web link', device: 'vdo', slices: [] }],
   };
