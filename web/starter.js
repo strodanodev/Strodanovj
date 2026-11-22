@@ -7,10 +7,9 @@
 // 3D / shader / text clips play.
 'use strict';
 const STARTER_BASE = 'starter/';
+// Four files: two STRODANO videos, the duo cut-out and the chrome logo. The 3D scenes do the rest.
 const STARTER_FILES = [
-  ['strodano-hero.mp4', 'STRODANO live'], ['strodano-stage.mp4', 'Club set'],
-  ['strodano-live-1.webp', 'LED wall'], ['strodano-live-2.webp', 'Lasers'],
-  ['strodano-duo.webp', 'STRO + Sedano'], ['strodano-logo.webp', 'STRODANO logo'], ['strodano-neon.webp', 'Neon logo'],
+  ['strodano-hero.mp4', 'Visors'], ['strodano-stage.mp4', 'Club set'], ['strodano-duo.webp', 'STRO + Sedano'], ['strodano-logo.webp', 'STRODANO logo'],
 ];
 const starterKind = f => (/\.mp4$/.test(f) ? 'video' : 'image');
 // Clip helpers shared by the starter and the premium show. Placement (c.tr): x / y = offset in frames (0.3 = 30% of
@@ -18,20 +17,27 @@ const starterKind = f => (/\.mp4$/.test(f) ? 'video' : 'image');
 const LOWER = { tr: { s: 0.32, y: -0.29 } }, CENTRE = { tr: { s: 0.62 } }, DUO = { tr: { s: 0.92, y: -0.1 } };
 const packClip = (list, file, extra) => ({ type: starterKind(file), fileName: file, name: (list.find(x => x[0] === file) || [0, file])[1], speed: 1, ...extra });
 const d3 = (scene, extra) => ({ type: '3d', scene, ...extra });
-// The project: 3 layers x 6 scenes, calm -> drop from left to right (the column tags drive Auto). Footage or a 3D world
-// at the back, a soft 3D glow screened over it in some scenes, and ONE brand element per scene on top.
+// Effects for the template: packFx(name, params, mod) = one entry of a clip's own effect chain (saved as clip.fx);
+// mod = { paramIndex: { src: 'kick' | 'bass' | ..., depth } } pushes a parameter up with the music (motion.js).
+const packFx = (def, params, mod) => ({ def, params, mix: 1, ...(mod && { mod }) });
+const onKick = depth => ({ shape: 0, rate: 4, depth, src: 'kick' });
+// The first-start template: 4 scenes (Intro, Groove, Peak, Drop; the column tags drive Auto) on 3 layers.
+// Visuals at the back (STRODANO footage or a 3D world), a 3D glow screened over it, ONE brand element on top, placed
+// off the faces. A few clip effects follow the kick, so it moves with the music from the first tap.
 function starterProject() {
   const m = (file, extra) => packClip(STARTER_FILES, file, extra);
   return {
-    app: 'Strodano VJ', version: 2, w: 1280, h: 720, columns: 6, master: 1, crossfade: 0.5, bpm: 126,
-    agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Groove', 3: 'Peak', 4: 'Peak', 5: 'Drop' },
+    app: 'Strodano VJ', version: 2, w: 1280, h: 720, columns: 4, master: 1, crossfade: 0.5, bpm: 126,
+    agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Peak', 3: 'Drop' },
     layers: [
-      { name: 'Footage', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
-        clips: [m('strodano-hero.mp4'), m('strodano-stage.mp4'), d3('stars'), m('strodano-live-1.webp'), m('strodano-live-2.webp'), d3('tunnel')] },
-      { name: 'Glow', opacity: 0.6, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('bokeh'), null, d3('waves'), d3('embers'), null, { type: 'gen', gen: 'Beat Flash', name: 'Beat Flash' }] },
+      { name: 'Visuals', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
+        clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('stars'),
+          m('strodano-stage.mp4', { fx: [packFx('Audio Pulse', [0.2, 0.15, 0])] }), d3('tunnel')] },
+      { name: '3D', opacity: 0.65, blend: 4, fit: 0, trans: 1, transType: 0,
+        clips: [d3('bokeh'), null, d3('embers'), d3('fireworks')] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
-        clips: [m('strodano-logo.webp', LOWER), m('strodano-neon.webp', LOWER), m('strodano-duo.webp', DUO), m('strodano-logo.webp', CENTRE), m('strodano-duo.webp', DUO), m('strodano-neon.webp', CENTRE)] },
+        clips: [m('strodano-logo.webp', LOWER), m('strodano-duo.webp', DUO),
+          m('strodano-logo.webp', { ...CENTRE, fx: [packFx('RGB Shift', [0.03, 0], { 0: onKick(0.5) })] }), m('strodano-duo.webp', DUO)] },
     ],
     screens: [{ name: 'Web link', device: 'vdo', slices: [] }],
   };

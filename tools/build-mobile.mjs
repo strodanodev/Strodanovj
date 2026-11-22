@@ -46,8 +46,7 @@ const stale = [...shell].filter(s => !existsSync(path.join(WEB, s)));
 if (stale.length) fail('sw.js SHELL lists files that do not exist: ' + stale.join(', '));
 
 // 3. the STRODANO starter pack (names must match STARTER_FILES in web/starter.js)
-const PACK = [['hero.mp4', 'strodano-hero.mp4'], ['stage.mp4', 'strodano-stage.mp4'], ['live-1.webp', 'strodano-live-1.webp'], ['live-2.webp', 'strodano-live-2.webp'],
-  ['logo-main.webp', 'strodano-logo.webp'], ['logo-neon.webp', 'strodano-neon.webp']];
+const PACK = [['hero.mp4', 'strodano-hero.mp4'], ['stage.mp4', 'strodano-stage.mp4'], ['logo-main.webp', 'strodano-logo.webp']];
 const starterNames = [...readFileSync(path.join(WEB, 'starter.js'), 'utf8').matchAll(/\['(strodano-(?!pro-)[^']+)'/g)].map(m => m[1]);
 mkdirSync(path.join(OUT, 'starter'), { recursive: true });
 for (const [from, to] of PACK) {
