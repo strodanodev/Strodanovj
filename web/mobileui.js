@@ -59,7 +59,7 @@ const I = {
   photo: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 15.5l5-4.5 4 3.5 3-2.5 6 5"/><circle cx="15.5" cy="9.5" r="1.5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
 };
-const TABS = [['perform', 'Perform'], ['build', 'Build'], ['library', 'Library'], ['auto', 'Auto'], ['broadcast', 'Broadcast']];
+const TABS = [['perform', 'Perform'], ['build', 'Build'], ['library', 'Library'], ['auto', 'Auto'], ['broadcast', 'Live']];   // the broadcast tab is called Live: it is where you go on air
 const MOOD_HINT = { Calm: 'quiet parts', Groove: 'the steady beat', Peak: 'big moments', Drop: 'when the beat drops' };
 
 // ---------- small helpers ----------
@@ -151,7 +151,7 @@ const columnThumb = ci => { for (let li = comp.layers.length - 1; li >= 0; li--)
 function welcomeCard(v) {
   if (M.prefs.welcomeDone) return;
   v.append(el('div', { className: 'card welcome' }, el('b', { textContent: 'Welcome to Strodano VJ' }),
-    el('ol', null, ...[['Library', 'import your videos and photos'], ['Build', 'tap + to put them on layers'], ['Perform', 'tap clips and scenes, hold effects'], ['Auto', 'let it follow the music'], ['Broadcast', 'share your show with a link or QR']]
+    el('ol', null, ...[['Library', 'import your videos and photos'], ['Build', 'tap + to put them on layers'], ['Perform', 'tap clips and scenes, hold effects'], ['Auto', 'let it follow the music'], ['Live', 'share your show with a link or QR']]
       .map(([b, t]) => el('li', null, el('b', { textContent: b }), ' - ' + t))),
     btn('Got it', () => { M.prefs.welcomeDone = true; savePrefs(); M.dirty = true; }, 'big')));
 }
@@ -565,9 +565,10 @@ function renderTabs() {
   t.textContent = '';
   if (M.tab === 'auto' && !proLoaded()) M.tab = 'perform';   // Agent Mode is Strodano VJ Pro
   for (const [id, label] of TABS.filter(([id]) => id !== 'auto' || proLoaded())) {
-    const b = el('button', { className: M.tab === id ? 'on' : '', ariaLabel: label, onclick: () => { if (M.tab === id) { $('view').scrollTo({ top: 0, behavior: 'smooth' }); return; } M.tab = id; M.dirty = true; $('view').scrollTop = 0; renderTabs(); } });
+    const b = el('button', { className: (M.tab === id ? 'on' : '') + (id === 'broadcast' && M.onAir ? ' onair' : ''), ariaLabel: label, onclick: () => { if (M.tab === id) { $('view').scrollTo({ top: 0, behavior: 'smooth' }); return; } M.tab = id; M.dirty = true; $('view').scrollTop = 0; renderTabs(); } });
     const pill = el('span', { className: 'pill' });
     pill.innerHTML = ICONS[id];
+    b.dataset.id = id;
     b.append(pill, el('span', { textContent: label }));
     t.append(b);
   }
@@ -646,7 +647,15 @@ function tickUI() {
   const bpm = comp.bpm.toFixed(0);
   if ($('bpmVal').textContent !== bpm) $('bpmVal').textContent = bpm;
   // badges over the monitor
-  const isLive = vdoLive().length > 0, badge = (isLive ? 'L' : '') + (agentOn() ? 'A' : '') + (safety.black ? 'B' : '');
+  const isLive = vdoLive().length > 0;
+  if (isLive !== M.onAir) {   // on air: red edge on the monitor, LIVE pill in the top bar, the Live tab tinted
+    M.onAir = isLive;
+    document.body.classList.toggle('on-air', isLive);
+    $('livePill').hidden = !isLive;
+    const lt = document.querySelector('#tabs button[data-id="broadcast"]');
+    if (lt) lt.classList.toggle('onair', isLive);
+  }
+  const badge = (isLive ? 'L' : '') + (agentOn() ? 'A' : '') + (safety.black ? 'B' : '');
   if (badge !== M.badge) {
     M.badge = badge;
     const b = $('badge');
@@ -676,6 +685,7 @@ function setMonSmall(on) { M.prefs.monSmall = !!on; savePrefs(); $('stage').clas
     comp.beats = Math.round(comp.beats);
     buzz(5);
   });
+  $('livePill').addEventListener('click', () => { if (M.tab !== 'broadcast') { M.tab = 'broadcast'; M.dirty = true; $('view').scrollTop = 0; renderTabs(); } });
   $('blackBtn').addEventListener('click', () => { setBlackout(); buzz(20); });
   $('setBtn').innerHTML = I.sliders; $('setBtn').addEventListener('click', settingsSheet);
   $('monBtn').innerHTML = I.chevUp; $('monBtn').addEventListener('click', () => setMonSmall(!M.prefs.monSmall));

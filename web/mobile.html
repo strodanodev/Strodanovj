@@ -214,14 +214,42 @@ button.big{letter-spacing:.06em}
 .gobtn{color:var(--on-acc)}.gobtn svg{stroke:var(--on-acc)}
 .meter i{background:linear-gradient(90deg,var(--calm),var(--groove) 40%,var(--peak) 72%,var(--drop))}
 #tabs{background:rgba(0,0,0,.96)}
+
+/* UI 2.0 step 2: the live state. Red means on air everywhere (monitor edge, LIVE pill, Live tab); the electric edge
+   marks what is going out now: the monitor while broadcasting (red), the playing scene (blue). */
+.scene.on::after,body.on-air #monWrap::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:3;
+  border:2px solid var(--e-hi,#6f9bff);opacity:.95;filter:url(#electric) drop-shadow(0 0 3px var(--e,var(--acc))) drop-shadow(0 0 8px var(--e,var(--acc)))}
+.scene.on{--e:var(--acc);--e-hi:color-mix(in srgb,var(--acc) 60%,#fff);border-color:transparent;box-shadow:0 0 14px var(--acc-muted)}
+body.on-air #monWrap{--e:var(--live);--e-hi:var(--live-hi);box-shadow:0 0 0 1px var(--live),0 0 24px var(--live-a)}
+@media (prefers-reduced-motion:reduce){.scene.on::after,body.on-air #monWrap::after{filter:drop-shadow(0 0 4px var(--e,var(--acc)))}}
+#livePill{min-height:34px;padding:0 10px;border-radius:17px;display:inline-flex;align-items:center;gap:6px;font:700 11px/1 var(--mono);letter-spacing:.1em;
+  color:#fff;background:rgba(255,31,61,.16);border:1px solid var(--live)}
+#livePill[hidden]{display:none}
+body.on-air #dots{display:none}   /* the top bar has no room for both on a 375 px phone; the pill matters more */
+#top .brand{flex:1 1 0;min-width:0;overflow:hidden}
+#livePill i{width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 8px var(--live);animation:blink 1.2s steps(2) infinite}
+#badge span.live{background:var(--live)}
+#tabs button.onair{color:var(--live-hi)}
+#tabs button.onair .pill{background:rgba(255,31,61,.18);color:var(--live-hi);box-shadow:0 0 12px var(--live-a)}
+#tabs button.onair.on .pill{background:rgba(255,31,61,.28)}
 </style>
 </head>
 <body>
+<!-- the website's electric border (ElectricDefs.jsx): one shared filter, used only by what is live or playing -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <filter id="electric" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+    <feTurbulence type="turbulence" baseFrequency="0.02 0.035" numOctaves="2" seed="2" result="noise">
+      <animate attributeName="seed" values="2;7;13;21;34;55;89;144" dur="0.56s" calcMode="discrete" repeatCount="indefinite"/>
+    </feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</defs></svg>
 <div id="app">
   <header id="top">
     <div class="brand"><img src="logo.png" alt="Strodano"><span>VJ MOBILE</span></div>
     <button id="installBtn" hidden>Install</button>
     <button id="setBtn" class="icon" aria-label="Settings" title="Settings"></button>
+    <button id="livePill" hidden title="Your show is on air: open Live"><i></i>LIVE</button>
     <button id="bpmBtn" title="Tap the tempo"><span id="dots"><i></i><i></i><i></i><i></i></span><b id="bpmVal">120</b></button>
     <button id="blackBtn" title="Fade the output to black and back">BLACK</button>
   </header>
