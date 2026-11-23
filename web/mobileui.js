@@ -372,32 +372,43 @@ function saveProject() {
 
 // ---------- Library ----------
 function renderLibrary(v) {
-  v.append(el('div', { style: { height: '4px' } }), btn('Import photos & videos', () => { M.importTo = null; $('importInput').click(); }, 'big pri'));
+  const items = mlib.items, nV = items.filter(libIsVideo).length;
+  // storage first: how full the phone's share is
+  const est = mlib.est && mlib.est.quota ? mlib.est : null, used = est ? (est.usage || 0) / est.quota : 0;
+  v.append(el('div', { className: 'store' },
+    el('div', { className: 'row' }, el('span', { textContent: `Library · ${items.length} clip${items.length === 1 ? '' : 's'}` }),
+      el('span', { textContent: est ? `${mlibSize(est.usage || 0)} of ${mlibSize(est.quota)}` + (mlib.persisted ? ' · kept' : '') : '' })),
+    el('div', { className: 'bar' }, el('i', { style: { width: Math.max(1, Math.min(100, used * 100)).toFixed(1) + '%' } }))));
   if (mlib.busy) v.append(hint(`Copying into the app: ${Math.min(mlib.total, mlib.done + 1)} of ${mlib.total}…`));
-  if (mlib.est && mlib.est.quota) v.append(hint(`Using ${mlibSize(mlib.est.usage || 0)} of ${mlibSize(mlib.est.quota)} available` + (mlib.persisted ? ' · kept by the browser' : '')));
   if (typeof premiumGet === 'function') v.append(premiumCard());
-  if (isIOS && !standalone()) v.append(el('div', { className: 'card' }, hint('iPhone: tap Share, then "Add to Home Screen". The app then keeps your library and opens full screen.')));
-  if (!mlib.items.length) {
+  if (!items.length) {
     const e = el('div', { className: 'empty-state' });
     e.innerHTML = I.photo;
     e.append(el('b', { textContent: mlib.ready ? 'No clips yet' : 'Opening the library…' }), el('div', { textContent: 'Imported videos and photos are copied into the app, so they are here next time, offline too.' }));
-    v.append(e);
-    return;
+    v.append(e, btn('Import photos & videos', libImport, 'big pri'));
+  } else {
+    const f = M.libFilter || 'all', shown = items.filter(it => f === 'all' || (f === 'video') === libIsVideo(it));
+    v.append(segCtl([['all', 'All'], ['video', `Videos ${nV}`], ['photo', `Photos ${items.length - nV}`]], f, x => { M.libFilter = x; M.dirty = true; }));
+    const g = el('div', { className: 'lib' });
+    for (const it of shown) {
+      const m = media.find(x => x.name === it.name);
+      g.append(el('button', { className: 'tile', style: { backgroundImage: it.thumb ? `url("${it.thumb}")` : '' }, onclick: () => libSheet(it, m) },
+        el('span', { textContent: it.name.replace(/\.[^.]+$/, '') }), el('i', { className: 'k', textContent: libIsVideo(it) ? 'VIDEO' : 'PHOTO' })));
+    }
+    v.append(h3(shown.length + ' shown', el('span', { className: 'x hint', textContent: 'tap one to use it' })), g);
   }
-  const g = el('div', { className: 'lib' });
-  for (const it of mlib.items) {
-    const m = media.find(x => x.name === it.name), video = it.type.startsWith('video') || isVideoName(it.name);
-    g.append(el('button', { className: 'tile', style: { backgroundImage: it.thumb ? `url("${it.thumb}")` : '' }, onclick: () => libSheet(it, m) },
-      el('span', { textContent: it.name }), el('i', { className: 'k', textContent: video ? 'VIDEO' : 'PHOTO' })));
-  }
-  v.append(h3(mlib.items.length + ' in the library', el('span', { className: 'x hint', textContent: 'tap one to use it' })), g);
+  if (isIOS && !standalone()) v.append(el('div', { className: 'card' }, hint('iPhone: tap Share, then "Add to Home Screen". The app then keeps your library and opens full screen.')));
+  // the import button floats in thumb reach while the grid scrolls
+  if (items.length) { const fab = el('button', { className: 'fab', ariaLabel: 'Import photos and videos', title: 'Import photos and videos', onclick: libImport }); fab.innerHTML = I.plus; v.append(fab); }
 }
+const libIsVideo = it => (it.type || '').startsWith('video') || isVideoName(it.name);
+function libImport() { M.importTo = null; $('importInput').click(); }
 // The premium pack (starter.js): download for Pro / Festival, the upgrade prompt for Free
 function premiumCard() {
   const have = premiumHave(), unlocked = entCan('pack'), p = premiumState;
   const go = have ? btn('Open the 3D show', e => armThen(e.currentTarget, 'replace your project with the STRODANO 3D show (your library stays)', () => { premiumOpenShow(); M.tab = 'perform'; renderTabs(); M.dirty = true; }), 'big pri', { style: { marginTop: '8px' } })
     : btn(p.busy ? (p.total ? `Downloading ${Math.min(p.total, p.done + 1)} of ${p.total}…` : 'Checking your plan…') : unlocked ? 'Download the pack' : 'Unlock with Pro', () => premiumGet(), 'big pri', { disabled: p.busy, style: { marginTop: '8px' } });
-  return el('div', { className: 'card' },
+  return el('div', { className: 'card procard' },
     el('div', { className: 'lhead' }, el('div', { className: 'nm' }, el('b', { textContent: 'STRODANO 3D show' })), el('i', { className: 'k', textContent: 'PRO' })),
     hint('Six scenes built on the advanced 3D visualizers (particle pictures, terrain, harmonograph, crystals, supernova, text shatter) with STRODANO footage in full HD.'),
     p.note && !p.busy && !have ? hint(p.note) : null, go);
@@ -542,34 +553,45 @@ function liveSummary(s) {
   return ['Live', `${n.w} x ${n.h} at ${n.fpsOut.toFixed(0)} fps` + (n.relayed ? ` · ${n.relayed} relayed` : '')];
 }
 function renderBroadcast(v) {
-  const s = vdoScreen(), n = s.vdoSend, link = vdoLink(s), [t1, t2] = liveSummary(s);
-  v.append(el('div', { className: 'card livecard' + (n && n.state === 'live' ? ' on' : '') }, el('i', { className: 'dot' }),
-    el('div', { className: 't' }, el('b', { className: 'b-t1', textContent: t1 }), el('small', { className: 'b-t2', textContent: t2 })),
-    el('div', { className: 'v' }, el('b', { className: 'b-v', textContent: n ? String(n.viewers.size) : '–' }), el('small', { textContent: 'watching' }))),
-  btn(n ? 'Stop broadcast' : 'Go live', () => { if (n) closeOutput(VDO_SCREEN); else { vdoStart(VDO_SCREEN); buzz(20); } M.dirty = true; }, 'big ' + (n ? 'danger' : 'pri')));
+  const s = vdoScreen(), n = s.vdoSend, link = vdoLink(s), [t1, t2] = liveSummary(s), air = !!(n && n.state === 'live');
+  // the tally: ON AIR in red with time, viewers and picture, or OFF AIR
+  v.append(el('div', { className: 'onair' + (air ? ' on' : n ? ' wait' : '') },
+    el('b', { className: 'b-air', textContent: air ? 'On air' : n ? t1 : 'Off air' }),
+    el('small', { className: 'b-t2', textContent: air ? '' : t2 }),
+    air ? el('div', { className: 'kv' },
+      el('div', null, el('b', { className: 'b-time', textContent: '0:00' }), el('small', { textContent: 'Live for' })),
+      el('div', null, el('b', { className: 'b-v', textContent: String(n.viewers.size) }), el('small', { textContent: 'Watching' })),
+      el('div', null, el('b', { className: 'b-res', textContent: n.h ? n.h + 'p' : '–' }), el('small', { textContent: 'Picture' }))) : null),
+  btn(n ? 'Stop broadcast' : 'Go live', () => { if (n) closeOutput(VDO_SCREEN); else { vdoStart(VDO_SCREEN); buzz(20); } M.dirty = true; }, 'big ' + (n ? 'ghost-line' : 'pri live-go')));
   const share = ibtn(I.share, 'Share', () => { if (navigator.share) navigator.share({ title: 'Strodano VJ live', text: 'Watch my visuals live', url: link }).catch(() => {}); else copyText(link); }, 'pri');
   share.append(' Share');
   const copy = ibtn(I.copy, 'Copy', () => copyText(link)); copy.append(' Copy');
   const watch = ibtn(I.ext, 'Watch', () => window.open(link, '_blank', 'noopener')); watch.append(' Watch');
   [share, copy, watch].forEach(b => { b.style.gap = '6px'; });
-  v.append(h3('Scan to watch'), el('div', { className: 'qr' }, qrCanvas(link)), el('div', { className: 'link', textContent: link }),
-    el('div', { className: 'row', style: { marginTop: '8px' } }, share, copy, watch));
+  v.append(h3('Share your show'), el('div', { className: 'qrcard' }, el('div', { className: 'qr' }, qrCanvas(link)),
+    el('div', { className: 'qrside' }, el('div', { className: 'link', textContent: link.replace(/^https:\/\//, '').replace(/#.*/, '') }),
+      el('small', { className: 'hint', textContent: 'Scan, or send the link: it opens the live picture in any browser.' }),
+      el('div', { className: 'acts' }, share, copy, watch))));
   v.append(h3('Quality'), segCtl(VDO_PRESETS.map(p => [p[0], p[1]]), presetOf(s), k => { const p = VDO_PRESETS.find(x => x[0] === k); Object.assign(s, p[3]); vdoRestart(VDO_SCREEN); M.dirty = true; }),
-    hint((VDO_PRESETS.find(p => p[0] === presetOf(s)) || ['', '', 'Custom'])[2] + '. Every viewer uses that much of your upload: for more than 2 or 3, send it to a computer (below) and share from there.'),
+    hint((VDO_PRESETS.find(p => p[0] === presetOf(s)) || ['', '', 'Custom'])[2] + '. Each viewer uses that much of your upload.'),
     el('div', { className: 'card' }, setting('Send sound (music file or mic)', toggle(() => s.vdoAudio, x => { s.vdoAudio = x; vdoRestart(VDO_SCREEN); }))));
-  v.append(h3('To a computer, OBS or NDI'), el('div', { className: 'card' }, el('ol', { className: 'steps' },
+  // the rest folds away: most shows never need it
+  const more = (title, ...kids) => el('details', { className: 'more' }, el('summary', { textContent: title }), ...kids);
+  v.append(more('More than 3 viewers, OBS or NDI', hint('Every viewer pulls the picture from your phone. For a bigger audience, send it to one computer and share from there.'), el('div', { className: 'card' }, el('ol', { className: 'steps' },
     el('li', null, el('b', { textContent: 'OBS: ' }), 'add a Browser Source with the link (or open it in any browser, full screen).'),
     el('li', null, el('b', { textContent: 'NDI: ' }), 'in Strodano VJ desktop, Sources > Web link input, paste the link, Show on a layer.'),
-    el('li', null, 'Then in Advanced Output set a screen\'s display to NDI: every NDI app on that network sees your phone.'))));
+    el('li', null, 'Then in Advanced Output set a screen\'s display to NDI: every NDI app on that network sees your phone.')))));
   const name = el('input', { type: 'text', value: s.vdoId, spellcheck: false, autocapitalize: 'off', placeholder: 'e.g. strodano_ade' });
   const rename = () => { const err = vdoRename(VDO_SCREEN, name.value); setStatus(err || 'Your link is now ' + vdoLink(s)); M.dirty = true; };
   name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
   name.addEventListener('change', rename);
-  v.append(h3('Link name', el('span', { className: 'x hint', textContent: VDO_SITE.replace(/^https:\/\//, '') + '/live/…' })),
+  v.append(more('Link name and privacy',
+    h3('Link name', el('span', { className: 'x hint', textContent: VDO_SITE.replace(/^https:\/\//, '') + '/live/…' })),
     el('div', { className: 'row' }, name, btn('Save', rename, 'shrink')),
     hint('Letters, digits and _ only. Pick something only you would use (your artist or event name). Renaming makes the old link stop working.'),
-    h3('Link'), btn('Make a new private link', e => armThen(e.currentTarget, 'make a new link (the old one stops working)', () => { s.vdoId = ''; s.vdoPw = ''; vdoEnsureIds(s); vdoRestart(VDO_SCREEN); M.dirty = true; }), 'danger'),
-    hint('The link includes its password (after the #): share it only with people who should watch. Keep this app open and the screen on while you are live.'));
+    btn('Make a new private link', e => armThen(e.currentTarget, 'make a new link (the old one stops working)', () => { s.vdoId = ''; s.vdoPw = ''; vdoEnsureIds(s); vdoRestart(VDO_SCREEN); M.dirty = true; }), 'danger', { style: { marginTop: '10px' } }),
+    hint('The link includes its password (after the #): share it only with people who should watch.')),
+    hint('Keep this app open and the screen on while you are live.'));
 }
 
 // ---------- the view ----------
@@ -655,7 +677,14 @@ function patchView() {
       [...bars.children].forEach((b, i) => { if (b.classList.contains('on') !== (i < done)) b.classList.toggle('on', i < done); });
     }
   }
-  if (M.tab === 'broadcast') { const s = screens[VDO_SCREEN], [t1, t2] = liveSummary(s); set('.b-t1', t1); set('.b-t2', t2); set('.b-v', s.vdoSend ? String(s.vdoSend.viewers.size) : '–'); }
+  if (M.tab === 'broadcast') {
+    const s = screens[VDO_SCREEN], n = s.vdoSend, [t1, t2] = liveSummary(s), air = !!(n && n.state === 'live');
+    if (!!document.querySelector('.onair.on') !== air) M.dirty = true;   // went on or off air: rebuild the tally
+    set('.b-t2', air ? '' : t2); if (!air && n) set('.b-air', t1);
+    set('.b-v', n ? String(n.viewers.size) : '–'); set('.b-res', n && n.h ? n.h + 'p' : '–');
+    if (M.liveSince) { const t = Math.floor((performance.now() - M.liveSince) / 1000), h = Math.floor(t / 3600), mm = Math.floor(t / 60) % 60, ss = String(t % 60).padStart(2, '0');
+      set('.b-time', h ? `${h}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`); }
+  }
 }
 function tickUI() {
   outer: for (const L of comp.layers) for (const c of L.clips) if (c && c.needThumb) { genThumbFor(c); break outer; }
@@ -675,6 +704,7 @@ function tickUI() {
   const isLive = vdoLive().length > 0;
   if (isLive !== M.onAir) {   // on air: red edge on the monitor, LIVE pill in the top bar, the Live tab tinted
     M.onAir = isLive;
+    M.liveSince = isLive ? performance.now() : 0;
     document.body.classList.toggle('on-air', isLive);
     $('livePill').hidden = !isLive;
     const lt = document.querySelector('#tabs button[data-id="broadcast"]');
