@@ -300,9 +300,35 @@ details.more summary::-webkit-details-marker{display:none}
 details.more summary::after{content:'+';font:400 20px var(--mono);color:var(--dim)}
 details.more[open] summary::after{content:'–'}
 details.more[open]{padding-bottom:12px}
+
+/* splash */
+#splash{position:fixed;inset:0;z-index:200;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;transition:opacity .45s ease,visibility .45s}
+#splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+#splash img{width:min(56vw,240px);height:auto;filter:drop-shadow(0 0 26px rgba(42,108,255,.35))}
+#splash b{font:600 12px/1 var(--display);letter-spacing:.42em;padding-left:.42em;color:#868a93}
+#splash .sbar{width:min(48vw,200px);height:2px;background:#15161c;border-radius:2px;overflow:hidden;margin-top:16px}
+#splash .sbar i{display:block;width:40%;height:100%;background:linear-gradient(90deg,transparent,#6f9bff,transparent);animation:sload 1.1s ease-in-out infinite}
+@keyframes sload{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+#splash small{font:500 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#4d5059}
+/* first-run tour: a spotlight on the real control and a card that explains it */
+#tour{position:fixed;inset:0;z-index:90}
+#tour .spot{position:fixed;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.76);transition:left .3s ease,top .3s ease,width .3s ease,height .3s ease;pointer-events:none}
+#tour .spot::after{content:'';position:absolute;inset:0;border-radius:inherit;border:2px solid #6f9bff;filter:url(#electric) drop-shadow(0 0 3px var(--acc)) drop-shadow(0 0 8px var(--acc))}
+#tour .tcard{position:fixed;left:16px;right:16px;max-width:380px;margin:0 auto;background:var(--card);border:1px solid var(--ctl-line);border-radius:16px;padding:14px 14px 12px;box-shadow:0 14px 44px rgba(0,0,0,.75);display:grid;gap:8px}
+#tour .tk{font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc)}
+#tour .tcard b{font:700 20px/1.15 var(--display);letter-spacing:.02em}
+#tour .tcard p{margin:0;color:var(--dim);font-size:14px;line-height:1.45}
+#tour .tfoot{display:flex;align-items:center;gap:8px;margin-top:4px}
+#tour .dots{display:flex;gap:5px;flex:1}#tour .dots i{width:6px;height:6px;border-radius:50%;background:#2a2c36}#tour .dots i.on{background:var(--acc);box-shadow:0 0 6px var(--acc)}
+#tour .tfoot button{min-height:40px;padding:0 14px;font-size:14px}
+@media (prefers-reduced-motion:reduce){#tour .spot::after{filter:drop-shadow(0 0 4px var(--acc))}}
 </style>
 </head>
 <body>
+<!-- splash: shown from the first paint, before any script; mobileui.js fades it out after the first frame (splashHide),
+     and this timer takes it away anyway if start-up fails -->
+<div id="splash" role="status" aria-label="Loading Strodano VJ"><img src="logo.png" alt=""><b>VJ MOBILE</b><div class="sbar"><i></i></div><small>Loading the visuals</small></div>
+<script>setTimeout(function () { var s = document.getElementById('splash'); if (s) s.classList.add('gone'); }, 12000);</script>
 <!-- the website's electric border (ElectricDefs.jsx): one shared filter, used only by what is live or playing -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
   <filter id="electric" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">

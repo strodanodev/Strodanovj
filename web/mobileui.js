@@ -148,12 +148,92 @@ function padOff(name) {
 }
 // the column's picture: the top-most clip in it that has a thumbnail
 const columnThumb = ci => { for (let li = comp.layers.length - 1; li >= 0; li--) { const c = comp.layers[li].clips[ci]; if (c && c.thumb) return c.thumb; } return ''; };
-function welcomeCard(v) {
-  if (M.prefs.welcomeDone) return;
-  v.append(el('div', { className: 'card welcome' }, el('b', { textContent: 'Welcome to Strodano VJ' }),
-    el('ol', null, ...[['Library', 'import your videos and photos'], ['Build', 'tap + to put them on layers'], ['Perform', 'tap clips and scenes, hold effects'], ['Auto', 'let it follow the music'], ['Live', 'share your show with a link or QR']]
-      .map(([b, t]) => el('li', null, el('b', { textContent: b }), ' - ' + t))),
-    btn('Got it', () => { M.prefs.welcomeDone = true; savePrefs(); M.dirty = true; }, 'big')));
+// ---------- first-run tour (replaces the old welcome card; welcomeDone = seen or skipped) ----------
+// Each step puts a spotlight on the real control and a card beside it. Steps whose control is not on screen
+// (Auto without Pro) are left out. Settings > Take the tour again replays it.
+const TOUR = [
+  { sel: '#monWrap', t: 'This is your show', d: 'The monitor shows exactly what goes out: to a projector, a TV or your web link.' },
+  { sel: '.scenes', tab: 'perform', t: 'Scenes', d: 'Tap a scene and every layer changes at once. The coloured edge tells Auto when to use it: Calm, Groove, Peak or Drop.' },
+  { sel: '.layer', tab: 'perform', t: 'Layers', d: 'Each layer plays one clip. Tap a clip to play it, and slide to fade the layer in or out.' },
+  { sel: '.pads', tab: 'perform', t: 'Hold for effects', d: 'An effect stays on while your finger is down. Strobe flashes on the beat.' },
+  { sel: '#tabs button[data-id="library"]', t: 'Your videos and photos', d: 'Import them in Library. They are copied into the app, so they are here offline too.' },
+  { sel: '#tabs button[data-id="auto"]', t: 'Auto', d: 'Let the app listen to the music and change your scenes for you.' },
+  { sel: '#tabs button[data-id="broadcast"]', t: 'Go live', d: 'Share your show with a link or a QR code. Anyone with the link can watch in a browser.' },
+];
+const tour = { box: null, steps: [], i: 0, timer: 0 };
+function tourStart() {
+  if (tour.box) return;
+  if (M.sheet) closeSheet();
+  if (M.tab !== 'perform') { M.tab = 'perform'; renderTabs(); M.dirty = true; }
+  tickUI();   // the Perform view is built now, so its controls can be found
+  tour.steps = TOUR.filter(st => document.querySelector(st.sel));
+  if (!tour.steps.length) return;
+  tour.i = 0;
+  const spot = el('div', { className: 'spot' }), card = el('div', { className: 'tcard', role: 'dialog', ariaLabel: 'Tour' });
+  tour.box = el('div', { id: 'tour' }, spot, card);
+  tour.box.addEventListener('click', e => { if (e.target === tour.box) tourGo(1); });   // a tap outside the card moves on
+  document.body.append(tour.box);
+  tour.timer = setInterval(tourPlace, 400);   // follows the layout while the view rebuilds or the monitor resizes
+  window.addEventListener('resize', tourPlace);
+  document.addEventListener('keydown', tourKey);
+  tourShow();
+}
+function tourKey(e) { if (e.key === 'Escape') tourEnd(); else if (e.key === 'ArrowRight') tourGo(1); else if (e.key === 'ArrowLeft') tourGo(-1); }
+function tourGo(d) {
+  const n = tour.i + d;
+  if (n >= tour.steps.length) return tourEnd();
+  if (n < 0) return;
+  tour.i = n; buzz(6); tourShow();
+}
+function tourShow() {
+  const st = tour.steps[tour.i], last = tour.i === tour.steps.length - 1, card = tour.box.querySelector('.tcard');
+  if (st.tab && M.tab !== st.tab) { M.tab = st.tab; renderTabs(); M.dirty = true; tickUI(); }
+  const t = document.querySelector(st.sel);
+  if (t && t.closest('#view')) t.scrollIntoView({ block: 'center' });
+  card.textContent = '';
+  card.append(el('span', { className: 'tk', textContent: `${tour.i + 1} of ${tour.steps.length}` }), el('b', { textContent: st.t }), el('p', { textContent: st.d }),
+    el('div', { className: 'tfoot' }, el('div', { className: 'dots' }, ...tour.steps.map((_, i) => el('i', { className: i === tour.i ? 'on' : '' }))),
+      last ? null : btn('Skip', tourEnd, 'ghost'),
+      tour.i ? btn('Back', () => tourGo(-1)) : null,
+      btn(last ? 'Start playing' : 'Next', () => tourGo(1), 'pri')));
+  requestAnimationFrame(tourPlace);
+}
+function tourPlace() {
+  if (!tour.box) return;
+  const st = tour.steps[tour.i], t = document.querySelector(st.sel), spot = tour.box.querySelector('.spot'), card = tour.box.querySelector('.tcard');
+  if (!t) return;
+  const r = t.getBoundingClientRect(), pad = 6, W = innerWidth, H = innerHeight;
+  // inside the scrolling view the spotlight stays within what is visible of it
+  const vr = t.closest('#view') ? $('view').getBoundingClientRect() : { top: 0, bottom: H };
+  const top = Math.max(vr.top + 2, r.top - pad), bottom = Math.min(vr.bottom - 2, r.bottom + pad);
+  Object.assign(spot.style, { left: Math.max(4, r.left - pad) + 'px', top: top + 'px', width: Math.min(W - 8, r.width + pad * 2) + 'px', height: Math.max(24, bottom - top) + 'px' });
+  // the card goes on the roomier side of the spotlight
+  const below = H - bottom, above = top, ch = card.offsetHeight;
+  if (below >= ch + 24 || below >= above) { card.style.top = Math.min(H - ch - 12, bottom + 12) + 'px'; card.style.bottom = ''; }
+  else { card.style.bottom = Math.min(H - ch - 12, H - top + 12) + 'px'; card.style.top = ''; }
+}
+function tourEnd() {
+  if (!tour.box) return;
+  clearInterval(tour.timer); window.removeEventListener('resize', tourPlace); document.removeEventListener('keydown', tourKey);
+  tour.box.remove(); tour.box = null;
+  M.prefs.welcomeDone = true; savePrefs();
+  if (M.tab !== 'perform') { M.tab = 'perform'; renderTabs(); }
+  M.dirty = true; $('view').scrollTop = 0;
+}
+// ---------- splash ----------
+// Fades out after the first frame is on screen and the fonts are in (at most 2.5 s for fonts, at least ~0.7 s on
+// screen so it never flickers); then a first visit gets the tour.
+function splashHide() {
+  const sp = $('splash');
+  if (!sp || sp.classList.contains('gone')) { if (!M.prefs.welcomeDone) setTimeout(tourStart, 300); return; }
+  const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  Promise.race([fonts, new Promise(r => setTimeout(r, 2500))]).then(() => {
+    setTimeout(() => {
+      sp.classList.add('gone');
+      setTimeout(() => sp.remove(), 600);
+      if (!M.prefs.welcomeDone) setTimeout(tourStart, 500);
+    }, Math.max(0, 700 - performance.now()));
+  });
 }
 function slowCard(v) {
   if (!M.slow || M.prefs.slowDismissed) return;
@@ -164,7 +244,7 @@ function slowCard(v) {
       btn('Dismiss', () => { M.prefs.slowDismissed = true; savePrefs(); M.slow = 0; M.dirty = true; }))));
 }
 function renderPerform(v) {
-  welcomeCard(v); slowCard(v);
+  slowCard(v);
   const cols = Array.from({ length: comp.columns }, (_, ci) => ci).filter(ci => comp.layers.some(L => L.clips[ci]));
   v.append(h3('Scenes', el('span', { className: 'x hint', textContent: 'one tap changes every layer' })));
   // scene cards: as many across as there are (up to 4), else 3; the energy tag is the card's bottom edge
@@ -345,6 +425,7 @@ function settingsSheet() {
     }));
     s.append(h3('Colour'), sw);
     settingsProject(s);
+    s.append(h3('Help'), btn('Take the tour again', () => { closeSheet(); setTimeout(tourStart, 250); }));
     s.append(h3('Account'), el('div', { className: 'card' }, el('div', { className: 'setting' }, el('span', { textContent: ent.token ? 'Signed in: ' + ENT_NAMES[entPlan()] : 'Free (not signed in)' }),
       btn(ent.token ? 'Account' : 'Sign in', () => { closeSheet(); entAccount(); }, ent.token ? '' : 'pri'))));
   });
@@ -777,6 +858,7 @@ function frame() {
       if (cv.height !== mh) cv.height = mh;
       present(comp.outTex, mw, mh); grab(M.mon, mw, mh);
       tickUI();
+      if (!M.shown) { M.shown = true; splashHide(); }   // the first frame is on screen
     }
   } catch (e) { console.error(e); setStatus('Error: ' + (e.message || e)); }
   fpsN++; costSum += performance.now() - t0;
