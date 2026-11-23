@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Strodano VJ Mobile</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#070708">
+<meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,17 +12,23 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="logo.png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
-<script>window.VJ_AUTOSAVE_KEY = 'strodano-vj-mobile-autosave'; window.VJ_MOBILE = true;</script>
+<script>window.VJ_AUTOSAVE_KEY = 'strodano-vj-mobile-autosave'; window.VJ_MOBILE = true; window.VJ_THEME_KEY = 'strodano.theme.mobile'; window.VJ_THEME_DEFAULT = 'strodano';</script>
+<!-- the website's faces; offline (or blocked) the system fonts below take over -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
 <script src="theme.js"></script>
 <style>
 /* Strodano VJ mobile: one-thumb layout. Output monitor on top, five tabs at the bottom, a bottom sheet for every choice.
    Tokens first; theme.js may override --acc* on <html>. */
 :root{
-  --bg:#070708;--card:#111114;--card-2:#17171b;--line:#232329;--ctl:#1c1c21;--ctl-line:#2e2e36;--top:#070708;--field:#0b0b0d;
-  --acc:#cc6688;--acc-muted:rgba(204,102,136,.22);--acc-btn:rgba(204,102,136,.15);--acc-soft:rgba(204,102,136,.08);
-  --txt:#f4f4f6;--dim:#8c8c96;--faint:#5a5a63;--ok:#2ea44f;--warn:#e3a52b;--bad:#ef4d55;
-  --calm:#4f8cff;--groove:#2ea44f;--peak:#ff8a1a;--drop:#ef4d55;
-  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --bg:#000;--card:#0a0a0d;--card-2:#101015;--line:#18191f;--ctl:#121319;--ctl-line:#262833;--top:#000;--field:#06060a;
+  --acc:#2a6cff;--acc-muted:rgba(42,108,255,.2);--acc-btn:rgba(42,108,255,.15);--acc-soft:rgba(42,108,255,.1);--on-acc:#fff;
+  --txt:#f3f4f6;--dim:#868a93;--faint:#4d5059;--ok:#2ea44f;--warn:#e3a52b;--bad:#ff1f3d;
+  --live:#ff1f3d;--live-hi:#ff6075;--live-a:rgba(255,31,61,.45);
+  --calm:#2a6cff;--groove:#8a5cff;--peak:#ff4fa0;--drop:#ff1f3d;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --display:'Chakra Petch','IBM Plex Sans',system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --tap:44px;--r:12px;--r-lg:16px;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:400 15px/1.35 var(--sans);overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-font-smoothing:antialiased;overscroll-behavior:none;-webkit-text-size-adjust:100%}
@@ -31,9 +37,9 @@ button{background:var(--ctl);border:1px solid var(--ctl-line);border-radius:var(
 button:active{transform:scale(.97);background:#25252b}
 button.on{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)}
 button.big{width:100%;min-height:54px;font-weight:600;font-size:16px}
-button.pri{background:var(--acc);border-color:var(--acc);color:#0a0a0a;font-weight:600}
+button.pri{background:var(--acc);border-color:var(--acc);color:var(--on-acc);font-weight:600}
 button.ghost{background:transparent;border-color:transparent;color:var(--dim)}
-button.danger{color:var(--bad)} button.armed{background:rgba(239,77,85,.22);border-color:var(--bad);color:#fff}
+button.danger{color:var(--bad)} button.armed{background:rgba(255,31,61,.22);border-color:var(--bad);color:#fff}
 button:disabled{opacity:.35}
 button.icon{min-width:var(--tap);padding:0;display:inline-flex;align-items:center;justify-content:center}
 svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -67,7 +73,7 @@ h3 .x{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
 #bpmBtn{font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:8px}
 #dots{display:flex;gap:3px}#dots i{width:6px;height:6px;border-radius:50%;background:#3a3a42;transition:background .06s}#dots i.on{background:var(--acc)}
 #setBtn{min-width:34px;padding:0;color:var(--dim)}
-#blackBtn{font-weight:700;letter-spacing:.08em;color:var(--bad);border-color:rgba(239,77,85,.45);background:rgba(239,77,85,.08)}
+#blackBtn{font-weight:700;letter-spacing:.08em;color:var(--bad);border-color:rgba(255,31,61,.45);background:rgba(255,31,61,.08)}
 #blackBtn.on{background:var(--bad);border-color:var(--bad);color:#fff}
 #installBtn{background:var(--acc-btn);color:var(--acc);border-color:var(--acc)}#installBtn[hidden]{display:none}
 #stage{position:relative;flex:0 0 auto;padding:0 12px 10px;background:var(--top)}
@@ -156,7 +162,7 @@ button.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 /* broadcast */
 .livecard{display:flex;align-items:center;gap:12px}
 .livecard .dot{width:12px;height:12px;border-radius:50%;background:var(--faint);flex:none}
-.livecard.on .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(239,77,85,.25);animation:blink 1.2s infinite}
+.livecard.on .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,31,61,.25);animation:blink 1.2s infinite}
 .livecard .t{flex:1;min-width:0}.livecard .t b{display:block;font-size:16px}.livecard .t small{color:var(--dim);font-size:12px}
 .livecard .v{text-align:center}.livecard .v b{display:block;font-size:24px;font-weight:700;line-height:1}.livecard .v small{color:var(--dim);font-size:11px}
 .qr{display:flex;justify-content:center;padding:12px;background:#fff;border-radius:16px;margin:12px auto;width:max-content}
@@ -195,6 +201,19 @@ button.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 }
 @media (min-width:700px){#view{padding-left:max(12px,calc(50% - 330px));padding-right:max(12px,calc(50% - 330px))}#mon{max-height:40vh}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* STRODANO type (UI 2.0, step 1): Chakra Petch for labels, tabs and big buttons, JetBrains Mono for numbers */
+h3,#tabs button,button.big,#blackBtn,.pads button,.snaps button,.scene small,.gobtn,.livecard .t b,.stat small,.empty-state b,.lhead .nm b{font-family:var(--display)}
+h3{font-weight:600;letter-spacing:.14em}
+#tabs button{font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:10px}
+button.big{letter-spacing:.06em}
+#blackBtn{letter-spacing:.12em}
+.pads button{letter-spacing:.06em;text-transform:uppercase}
+#bpmBtn,#fps,#badge span,.stat b,.livecard .v b,.lvl span,.fld output,.link,.tile .num,.lib .tile .k,.scene b{font-family:var(--mono)}
+#badge span.auto{color:var(--on-acc)}
+.gobtn{color:var(--on-acc)}.gobtn svg{stroke:var(--on-acc)}
+.meter i{background:linear-gradient(90deg,var(--calm),var(--groove) 40%,var(--peak) 72%,var(--drop))}
+#tabs{background:rgba(0,0,0,.96)}
 </style>
 </head>
 <body>
