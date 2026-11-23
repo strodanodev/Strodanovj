@@ -162,7 +162,7 @@ const TOUR = [
 ];
 const tour = { box: null, steps: [], i: 0, timer: 0 };
 function tourStart() {
-  if (tour.box || M.gate) return;
+  if (tour.box || M.gate || M.inst) return;
   if (M.sheet) closeSheet();
   if (M.tab !== 'perform') { M.tab = 'perform'; renderTabs(); M.dirty = true; }
   tickUI();   // the Perform view is built now, so its controls can be found
@@ -230,11 +230,11 @@ function tourEnd() {
 const needSignIn = () => !ent.token && !M.gateSkip;
 function gateShow(on) {
   if (!!M.gate === on) return;
-  if (!on) { M.gate.remove(); M.gate = null; if (!M.prefs.welcomeDone) setTimeout(tourStart, 400); return; }
+  if (!on) { M.gate.remove(); M.gate = null; setTimeout(afterSignIn, 400); return; }
   if (tour.box) tourEnd();
   if (M.sheet) closeSheet();
   const logo = el('img', { src: 'logo.png', alt: 'STRODANO' });
-  M.gate = el('div', { id: 'gate', role: 'dialog', ariaLabel: 'Sign in to Strodano VJ' },
+  M.gate = el('div', { id: 'gate', className: 'wall', role: 'dialog', ariaLabel: 'Sign in to Strodano VJ' },
     logo, el('span', { className: 'free', textContent: 'Free to start' }),
     el('b', { textContent: 'Sign in to start' }),
     el('p', { textContent: 'Strodano VJ opens with your Strodano account. Sign in, or make a free account in a minute: it keeps your projects and unlocks Pro when you subscribe.' }),
@@ -244,19 +244,82 @@ function gateShow(on) {
     el('small', { textContent: 'The sign-in page opens on strodano.live. Approve the code it shows, then come back here.' }));
   document.body.append(M.gate);
 }
+// ---------- install step ----------
+// A web app cannot install itself: Android browsers can show their install prompt from a tap (beforeinstallprompt,
+// kept in M.install by the header code), iPhone / iPad have no prompt at all (Share > Add to Home Screen), and in-app
+// browsers (Instagram, TikTok...) cannot install anything. So after sign-in, a phone that runs the app in a browser tab
+// gets one screen that makes installing the easy path, with "Continue in the browser" (hidden for 7 days) so nobody is
+// stuck. Installed (standalone), on a computer, or skipped lately: straight on to the tour.
+const UA = navigator.userAgent || '';
+const isAndroid = /Android/i.test(UA);
+const inAppBrowser = /Instagram|FBAN|FBAV|FB_IAB|TikTok|musical_ly|Bytedance|Snapchat|Twitter|LinkedInApp|Line\//i.test(UA);
+const INSTALL_SNOOZE = 7 * 864e5;
+function installNeeded() {
+  return (isIOS || isAndroid) && !standalone() && !(M.prefs.installLater && Date.now() - M.prefs.installLater < INSTALL_SNOOZE);
+}
+function afterSignIn() {
+  if (installNeeded()) installShow();
+  else if (!M.prefs.welcomeDone) tourStart();
+}
+function installClose(later) {
+  if (!M.inst) return;
+  clearInterval(M.inst._t); M.inst.remove(); M.inst = null;
+  if (later) { M.prefs.installLater = Date.now(); savePrefs(); }
+  if (!M.prefs.welcomeDone) setTimeout(tourStart, 300);
+}
+function installShow() {
+  if (M.inst || M.gate) return;
+  const shareIco = '<svg viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  const plusIco = '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+  const dotsIco = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>';
+  const step = (text, ico) => { const li = el('li', null, el('span', { textContent: text })); if (ico) li.insertAdjacentHTML('beforeend', ico); return li; };
+  const box = el('div', { id: 'inst', className: 'wall', role: 'dialog', ariaLabel: 'Install Strodano VJ' }, el('img', { src: 'logo.png', alt: 'STRODANO' }));
+  const later = el('button', { className: 'later', textContent: 'Continue in the browser', onclick: () => installClose(true) });
+  if (inAppBrowser) {
+    const copy = btn('Copy the link', () => copyText(location.origin + '/mobile.html'), 'big');
+    box.append(el('span', { className: 'free', textContent: 'One more step' }), el('b', { textContent: 'Open it in your browser' }),
+      el('p', { textContent: 'This app is inside another app\'s browser, where it cannot be installed and your clips may not be kept.' }),
+      el('ol', { className: 'isteps' }, step('Tap the menu at the top', dotsIco), step(isIOS ? 'Choose "Open in Safari"' : 'Choose "Open in Chrome" (or "Open in browser")'), step('Install it from there')),
+      el('div', { className: 'acts' }, copy), later);
+  } else if (isIOS) {
+    box.append(el('span', { className: 'free', textContent: 'Recommended' }), el('b', { textContent: 'Add it to your Home Screen' }),
+      el('p', { textContent: 'It opens full screen like an app and keeps your library safe.' }),
+      el('ol', { className: 'isteps' }, step('Tap Share in the browser bar', shareIco), step('Choose "Add to Home Screen"', plusIco), step('Open Strodano VJ from your Home Screen')),
+      el('small', { className: 'why', textContent: 'Safari can clear a website\'s data after a week without a visit. Clips you import into the installed app stay.' }),
+      later);
+  } else {
+    const go = btn('Install the app', async () => {
+      const e = M.install;
+      if (!e) return;
+      M.install = null; $('installBtn').hidden = true;
+      e.prompt();
+      let ok = false; try { ok = (await e.userChoice).outcome === 'accepted'; } catch (err) {}
+      if (ok) { box.querySelector('b').textContent = 'Installed'; box.querySelector('p').textContent = 'Open Strodano VJ from your home screen, or keep going here.'; go.hidden = true; manual.hidden = true; later.textContent = 'Keep going here'; }
+    }, 'big pri');
+    const manual = el('ol', { className: 'isteps' }, step('Tap the browser menu', dotsIco), step('Choose "Install app" or "Add to Home screen"', plusIco));
+    box.append(el('span', { className: 'free', textContent: 'Recommended' }), el('b', { textContent: 'Install the app' }),
+      el('p', { textContent: 'It opens full screen from your home screen, works offline and keeps your library.' }),
+      el('div', { className: 'acts' }, go), manual, later);
+    // the browser offers its prompt when it is ready (often a moment after load): one tap then, else the menu steps
+    const sync = () => { const has = !!M.install; go.hidden = !has; manual.hidden = has; };
+    sync(); box._t = setInterval(sync, 500);
+  }
+  M.inst = box; document.body.append(box);
+}
+window.addEventListener('appinstalled', () => { if (M.inst && !isIOS) M.inst.querySelector('b').textContent = 'Installed'; });
 // ---------- splash ----------
 // Fades out after the first frame is on screen and the fonts are in (at most 2.5 s for fonts, at least ~0.7 s on
 // screen so it never flickers); then a first visit gets the tour.
 function splashHide() {
   const sp = $('splash');
-  if (!sp || sp.classList.contains('gone')) { M.splashGone = true; if (needSignIn()) gateShow(true); else if (!M.prefs.welcomeDone) setTimeout(tourStart, 300); return; }
+  if (!sp || sp.classList.contains('gone')) { M.splashGone = true; if (needSignIn()) gateShow(true); else setTimeout(afterSignIn, 300); return; }
   const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
   Promise.race([fonts, new Promise(r => setTimeout(r, 2500))]).then(() => {
     setTimeout(() => {
       sp.classList.add('gone'); M.splashGone = true;
       setTimeout(() => sp.remove(), 600);
       if (needSignIn()) gateShow(true);
-      else if (!M.prefs.welcomeDone) setTimeout(tourStart, 500);
+      else setTimeout(afterSignIn, 500);
     }, Math.max(0, 700 - performance.now()));
   });
 }
