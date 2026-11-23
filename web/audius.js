@@ -10,7 +10,7 @@
 'use strict';
 const AUDIUS_API = 'https://api.audius.co/v1', AUDIUS_APP = 'StrodanoVJ', AUDIUS_HANDLE = 'strodano';
 const AUDIUS_KEY = 'strodano-vj-audius';
-const audius = { busy: false, done: 0, total: 0, user: null, playlists: [], src: 'all', ordered: false, pending: new Set() };
+const audius = { busy: false, done: 0, total: 0, user: null, playlists: [], src: 'all', ordered: false, pending: new Set(), noMeta: new Set() };
 try { const s = JSON.parse(localStorage.getItem(AUDIUS_KEY) || '{}'); if (typeof s.src === 'string') audius.src = s.src; audius.ordered = !!s.ordered; } catch (e) {}
 const audiusSave = () => { try { localStorage.setItem(AUDIUS_KEY, JSON.stringify({ src: audius.src, ordered: audius.ordered })); } catch (e) {} };
 
@@ -60,6 +60,29 @@ async function audiusFile(t) {
     try { await audiusDB('put', t.id, rec); } catch (e) {}
   }
   return new File([rec.blob], name, { type: 'audio/mpeg', lastModified: 1 });
+}
+
+// Title, artist and cover of a downloaded Audius song, for lower thirds (lowerthird.js): the stream has no tags, so they
+// are asked from Audius once and then kept beside the audio (key 'meta:<file name>'). null for any other file.
+async function audiusMeta(file) {
+  if (file.lastModified !== 1 || file.type !== 'audio/mpeg') return null;   // the mark audiusFile leaves on its files
+  const key = 'meta:' + file.name;
+  let m = null;
+  try { m = await audiusDB('get', key); } catch (e) {}
+  if (m) return m;
+  if (audius.noMeta.has(key)) return null;
+  let t = null;
+  for (const src of audius.src === 'all' ? ['all'] : ['all', audius.src]) {
+    try { t = (await audiusTracks(src)).find(x => audiusFileName(x) === file.name); } catch (e) {}
+    if (t) break;
+  }
+  if (!t) { audius.noMeta.add(key); return null; }
+  m = { id: t.id, title: t.title, artist: (t.user && t.user.name) || '', art: null };
+  const url = t.artwork && (t.artwork['480x480'] || t.artwork['1000x1000'] || t.artwork['150x150']);
+  let kept = !url;
+  if (url) try { const r = await fetch(url); if (r.ok) { m.art = await r.blob(); kept = true; } } catch (e) {}
+  if (kept) try { await audiusDB('put', key, m); } catch (e) {}   // a cover that could not be fetched is asked again next time
+  return m;
 }
 
 // Load a source into the track list / playlist. reorder: put the set in order once its songs are analysed.

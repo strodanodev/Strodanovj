@@ -248,7 +248,7 @@ void main(){
 const BLENDS = ['Alpha', 'Add', 'Subtract', 'Multiply', 'Screen', 'Lighten', 'Darken', 'Difference'];
 
 // ---------- media pool and clips ----------
-// Extra clip types (camera.js, text.js, smart3d.js) register here instead of editing the engine:
+// Extra clip types (camera.js, text.js, lowerthird.js, smart3d.js) register here instead of editing the engine:
 //   CLIP_TYPES[type] = { toJSON(c), fromJSON(j), free(c), props(c, panel, layer) }; such clips draw themselves through c.draw(fbo, layer).
 // SOURCE_PANELS holds functions that return extra elements for the Sources tab.
 const CLIP_TYPES = {}, SOURCE_PANELS = [];
@@ -427,6 +427,7 @@ function trigger(li, ci) {
   if (typeof viz3dLocked === 'function' && viz3dLocked(c)) return;   // smart3d.js: a Pro visualizer on a plan without them
   if (typeof quantHold === 'function' && quantHold(li, ci)) return;   // mix.js: wait for the next beat or bar while music plays
   if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
+  if (c.onTrigger) c.onTrigger();   // the clip's own start (lowerthird.js: the title comes in again)
   if (c.video) {
     const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // clipopts.js: the clip's in point
     const poster = L.active !== ci && posterReady(c, start);   // its in-point frame is already on the GPU

@@ -109,7 +109,7 @@ function onShortcut(e) {
       return true;
     case 'BracketLeft': case 'BracketRight': if (L) clipSpeedStep(L.clips[L.active], (e.code === 'BracketRight' ? 1 : -1) * (e.shiftKey ? 0.1 : 0.01)); return true;
     case 'Backslash': if (!e.repeat && L) clipSpeedReset(L.clips[L.active]); return true;
-    case 'KeyN': if (!e.repeat && L) textNextLine(L.clips[L.active], e.shiftKey ? -1 : 1); return true;
+    case 'KeyN': if (!e.repeat && L) { textNextLine(L.clips[L.active], e.shiftKey ? -1 : 1); l3Next(L.clips[L.active], e.shiftKey ? -1 : 1); } return true;
   }
   return false;
 }

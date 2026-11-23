@@ -11,6 +11,7 @@ Runs in Chrome or Edge with nothing to install or compile.
 - `keys.js` - keyboard shortcuts (press **?** or click **Keys** for the list)
 - `motion.js` - beat-synced LFOs on parameters, and clip transition lengths
 - `camera.js`, `text.js`, `smart3d.js` - camera clips and camera input, text clips, 3D generators (three.js, in `vendor/`)
+- `lowerthird.js` - lower thirds: title templates that name the playing track and show its cover (read from the file's own tags), or your own lines
 - `hands.js`, `inputs.js` - hand tracking and gestures (MediaPipe, in `vendor/mediapipe/`), and the input picker on every slider
 - `audio.js`, `looks.js` - the two decks and the music clock; looks (the state of the visuals) for snapshots and section looks
 - `pro/pro.js` - Strodano VJ Pro and Festival (DJ mode, auto-mix, Agent Mode, recording, rekordbox import): closed source, built into the official app; not in this repo (see the top-level README)

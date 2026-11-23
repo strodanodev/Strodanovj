@@ -89,6 +89,7 @@ async function useFile(file) {
   Object.assign(v, { preload: 'auto', playsInline: true });
   live.fileUrl = v.src = URL.createObjectURL(file);
   live.fileName = file.name.replace(/\.[^.]+$/, '');
+  live.file = file;   // lowerthird.js reads its title, artist and cover
   live.elNode = audio.ctx.createMediaElementSource(v);
   live.elNode.connect(audio.master);
   v.addEventListener('ended', () => emitMusic('ended', {}));

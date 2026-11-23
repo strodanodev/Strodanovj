@@ -422,6 +422,8 @@ function addSheet(li, ci) {
     }
     const txt = el('input', { type: 'text', placeholder: 'Words, one line per cue', value: '' });
     s.append(h3('Text'), el('div', { className: 'row' }, txt, btn('Add', () => placeAndClose(li, ci, textClip({ text: txt.value || 'STRODANO VJ' })), 'shrink')));
+    s.append(h3('Lower third', el('span', { className: 'x hint', textContent: 'names the playing track, or your own words' })),
+      el('div', { className: 'chips' }, ...Object.keys(L3_THEMES).map(k => btn(L3_THEMES[k].name, () => placeAndClose(li, ci, lower3Clip({ theme: k, upper: k === 'block' }))))));
     if (canCamera) s.append(h3('Camera'), btn('Live camera', () => placeAndClose(li, ci, camClip('')), 'big'));
   });
 }
