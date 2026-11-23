@@ -41,7 +41,7 @@ function drawKeysTabs() {
   $('prefsBody').hidden = t !== 'prefs';
   $('keysBody').hidden = t !== 'keys';
   $('ctlTab').hidden = t !== 'ctl';
-  if (t === 'ctl') { $('ctlSetBody').replaceChildren(midiPanel(true)); ctlMapUI(); }
+  if (t === 'ctl') { $('ctlSetBody').replaceChildren(midiPanel(true), ...(typeof ctlMonUI === 'function' ? [ctlMonUI()] : [])); ctlMapUI(); }   // ctlmonitor.js
   if (t === 'prefs') prefsUI();
 }
 // General tab. The theme swatches (theme.js) and the resolution list (ui.js) are fixed elements in index.html; the

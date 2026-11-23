@@ -94,7 +94,20 @@
     if (t === 'note' && NAMES[n]) return NAMES[n];
     return null;
   }
+  // Light test (Settings > Controllers > MIDI monitor): each pad row in its own colour, every track button, scene LED and
+  // knob ring on, so a pad or light that stays dark or shows the wrong colour points at a wrong note or palette number.
+  function ledTest() {
+    const ROW = [5, 9, 13, 21, 45], out = [];
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 8; x++) out.push([0x90, PAD(x, y), ROW[y]]);
+    for (let y = 0; y < 5; y++) out.push([0x90, 82 + y, 1]);
+    for (let x = 0; x < 8; x++) for (const n of [48, 49, 50, 51, 52]) out.push([0x90 | x, n, 1]);
+    for (let k = 0; k < 8; k++) out.push([0xb0, 24 + k, 1], [0xb0, 16 + k, 127], [0xb0, 56 + k, 1], [0xb0, 48 + k, 127]);
+    out.push([0x90, 62, 1]);
+    return out;
+  }
+  const ledTestHint = 'For 3 seconds: pad rows red, orange, yellow, green, blue from the top; all 5 scene lights; every Record Arm, Solo, Activator, Track Select and Clip Stop light; all 16 knob rings full.';
   registerProfile({
+    ledTest, ledTestHint,
     label,
     id: 'apc40mk2', name: 'AKAI APC40 mkII', match: { midiPort: '^APC40 mkII' }, overlay, overlayOnShift: true,
     init: [[0xf0, 0x47, 0x7f, 0x29, 0x60, 0x00, 0x04, 0x41, 0x01, 0x00, 0x00, 0xf7]],   // Ableton Live mode

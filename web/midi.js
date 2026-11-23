@@ -22,7 +22,7 @@ const ENC_STYLES = ['twos', 'sign', 'offset'];
 const encDelta = (r, style) => (style === 'offset' ? r - 64 : r === 0 || r === 64 ? 0 : r < 64 ? r : style === 'sign' ? -(r - 64) : r - 128);
 // map: full key -> target id ('' = switched off: hides a profile's default). devs: dev id -> { kind, name, profile, input, output }
 // capture: { dev, fn(type, ch, n, val, raw) } while the setup wizard (ctlwizard.js) listens to a device: its input drives nothing
-const midi = { capture: null, pick: null, access: null, sysex: false, map: {}, kinds: {}, stick: {}, pickup: true, userProfiles: [], learn: false, target: null, devs: {}, shiftHeld: {} };
+const midi = { capture: null, pick: null, access: null, sysex: false, map: {}, kinds: {}, stick: {}, mt: {}, dead: {}, ledHold: {}, pickup: true, userProfiles: [], learn: false, target: null, devs: {}, shiftHeld: {} };
 const CONTROLLER_PROFILES = [];               // built-in profiles (registerProfile); user profiles live in midi.userProfiles
 function registerProfile(p) { if (validProfile(p)) CONTROLLER_PROFILES.push(p); }
 const allProfiles = () => CONTROLLER_PROFILES.concat(midi.userProfiles);
@@ -45,7 +45,10 @@ function validProfile(p) {
 // Returns how many mappings came in, or -1 when it is not a controllers file.
 function ctlApply(s, replace) {
   if (!s || typeof s !== 'object' || s.format !== 1 || typeof s.map !== 'object') return -1;
-  if (replace) { midi.map = {}; midi.kinds = {}; midi.stick = {}; midi.userProfiles = []; }
+  if (replace) {
+    midi.map = {}; midi.kinds = {}; midi.stick = {}; midi.userProfiles = []; midi.mt = {}; midi.dead = {};
+    for (const [src, dst] of [[s.mt, midi.mt], [s.dead, midi.dead]]) if (src && typeof src === 'object') for (const k in src) if (/^[mksp]:/.test(k) && k.length < 260 && Number.isFinite(src[k])) dst[k] = src[k];
+  }
   let n = 0;
   for (const k in s.map) if (KEY_RE.test(k) && typeof s.map[k] === 'string') { midi.map[k] = s.map[k]; n++; }
   if (s.kinds) for (const k in s.kinds) if (KEY_RE.test(k) && CTL_KINDS[s.kinds[k]]) midi.kinds[k] = s.kinds[k];
@@ -56,16 +59,63 @@ function ctlApply(s, replace) {
   }
   return n;
 }
-const ctlExport = () => ({ format: 1, app: 'strodano-vj-controllers', map: midi.map, kinds: midi.kinds, stick: midi.stick, pickup: midi.pickup, profiles: midi.userProfiles });
+const ctlExport = () => ({ format: 1, app: 'strodano-vj-controllers', map: midi.map, kinds: midi.kinds, stick: midi.stick, pickup: midi.pickup, profiles: midi.userProfiles, mt: midi.mt, dead: midi.dead });
+// ---------- change times: when two computers changed the settings, each entry keeps the side that touched it last ----------
+// Every mapping, control kind, stick mode and user profile has the time it was last set (midi.mt) or removed (midi.dead,
+// kept 90 days so a removal also reaches computers that were offline). They are worked out by comparing with the state as
+// last saved (ctlStamp, from saveMidiMap), so no code that changes a mapping has to report what it did. Flat entry keys:
+// 'm:' mapping, 'k:' kind, 's:' stick mode (each followed by the input key), 'p:' user profile id.
+const CTL_DEAD_DAYS = 90;
+let ctlSnap = null;   // flat entry -> JSON text, as last saved
+function ctlFlat(s) {
+  const f = {};
+  for (const k in s.map || {}) f['m:' + k] = s.map[k];
+  for (const k in s.kinds || {}) f['k:' + k] = s.kinds[k];
+  for (const k in s.stick || {}) f['s:' + k] = s.stick[k];
+  for (const p of s.profiles || []) if (p && p.id) f['p:' + p.id] = p;
+  return f;
+}
+function ctlSnapText() { const f = ctlFlat(ctlExport()), t = {}; for (const k in f) t[k] = JSON.stringify(f[k]); return t; }
+function ctlStamp() {
+  const now = Date.now(), cur = ctlSnapText();
+  if (ctlSnap) {
+    for (const k in cur) if (ctlSnap[k] !== cur[k]) { midi.mt[k] = now; delete midi.dead[k]; }
+    for (const k in ctlSnap) if (!(k in cur)) { midi.dead[k] = now; delete midi.mt[k]; }
+  }
+  for (const k in midi.dead) if (now - midi.dead[k] > CTL_DEAD_DAYS * 864e5) delete midi.dead[k];
+  ctlSnap = cur;
+}
+// Two copies (this computer's and the account's) merged entry by entry: the later change wins; a tie keeps this computer's.
+// A copy that lacks an entry and has no removal record for it never had it, so the other side's value stays.
+function ctlMerge(mine, theirs) {
+  const L = ctlFlat(mine), R = ctlFlat(theirs), Lmt = mine.mt || {}, Ldead = mine.dead || {}, Rmt = theirs.mt || {}, Rdead = theirs.dead || {};
+  const out = { format: 1, app: 'strodano-vj-controllers', map: {}, kinds: {}, stick: {}, profiles: [], pickup: mine.pickup, mt: {}, dead: {} };
+  const keys = new Set([...Object.keys(L), ...Object.keys(R), ...Object.keys(Ldead), ...Object.keys(Rdead)]);
+  for (const k of keys) {
+    const tl = Lmt[k] || Ldead[k] || 0, tr = Rmt[k] || Rdead[k] || 0;
+    let side = tr > tl ? 'r' : 'l';
+    const has = x => (x === 'l' ? k in L : k in R), gone = x => (x === 'l' ? k in Ldead : k in Rdead);
+    if (!has(side) && !gone(side)) side = side === 'l' ? 'r' : 'l';   // that side never had it
+    if (gone(side) && !has(side)) { out.dead[k] = side === 'l' ? Ldead[k] : Rdead[k]; continue; }
+    const v = side === 'l' ? L[k] : R[k], t = side === 'l' ? Lmt[k] : Rmt[k];
+    if (t) out.mt[k] = t;
+    const i = k.indexOf(':'), kind = k.slice(0, i), key = k.slice(i + 1);
+    if (kind === 'm') out.map[key] = v; else if (kind === 'k') out.kinds[key] = v; else if (kind === 's') out.stick[key] = v; else if (kind === 'p') out.profiles.push(v);
+  }
+  return out;
+}
 function saveMidiMap(fromCloud) {
+  if (fromCloud) ctlSnap = ctlSnapText(); else ctlStamp();   // what came from the account is not a change made here
   try { localStorage.setItem(CTL_KEY, JSON.stringify(ctlExport())); } catch (e) {}
   if (!fromCloud) ctlSyncChanged();
 }
 (function loadCtl() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(CTL_KEY) || 'null'); } catch (e) {}
-  if (ctlApply(s, true) >= 0) return;
-  try { const old = JSON.parse(localStorage.getItem(MIDI_KEY) || '{}') || {}; for (const k in old) if (typeof old[k] === 'string' && KEY_RE.test(ctlFull(k))) midi.map[ctlFull(k)] = old[k]; } catch (e) {}
+  if (ctlApply(s, true) < 0) {
+    try { const old = JSON.parse(localStorage.getItem(MIDI_KEY) || '{}') || {}; for (const k in old) if (typeof old[k] === 'string' && KEY_RE.test(ctlFull(k))) midi.map[ctlFull(k)] = old[k]; } catch (e) {}
+  }
+  ctlSnap = ctlSnapText();   // changes are counted from here
 })();
 
 function findFx(uid) {
@@ -260,6 +310,7 @@ function onInputEvent(type, ch, n, val, dev = '*', raw) {
   let k = type + ':' + ch + ':' + n;
   if (p && typeof p.alias === 'function') k = p.alias(k) || k;   // one key for a control that sends on several channels
   if (typeof ctlMapSeen === 'function') ctlMapSeen(dev, k);   // the Controllers tab lights this control's row
+  if (type !== 'cc' && type !== 'note' && typeof ctlMonIn === 'function') ctlMonIn(dev, null, k, val);   // gamepad buttons, gestures: the monitor
   if (p && p.shift === k) {   // the profile's Shift button only switches layers (and, held, shows the overlay when the profile says so)
     midi.shiftHeld[dev] = val > 0;
     if (p.overlayOnShift) ctlOverlay(dev, val > 0, 400); else if (ovl.dev === dev) ctlOverlayDraw();
@@ -455,7 +506,9 @@ const fb = { sent: {}, t: 0 };   // LED feedback: "dev|key" -> value last sent
 function ctlSend(dev, msg) {
   const d = midi.devs[dev];
   if (!d || !d.output || (msg[0] === 0xf0 && !midi.sysex)) return false;
-  try { d.output.send(msg); return true; } catch (e) { return false; }
+  try { d.output.send(msg); } catch (e) { return false; }
+  if (typeof ctlMonOut === 'function') ctlMonOut(dev, msg);   // ctlmonitor.js
+  return true;
 }
 function ctlGreet(dev) {
   const d = midi.devs[dev], p = d.profile;
@@ -474,7 +527,7 @@ function ctlTick() {
   fb.t = now;
   for (const dev in midi.devs) {
     const d = midi.devs[dev], p = d.profile;
-    if (!d.output || !p || typeof p.leds !== 'function') continue;
+    if (!d.output || !p || typeof p.leds !== 'function' || midi.ledHold[dev] > now) continue;   // ledHold: a light test is showing
     let list;
     try { list = p.leds(dev) || []; } catch (e) { continue; }
     for (const [k, v, chOver] of list) {   // chOver: send on another channel (the APC40 mkII's pulse / blink modes), same LED
@@ -499,7 +552,7 @@ function midiHook() {
     seen.add(dev);
     const was = midi.devs[dev], output = outs.find(o => midiPortName(o.name) === name) || null;
     midi.devs[dev] = { kind: 'midi', name, profile: p, input: i, output };
-    i.onmidimessage = ev => { if (midiClockMsg(ev.data, ev.timeStamp)) return; onMidiMessage(ev.data, dev); };   // clock goes to follow.js
+    i.onmidimessage = ev => { if (typeof ctlMonIn === 'function') ctlMonIn(dev, ev.data); if (midiClockMsg(ev.data, ev.timeStamp)) return; onMidiMessage(ev.data, dev); };   // clock goes to follow.js; ctlmonitor.js sees everything
     if (!was || was.input !== i || was.output !== output) ctlGreet(dev);
   });
   for (const dev in midi.devs) if (midi.devs[dev].kind === 'midi' && !seen.has(dev)) {
@@ -551,8 +604,8 @@ function initMidi() {
 // ---------- sync with the Strodano account (website /api/app/controllers; plan.js ent.token, entFetch) ----------
 // One document per account. sync.at = the server's updatedAt of the copy this app last saw or saved; dirty = changed here
 // since. A change is pushed 5 s later; the server refuses a push made from an older copy (409, with the newer copy), so
-// the app merges: the account's copy first, then this app's mappings and profiles on top (a mapping removed here while
-// another device kept it comes back). The copy replaced by the account's is kept in CTL_BACKUP_KEY. Signed out or
+// the app merges them entry by entry, the later change winning (ctlMerge: a mapping removed on one computer stays removed
+// unless another changed it afterwards). The copy replaced by the account's is kept in CTL_BACKUP_KEY. Signed out or
 // offline: localStorage only, as before; it catches up at the next start, sign-in or coming back online.
 const CTL_SYNC_KEY = 'strodano-vj-ctlsync', CTL_BACKUP_KEY = 'strodano-vj-controllers-backup';
 const ctlSync = { at: null, dirty: false, timer: 0, busy: false };
@@ -565,12 +618,12 @@ function ctlSyncChanged() {
   clearTimeout(ctlSync.timer);
   if (ctlSignedIn()) ctlSync.timer = setTimeout(ctlSyncPush, 5000);
 }
-// Puts the account's copy in place; with merge, this app's settings go back on top of it.
+// Puts the account's copy in place; with merge, the two are merged entry by entry (ctlMerge).
 function ctlTakeRemote(data, at, merge) {
-  const mine = ctlExport();
+  const mine = JSON.parse(JSON.stringify(ctlExport()));
   try { localStorage.setItem(CTL_BACKUP_KEY, JSON.stringify(mine)); } catch (e) {}
-  if (ctlApply(data, true) < 0) return false;
-  if (merge) ctlApply(JSON.parse(JSON.stringify(mine)), false);
+  if (!data || data.format !== 1 || typeof data.map !== 'object') return false;
+  if (ctlApply(merge ? ctlMerge(mine, data) : data, true) < 0) return false;
   ctlSync.at = at;
   saveMidiMap(true); ctlSyncSave();
   if (midi.access) midiHook(); else { markMidi(); if (typeof ui !== 'undefined') ui.propsDirty = true; }   // profiles may now match devices

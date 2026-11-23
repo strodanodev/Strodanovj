@@ -149,6 +149,9 @@ h4{margin:var(--m) 0 var(--s);font-size:14px;font-weight:500;color:var(--dim);bo
 .modal{position:fixed;inset:4vh 4vw;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 20px 80px rgba(0,0,0,.8);display:grid;grid-template-rows:auto 1fr;z-index:10;overflow:hidden}
 .modal.small{inset:auto;left:50%;top:10vh;transform:translateX(-50%);width:min(560px,92vw);grid-template-rows:auto auto}
 #keysModal .mh #keysTabs{flex:1} #keysModal .mh #keysTabs .tabs{margin:0} #keysModal .mh b{flex:0 0 auto}
+#ctlSetBody .mon{margin:var(--s) 0;border:1px solid var(--line);border-radius:var(--r-card);padding:4px var(--s)} #ctlSetBody .mon summary{cursor:pointer;padding:4px 0;font-weight:500}
+.mon-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0} .mon-log{font:11px/1.5 var(--mono);max-height:260px;overflow:auto;background:var(--field);border:1px solid var(--ctl-line);border-radius:var(--r-ctl);padding:4px 6px;user-select:text;white-space:pre}
+.mon-l.out{color:var(--dim)} .mon-l.none{color:var(--bad)}
 #keysModal.wide{width:min(980px,94vw)} #ctlTab{max-height:74vh;overflow:auto} #ctlSetBody{padding:0 var(--m)} #ctlSetBody h4{margin-top:var(--s)} #ctlMapBody{padding:var(--s) var(--m) var(--m)}
 #prefsBody{padding:0 var(--m) var(--m);max-height:74vh;overflow:auto} #prefsBody .fld{min-height:28px} #prefsBody .fld>label:first-child{flex:0 0 120px} #prefsBody .fld>span{flex:1;min-width:0}
 #prefsBody select{flex:0 1 200px} #keysBody{max-height:74vh;overflow:auto}
@@ -415,6 +418,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="gamepad.js"></script>
 <script src="ctlwizard.js"></script>
 <script src="ctlmap.js"></script>
+<script src="ctlmonitor.js"></script>
 <script src="audio.js"></script>
 <script src="live.js"></script>
 <script src="looks.js"></script>
