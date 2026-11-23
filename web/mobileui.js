@@ -167,11 +167,14 @@ function renderPerform(v) {
   welcomeCard(v); slowCard(v);
   const cols = Array.from({ length: comp.columns }, (_, ci) => ci).filter(ci => comp.layers.some(L => L.clips[ci]));
   v.append(h3('Scenes', el('span', { className: 'x hint', textContent: 'one tap changes every layer' })));
+  // scene cards: as many across as there are (up to 4), else 3; the energy tag is the card's bottom edge
   const sc = el('div', { className: 'scenes' });
+  sc.style.setProperty('--sc-cols', cols.length && cols.length <= 4 ? cols.length : 3);
   for (const ci of cols) {
     const tag = comp.agentTags && comp.agentTags[ci];
     const b = el('button', { className: 'scene', style: { backgroundImage: columnThumb(ci) ? `url("${columnThumb(ci)}")` : '' }, onclick: () => { buzz(); triggerColumn(ci); } },
-      el('b', { textContent: String(ci + 1) }), tag ? el('small', { className: 'mood-' + tag, textContent: tag }) : null);
+      el('b', { textContent: String(ci + 1) }), tag ? el('small', { className: 'mood-' + tag, textContent: tag }) : null, el('i', { className: 'nb', textContent: 'Loading' }));
+    if (tag) b.style.setProperty('--c', `var(--${tag.toLowerCase()})`);
     b.dataset.c = ci; M.scenes.push(b); sc.append(b);
   }
   if (!cols.length) sc.append(hint('No clips yet: add some in Build.'));
@@ -200,7 +203,7 @@ function renderPerform(v) {
   }
   const pads = el('div', { className: 'pads' });
   for (const name of PAD_FX.filter(n => DEFS.fx.has(n))) {
-    const b = el('button', { textContent: name });
+    const b = el('button', { textContent: name, className: name === 'Strobe' ? 'strobe' : '' });
     b.addEventListener('pointerdown', e => {
       buzz(6);
       if (M.latch) { if (M.held.has(name)) padOff(name); else padOn(name); }
@@ -451,15 +454,26 @@ $('songInput').addEventListener('change', async e => {
 onMusic((type, d) => {
   const names = { song: 'New song', drop: 'Drop!', breakdown: 'Breakdown', band: 'Energy ' + (d && d.band || ''), tempo: 'Tempo found' };
   if (names[type]) M.lastEvent = names[type];
+  if (type === 'drop') M.dropUntil = performance.now() + 8000;   // the energy meter shows Drop for a while
 });
+const ENERGY = ['Calm', 'Groove', 'Peak', 'Drop'];
 function meter(get) { const i = el('i'); M.meters.push({ i, get }); return el('div', { className: 'meter' }, i); }
 function renderAuto(v) {
   const on = agent.on;
-  const go = el('button', { className: 'gobtn' + (on ? ' on' : ''), ariaLabel: on ? 'Stop auto' : 'Start auto', onclick: () => (on ? stopAuto() : startAuto()) });
-  go.innerHTML = on ? ICONS_STOP : ICONS.auto;
-  go.append(el('span', { textContent: on ? 'Stop' : 'Start' }), el('i', { className: 'ring' }));
-  M.goBtn = go;
-  v.append(el('div', { className: 'go' }, go, el('div', { className: 'sub', textContent: on ? 'Playing your clips with the music. Tap any clip in Perform to take over that layer for a while.' : 'Auto plays the clips you set up and changes them with the music it hears.' })));
+  // status row: what Auto is doing, with a compact Stop; off, a full-width Start under it
+  v.append(el('div', { className: 'autohead' + (on ? ' on' : '') },
+    el('div', { className: 't' }, el('b', { textContent: on ? 'Auto is playing' : 'Auto is off' }),
+      el('small', { textContent: on ? 'Your scenes, chosen by the music. Tap a clip on Perform to take over that layer.' : 'Auto plays the scenes you set up and changes them with the music it hears.' })),
+    on ? btn('Stop', () => { stopAuto(); buzz(20); }, 'stopbtn', { ariaLabel: 'Stop Auto' }) : null));
+  if (!on) v.append(btn('Start Auto', () => startAuto(), 'big pri', { style: { marginTop: '10px' } }));
+  // energy in the same four steps the scenes use, and when the next change comes
+  const ramp = el('div', { className: 'ramp' }, ...ENERGY.map(t => { const x = el('span', { className: 'r-' + t, textContent: t }); x.style.setProperty('--c', `var(--${t.toLowerCase()})`); return x; }));
+  v.append(h3('Energy', el('span', { className: 'x hint a-event' })), ramp);
+  if (on) {
+    const n = Math.min(8, Math.max(1, Math.round((agent.vary || 16) / 4)));
+    v.append(el('div', { className: 'nextchg' }, el('div', { className: 'row' }, el('span', { className: 'a-nextl', textContent: 'Next change' }), el('em', { className: 'a-next' })),
+      el('div', { className: 'bars a-bars' }, ...Array.from({ length: n }, () => el('i')))));
+  }
   v.append(h3('Listen to'), segCtl([['mic', 'Microphone'], ['file', 'Music file'], ['tap', 'Tap tempo']], M.listen, x => {
     M.listen = x;
     if (x === 'file') $('songInput').click();
@@ -473,8 +487,7 @@ function renderAuto(v) {
     el('div', { className: 'stat', style: { marginTop: '10px' } },
       el('div', null, el('b', { className: 'a-bpm' }), el('small', { textContent: 'BPM' })),
       el('div', null, el('b', { className: 'a-lock' }), el('small', { textContent: 'Beat' })),
-      el('div', null, el('b', { className: 'a-band' }), el('small', { textContent: 'Energy' }))),
-    el('div', { className: 'hint a-event', style: { textAlign: 'center', marginTop: '8px' } })));
+      el('div', null, el('b', { className: 'a-scene' }), el('small', { textContent: 'Scene' })))));
   v.append(h3('Steer'), el('div', { className: 'row' }, btn('New scene', () => { agentNext(); buzz(); }), btn(agent.hold ? 'Holding' : 'Hold', () => { agentHold(); M.dirty = true; }, agent.hold ? 'on' : ''), btn('Drop!', () => { agentDrop(); buzz(25); }, 'pri')),
     el('div', { className: 'row', style: { marginTop: '8px' } }, btn('Resync to the bar', () => { comp.beats = Math.ceil(comp.beats / 4) * 4; if (live.src === 'mic' || live.src === 'file') resetTracker(); })));
   v.append(h3('Vibe'), segCtl(Object.entries(AGENT_VIBES).map(([k, x]) => [k, x.label]), agent.vibe, k => { setVibe(k); M.dirty = true; }),
@@ -610,7 +623,9 @@ function patchView() {
   }
   for (const b of M.scenes) {
     const ci = +b.dataset.c, on = comp.layers.some(L => L.clips[ci] && L.active === ci), th = columnThumb(ci);
+    const q = !on && comp.layers.some(L => L.clips[ci] && L.pendingCol === ci);   // tapped, its video still loading
     if (b.classList.contains('on') !== on) b.classList.toggle('on', on);
+    if (b.classList.contains('q') !== q) b.classList.toggle('q', q);
     if (th && b._th !== th) { b._th = th; b.style.backgroundImage = `url("${th}")`; }
   }
   // level sliders follow the layer (the Agent fades them) unless that slider is under a finger
@@ -627,8 +642,18 @@ function patchView() {
   if (M.tab === 'auto') {
     set('.a-bpm', comp.bpm.toFixed(0));
     set('.a-lock', live.src === 'dj' ? 'tap' : live.locked ? 'locked' : 'finding');
-    set('.a-band', live.src === 'dj' ? '–' : live.band || '–');
+    const top = comp.layers.slice().reverse().find(L => L.active >= 0);
+    set('.a-scene', top ? String(top.active + 1) : '–');
     set('.a-event', M.lastEvent ? 'Last heard: ' + M.lastEvent : '');
+    const band = M.dropUntil > performance.now() ? 'Drop' : live.src === 'dj' ? '' : ({ calm: 'Calm', groove: 'Groove', peak: 'Peak' })[live.band] || '';
+    for (const t of ENERGY) { const e = document.querySelector('.ramp .r-' + t); if (e && e.classList.contains('on') !== (t === band)) e.classList.toggle('on', t === band); }
+    const bars = document.querySelector('.a-bars');
+    if (bars) {   // Auto changes the scene every agent.vary beats, counted on the clock (a song change or a drop can come first)
+      const vary = agent.vary || 16, into = ((comp.beats % vary) + vary) % vary, left = Math.max(1, Math.ceil((vary - into) / 4)), n = bars.children.length;
+      set('.a-next', agent.hold ? 'holding this scene' : 'in ' + left + (left === 1 ? ' bar' : ' bars'));
+      const done = agent.hold ? 0 : Math.floor(into / vary * n);
+      [...bars.children].forEach((b, i) => { if (b.classList.contains('on') !== (i < done)) b.classList.toggle('on', i < done); });
+    }
   }
   if (M.tab === 'broadcast') { const s = screens[VDO_SCREEN], [t1, t2] = liveSummary(s); set('.b-t1', t1); set('.b-t2', t2); set('.b-v', s.vdoSend ? String(s.vdoSend.viewers.size) : '–'); }
 }
