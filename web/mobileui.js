@@ -162,7 +162,7 @@ const TOUR = [
 ];
 const tour = { box: null, steps: [], i: 0, timer: 0 };
 function tourStart() {
-  if (tour.box) return;
+  if (tour.box || M.gate) return;
   if (M.sheet) closeSheet();
   if (M.tab !== 'perform') { M.tab = 'perform'; renderTabs(); M.dirty = true; }
   tickUI();   // the Perform view is built now, so its controls can be found
@@ -220,18 +220,43 @@ function tourEnd() {
   if (M.tab !== 'perform') { M.tab = 'perform'; renderTabs(); }
   M.dirty = true; $('view').scrollTop = 0;
 }
+// ---------- sign-in wall ----------
+// The phone app opens only for a signed-in Strodano account: any plan, Free included (the website makes one in a
+// minute). The wall covers the app until plan.js holds a device token, and comes back when the app is signed out
+// (Sign out, or a 401 from the website). Signing in is the usual code flow (plan.js entSignIn), whose dialog sits
+// above the wall. Offline, a phone that signed in before keeps its token and opens as usual. This is a soft gate (the
+// page is public and the app is GPL); what costs money (Pro, the premium pack) is locked on the server.
+// On a development page (ENT_DEV, localhost) "Skip" lets you through for that page load only.
+const needSignIn = () => !ent.token && !M.gateSkip;
+function gateShow(on) {
+  if (!!M.gate === on) return;
+  if (!on) { M.gate.remove(); M.gate = null; if (!M.prefs.welcomeDone) setTimeout(tourStart, 400); return; }
+  if (tour.box) tourEnd();
+  if (M.sheet) closeSheet();
+  const logo = el('img', { src: 'logo.png', alt: 'STRODANO' });
+  M.gate = el('div', { id: 'gate', role: 'dialog', ariaLabel: 'Sign in to Strodano VJ' },
+    logo, el('span', { className: 'free', textContent: 'Free to start' }),
+    el('b', { textContent: 'Sign in to start' }),
+    el('p', { textContent: 'Strodano VJ opens with your Strodano account. Sign in, or make a free account in a minute: it keeps your projects and unlocks Pro when you subscribe.' }),
+    el('div', { className: 'acts' },
+      btn('Sign in', () => entSignIn(), 'big pri'),
+      ENT_DEV ? btn('Skip (development only)', () => { M.gateSkip = true; gateShow(false); }, 'big') : null),
+    el('small', { textContent: 'The sign-in page opens on strodano.live. Approve the code it shows, then come back here.' }));
+  document.body.append(M.gate);
+}
 // ---------- splash ----------
 // Fades out after the first frame is on screen and the fonts are in (at most 2.5 s for fonts, at least ~0.7 s on
 // screen so it never flickers); then a first visit gets the tour.
 function splashHide() {
   const sp = $('splash');
-  if (!sp || sp.classList.contains('gone')) { if (!M.prefs.welcomeDone) setTimeout(tourStart, 300); return; }
+  if (!sp || sp.classList.contains('gone')) { M.splashGone = true; if (needSignIn()) gateShow(true); else if (!M.prefs.welcomeDone) setTimeout(tourStart, 300); return; }
   const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
   Promise.race([fonts, new Promise(r => setTimeout(r, 2500))]).then(() => {
     setTimeout(() => {
-      sp.classList.add('gone');
+      sp.classList.add('gone'); M.splashGone = true;
       setTimeout(() => sp.remove(), 600);
-      if (!M.prefs.welcomeDone) setTimeout(tourStart, 500);
+      if (needSignIn()) gateShow(true);
+      else if (!M.prefs.welcomeDone) setTimeout(tourStart, 500);
     }, Math.max(0, 700 - performance.now()));
   });
 }
@@ -859,6 +884,7 @@ function frame() {
       present(comp.outTex, mw, mh); grab(M.mon, mw, mh);
       tickUI();
       if (!M.shown) { M.shown = true; splashHide(); }   // the first frame is on screen
+      else if (M.splashGone && needSignIn() !== !!M.gate) gateShow(needSignIn());   // signed in, or signed out
     }
   } catch (e) { console.error(e); setStatus('Error: ' + (e.message || e)); }
   fpsN++; costSum += performance.now() - t0;
