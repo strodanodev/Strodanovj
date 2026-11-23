@@ -32,10 +32,10 @@ function starterProject() {
     layers: [
       // the bold, music-driven 3D scenes (checked with a real track: Bokeh, Star Warp, Embers and Fireworks read too faint)
       { name: 'Visuals', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
-        clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('waves', { fx: [packFx('Hue Rotate', [0, 0.15])] }),
-          m('strodano-stage.mp4', { fx: [packFx('Audio Pulse', [0.2, 0.15, 0])] }), d3('tunnel')] },
+        clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('horizon'),
+          m('strodano-stage.mp4', { fx: [packFx('Audio Pulse', [0.2, 0.15, 0])] }), d3('lasertunnel')] },
       { name: '3D', opacity: 0.85, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('vortex'), null, d3('wire'), d3('rings', { fx: [packFx('Kaleidoscope', [0.3, 0, 0.15])] })] },
+        clips: [d3('vortex'), null, d3('chrome'), d3('lasers')] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
         clips: [m('strodano-logo.webp', LOWER), m('strodano-duo.webp', DUO),
           m('strodano-logo.webp', { ...CENTRE, fx: [packFx('RGB Shift', [0.03, 0], { 0: onKick(0.5) })] }),
@@ -126,8 +126,9 @@ async function premiumGet() {
     premiumNote('Premium pack ready: tap Open the 3D show. The HD clips are in your Library, offline too.');
   } finally { premiumState.busy = false; if (typeof M !== 'undefined') M.dirty = true; }
 }
-// The premium 3D show: the advanced three.js visualizers (Picture Particles fed by the HD footage, Audio History Terrain,
-// Harmonograph, Particle Morph, Strange Attractor, Crystal Field, Drop Supernova, Text Shatter) with the HD clips.
+// The premium 3D show: the Pro visualizers (Neon City, LED Cube, Glass Prism; they come with the Pro bundle, and a slot
+// whose scene is not in the page is left empty) beside the advanced Free ones (Picture Particles fed by the HD footage,
+// Harmonograph, Particle Morph, Strange Attractor, Drop Supernova, Text Shatter) with the HD clips.
 function premiumProject() {
   const m = (file, extra) => packClip(PREMIUM_FILES, file, extra);
   return {
@@ -135,9 +136,9 @@ function premiumProject() {
     agentTags: { 0: 'Calm', 1: 'Groove', 2: 'Groove', 3: 'Peak', 4: 'Peak', 5: 'Drop' },
     layers: [
       { name: 'World', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
-        clips: [m('strodano-pro-visors-hd.mp4'), d3('terrain'), m('strodano-pro-club-hd.mp4'), d3('attractor'), m('strodano-pro-visors-hd.mp4'), d3('supernova')] },
+        clips: [m('strodano-pro-visors-hd.mp4'), d3('city'), m('strodano-pro-club-hd.mp4'), d3('attractor'), m('strodano-pro-visors-hd.mp4'), d3('supernova')] },
       { name: '3D', opacity: 0.9, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('picture'), d3('harmono'), d3('morph'), null, d3('crystals'), d3('shatter', { src: 'text', text: 'STRODANO' })] },
+        clips: [d3('picture'), d3('harmono'), d3('morph'), d3('ledcube'), d3('glass'), d3('shatter', { src: 'text', text: 'STRODANO' })] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
         clips: [null, m('strodano-pro-lockup.webp', LOWER), null, m('strodano-pro-lockup.webp', CENTRE), null, null] },
     ],

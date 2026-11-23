@@ -413,7 +413,8 @@ function addSheet(li, ci) {
     }
     s.append(h3('Visuals'), el('div', { className: 'chips' }, ...[...DEFS.gen.values()].map(d => btn(d.name, () => placeAndClose(li, ci, genClip(d.name))))));
     if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined')
-      s.append(h3('3D', el('span', { className: 'x hint', textContent: 'heavier on older phones' })), el('div', { className: 'chips' }, ...Object.keys(SCENES3D).map(k => btn(SCENES3D[k].name || k, () => placeAndClose(li, ci, clip3d(k))))));
+      s.append(h3('3D', el('span', { className: 'x hint', textContent: 'heavier on older phones' })), el('div', { className: 'chips' }, ...Object.keys(SCENES3D).filter(k => !SCENES3D[k].pro).map(k => btn(SCENES3D[k].name || k, () => placeAndClose(li, ci, clip3d(k)))),
+        ...Object.keys(SCENES3D_PRO).map(k => btn((SCENES3D[k] ? SCENES3D[k].name : SCENES3D_PRO[k]) + ' · PRO', () => { if (proGate('viz3d') && SCENES3D[k]) placeAndClose(li, ci, clip3d(k)); }))));
     const txt = el('input', { type: 'text', placeholder: 'Words, one line per cue', value: '' });
     s.append(h3('Text'), el('div', { className: 'row' }, txt, btn('Add', () => placeAndClose(li, ci, textClip({ text: txt.value || 'STRODANO VJ' })), 'shrink')));
     if (canCamera) s.append(h3('Camera'), btn('Live camera', () => placeAndClose(li, ci, camClip('')), 'big'));

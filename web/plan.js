@@ -27,6 +27,7 @@ const ENT_FEATURES = {
   autopilot: { plan: 'pro',      name: 'Autopilot sets',   what: 'Autopilot picks the next track and mixes it in for you.' },
   record:    { plan: 'pro',      name: 'Recording',        what: 'Record the show with its sound: up to 1 hour on Pro, 10 hours on Festival.' },
   rekordbox: { plan: 'pro',      name: 'rekordbox import', what: 'Bring in playlists from a rekordbox USB stick, with the beat grids, keys and cue points you set there.' },
+  viz3d:     { plan: 'pro',      name: 'The Pro 3D pack',    what: 'Five more 3D visualizers: Glass Prism, Neon City, Murmuration, LED Cube and Event Horizon.' },
   pack:      { plan: 'pro',      name: 'STRODANO 3D show', what: 'A ready show on the advanced 3D visualizers, with STRODANO footage in full HD.' },
   mapping:   { plan: 'festival', name: 'Advanced mapping', what: 'Several screens, slices, mesh warp, masks and soft edges.' },
 };

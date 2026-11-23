@@ -795,7 +795,7 @@ function demoComp() {
   comp.layers[1].blend = 1; comp.layers[2].blend = 1;
   // 4 different random 3D visuals (smart3d.js) in the first free slots: one per layer, the 4th on layer 1. Layer 2's starts playing.
   if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined') {
-    const keys = Object.keys(SCENES3D).sort(() => Math.random() - 0.5).slice(0, 4);
+    const keys = scenes3dOpen().sort(() => Math.random() - 0.5).slice(0, 4);
     keys.forEach((k, i) => { const L = comp.layers[i % 3], ci = L.clips.findIndex(c => !c); if (ci >= 0) L.clips[ci] = clip3d(k); });
     const L2 = comp.layers[1], c3d = L2.clips.findIndex(c => c && c.type === '3d');
     if (c3d >= 0) trigger(1, c3d);

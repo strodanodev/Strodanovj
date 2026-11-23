@@ -70,8 +70,8 @@ function stockComp() {
   const put = (L, ci, c) => { if (c) L.clips[ci] = c; };
   // each stock file is in the grid once (every copy would be another full video decoder)
   put(V, 2, stockClip(mid)); put(V, 6, stockClip(top));
-  [['waves', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['knot', HUE.magenta, 0.35], ['wire', HUE.cyan, 0.4],
-    ['tunnel', HUE.magenta, 0.55], ['rings', HUE.yellow, 0.5], ['particles', HUE.magenta, 0.7], ['crystals', HUE.cyan, 0.65]]
+  [['aurora', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['chrome', HUE.magenta, 0.35], ['horizon', HUE.magenta, 0.4],
+    ['lasertunnel', HUE.cyan, 0.55], ['vortex', HUE.violet, 0.5], ['lasers', HUE.cyan, 0.7], ['particles', HUE.magenta, 0.7]]
     .forEach(([k, h, s], ci) => put(D, ci, stock3d(k, h, s)));
   put(S, 6, genClip('Beat Flash')); put(S, 7, genClip('Beat Flash'));
   put(A, 0, stockClip('strodano-duo.webp')); put(A, 1, stockClip('audius-logo.webp'));
