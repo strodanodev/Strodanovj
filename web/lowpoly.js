@@ -1,6 +1,7 @@
 // Strodano VJ (web) - low-poly 3D scenes: endless themed worlds and stylized objects, added to SCENES3D (smart3d.js). GPL-3.0.
-// No model files: every model is a short list of parts (boxes, cylinders, cones, low spheres) joined into one flat-shaded
-// geometry when the scene is built, so the whole library costs a few kilobytes of code and nothing to download.
+// The scenery (trees, rocks, towers...) is built here: every such model is a short list of parts (boxes, cylinders, cones,
+// low spheres) joined into one flat-shaded geometry when the scene is built. The hero models (dinosaurs, tank, ships,
+// weapons...) are artist-made CC0 models from models3d.js (lpModelGeo); each keeps a built-in stand-in for a page without that file.
 //   part = [shape, colour, size x, y, z, place x, y, z, turn x, y, z (degrees)]
 //   shape: 'b' box, 'c6' cylinder with 6 sides, 't6' tapered (top half as wide), 'k6' cone, 's' / 'S' sphere of 20 / 80 faces
 //   colour: 0xRRGGBB, or LP_E | 0xRRGGBB for a part that glows (lava, neon, eyes, engines) and flashes on the kick
@@ -56,10 +57,42 @@ function lpGeo(parts, fit) {
   g.setAttribute('position', attr(new Float32Array(pos), 3)); g.setAttribute('normal', attr(new Float32Array(nor), 3)); g.setAttribute('aCol', attr(new Float32Array(col), 4));
   return g;
 }
+// An artist-made model from models3d.js (LP_MODELS, built by tools/models3d.py from CC0 .glb files), as the same kind of
+// geometry lpGeo makes. The file has no normals: every corner gets the average of the faces that meet in it, weighted by
+// their size, and since corners on a hard edge or a colour border are stored apart, those edges stay hard. fit = the
+// length of its longest side; ground: stand it on y = 0 (a world prop) instead of centring it (an object).
+const lpHas = name => typeof LP_MODELS !== 'undefined' && !!LP_MODELS[name];
+function lpModelGeo(name, fit, ground) {
+  const m = LP_MODELS[name], bin = atob(m.d), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const n = m.n, P = new Int16Array(buf.buffer, 0, n * 3), C = buf.subarray(n * 6, n * 7), I = new Uint16Array(buf.buffer, n * 7 + (n * 7) % 2, m.t * 3);
+  const N = new Float32Array(n * 3), ext = [0, 0, 0];
+  for (let i = 0; i < P.length; i++) ext[i % 3] = Math.max(ext[i % 3], Math.abs(P[i]) * 2);
+  const k = ground ? fit / 65534 : fit / Math.max(ext[0] / 1.5, ext[1], ext[2] / 1.5);
+  for (let i = 0; i < I.length; i += 3) {
+    const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3, ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx;   // as long as the face is big
+    for (const j of [a, b, c]) { N[j] += x; N[j + 1] += y; N[j + 2] += z; }
+  }
+  let low = 0; if (ground) { low = 1e9; for (let i = 1; i < P.length; i += 3) low = Math.min(low, P[i]); }
+  const pos = new Float32Array(I.length * 3), nor = new Float32Array(I.length * 3), col = new Float32Array(I.length * 4);
+  for (let i = 0; i < I.length; i++) {
+    const v = I[i] * 3, l = Math.hypot(N[v], N[v + 1], N[v + 2]) || 1, hex = m.pal[C[I[i]]] || 0;
+    pos[i * 3] = P[v] * k; pos[i * 3 + 1] = (P[v + 1] - low) * k; pos[i * 3 + 2] = P[v + 2] * k;
+    nor[i * 3] = N[v] / l; nor[i * 3 + 1] = N[v + 1] / l; nor[i * 3 + 2] = N[v + 2] / l;
+    col[i * 4] = (hex >> 16 & 255) / 255; col[i * 4 + 1] = (hex >> 8 & 255) / 255; col[i * 4 + 2] = (hex & 255) / 255; col[i * 4 + 3] = hex > 0xffffff ? 1 : 0;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', attr(pos, 3)); g.setAttribute('normal', attr(nor, 3)); g.setAttribute('aCol', attr(col, 4));
+  return g;
+}
+// A model by name when models3d.js has it, else the parts given (the built-in stand-in): [name, size, parts].
+const lpPick = (x, fit, ground) => (!Array.isArray(x[0]) && typeof x[0] === 'string' && x.length === 3 && Array.isArray(x[2])
+  ? (lpHas(x[0]) ? lpModelGeo(x[0], x[1], ground) : lpGeo(x[2], fit)) : lpGeo(x, fit));
 // The uniforms every material of one scene shares (one object, so a value is set once a frame for all of them).
 const lpShared = o => Object.assign({ uT: { value: 0 }, uTravel: { value: 0 }, uDepth: { value: 96 }, uWrap: { value: 0 }, uCurve: { value: 0 }, uDens: { value: 2 }, uPulse: { value: 0 },
   uKick: { value: 0 }, uAmb: { value: new THREE.Color(0x404050) }, uKey: { value: new THREE.Color(0xffffff) }, uRim: { value: new THREE.Color(0xffffff) }, uRimK: { value: 0 },
-  uFog: { value: new THREE.Color(0) }, uFogD: { value: 0 }, uTint: { value: new THREE.Color(0xffffff) }, uTintK: { value: 0 }, uDis: { value: 0 }, uSpin: { value: 0 } }, o);
+  uFog: { value: new THREE.Color(0) }, uFogD: { value: 0 }, uTint: { value: new THREE.Color(0xffffff) }, uTintK: { value: 0 }, uDis: { value: 0 }, uSpin: { value: 0 }, uSpec: { value: 0 } }, o);
 const LP_END = `c = mix(uFog, c, exp(-length(vP) * uFogD)); c = mix(c, c * uTint * 1.8, uTintK);`;   // distance haze, then the colour wash
 // Flat-shaded, lit by one key light and the sky. aI = an instance's place (x, y, z) and its own random number; aJ = its
 // size, turn, how much it sways in the wind and how far it bobs. uWrap: its z runs round the loop with the travel.
@@ -76,12 +109,14 @@ function lpMat(sh) {
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         vCol = aCol; vN = normalMatrix * vec3(normal.x * c + normal.z * sn, normal.y, normal.z * c - normal.x * sn); vP = mv.xyz; vL = position;
         gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform float uKick, uRimK, uFogD, uTintK, uDis; uniform vec3 uAmb, uKey, uRim, uFog, uTint; varying vec4 vCol; varying vec3 vN, vP, vL;
+    fragmentShader: `uniform float uKick, uRimK, uFogD, uTintK, uDis, uSpec; uniform vec3 uAmb, uKey, uRim, uFog, uTint; varying vec4 vCol; varying vec3 vN, vP, vL;
       float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       void main() {
         if (uDis > 0.0 && hash2(floor(vL.xy * 30.0) + floor(vL.z * 30.0) * 7.0) < uDis) discard;   // Dissolve: the model goes in small squares
-        vec3 N = normalize(vN), V = normalize(-vP);
-        vec3 c = vCol.rgb * (uAmb + uKey * max(dot(N, normalize(vec3(0.35, 0.8, 0.5))), 0.0)) + uRim * pow(1.0 - abs(dot(N, V)), 3.0) * uRimK;
+        vec3 N = normalize(vN), V = normalize(-vP), L = normalize(vec3(0.35, 0.8, 0.5));
+        if (dot(N, V) < 0.0) N = -N;   // a thin part seen from behind
+        vec3 c = vCol.rgb * (uAmb * (0.65 + 0.35 * N.y) + uKey * max(dot(N, L), 0.0)) + uRim * pow(1.0 - abs(dot(N, V)), 3.0) * uRimK;
+        c += uKey * pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * uSpec;   // a highlight (the objects; the worlds stay matt)
         c = mix(c, vCol.rgb * (1.4 + uKick * 1.6), vCol.a);
         ${LP_END}
         gl_FragColor = vec4(c, 1.0); }` });
@@ -140,8 +175,10 @@ const LPM = {
       ['s', LP_E | 0xff3b6b, 0.26, 0.26, 0.26, 2.25, 1.75, z]]), ['k8', 0x6a7399, 0.7, 0.3, 0.7, -0.5, 2.2, 0, 0, 0, 40]],
   sword: () => [['k4', 0xdfe6f2, 0.3, 2.6, 0.07, 0, 2.1, 0], ['b', LP_E | 0x38e8ff, 0.05, 1.6, 0.09, 0, 1.7, 0], ['b', 0xe0b040, 1, 0.14, 0.2, 0, 0.78, 0], ['c6', 0x5a3320, 0.12, 0.62, 0.12, 0, 0.42, 0],
     ['s', 0xe0b040, 0.24, 0.24, 0.24, 0, 0.06, 0], ['s', LP_E | 0xff2a4a, 0.14, 0.14, 0.14, 0, 0.78, 0.1]],
-  ufo: () => [['t12', 0x8a93ad, 3.2, 0.4, 3.2, 0, 0.1, 0], ['t12', 0x5c6480, 3.2, 0.35, 3.2, 0, -0.27, 0, 180], ['S', LP_E | 0x6ff0ff, 1.3, 1, 1.3, 0, 0.45, 0],
-    ...lpRing(6, (x, z) => ['s', LP_E | 0xffe04d, 0.2, 0.2, 0.2, x * 1.25, -0.12, z * 1.25]), ['c8', LP_E | 0x7dff9a, 0.8, 0.08, 0.8, 0, -0.46, 0]],
+  ufo: () => [['t24', 0xaab3cc, 3.4, 0.36, 3.4, 0, 0.1, 0], ['t24', 0x6a7392, 3.4, 0.4, 3.4, 0, -0.28, 0, 180], ['c24', 0x3d4566, 3.46, 0.07, 3.46, 0, -0.08, 0],
+    ['t24', 0x8a93ad, 1.9, 0.22, 1.9, 0, 0.38, 0], ['S', LP_E | 0x6ff0ff, 1.25, 1.05, 1.25, 0, 0.6, 0], ['t16', 0x4a5378, 1.5, 0.3, 1.5, 0, -0.62, 0, 180],
+    ...lpRing(12, (x, z) => ['s', LP_E | 0xffe04d, 0.17, 0.17, 0.17, x * 1.45, -0.1, z * 1.45]), ...lpRing(3, (x, z) => ['k6', 0x3d4566, 0.14, 0.7, 0.14, x * 0.9, -0.85, z * 0.9, 180]),
+    ['c16', LP_E | 0x7dff9a, 0.85, 0.07, 0.85, 0, -0.78, 0]],
   alien: () => [['S', 0x7bdc6a, 1.1, 1.35, 1, 0, 2.1, 0], ['S', 0x0a0a12, 0.36, 0.5, 0.16, 0.27, 2.15, 0.42, 0, 0, -18], ['S', 0x0a0a12, 0.36, 0.5, 0.16, -0.27, 2.15, 0.42, 0, 0, 18],
     ['c6', 0x66c257, 0.2, 0.3, 0.2, 0, 1.4, 0], ['t6', 0x66c257, 0.7, 1, 0.5, 0, 0.85, 0, 180], ['b', 0x66c257, 0.12, 0.9, 0.12, 0.5, 0.9, 0, 0, 0, 12], ['b', 0x66c257, 0.12, 0.9, 0.12, -0.5, 0.9, 0, 0, 0, -12],
     ['b', 0x66c257, 0.16, 0.6, 0.16, 0.18, 0.3, 0], ['b', 0x66c257, 0.16, 0.6, 0.16, -0.18, 0.3, 0], ['c4', 0x66c257, 0.04, 0.5, 0.04, 0.25, 2.9, 0, 0, 0, -15], ['c4', 0x66c257, 0.04, 0.5, 0.04, -0.25, 2.9, 0, 0, 0, 15],
@@ -176,7 +213,7 @@ function lpWorld(T) {
       uRim: { value: new THREE.Color(T.fog) }, uRimK: { value: 0.3 } });
     const mat = lpMat(sh);
     for (const [parts, count, x0, x1, s0, s1, sway = 0, yr, bob = 0] of T.props) {
-      const n = mob ? Math.ceil(count / 2) : count, geo = lpGeo(parts), I = new Float32Array(n * 4), J = new Float32Array(n * 4);
+      const n = mob ? Math.ceil(count / 2) : count, geo = lpPick(parts, 0, true), I = new Float32Array(n * 4), J = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) {
         I[i * 4] = (R() < 0.5 ? -1 : 1) * (x0 + R() * (x1 - x0)); I[i * 4 + 1] = yr ? yr[0] + R() * (yr[1] - yr[0]) : 0; I[i * 4 + 2] = (i + R()) / n * DEPTH; I[i * 4 + 3] = R();
         J[i * 4] = s0 + R() * (s1 - s0); J[i * 4 + 1] = R() * 6.2832; J[i * 4 + 2] = sway; J[i * 4 + 3] = bob;
@@ -254,7 +291,7 @@ const LP_WORLDS = {
     props: [[LPM.palm(), 120, 2.4, 28, 0.9, 1.8, 0.05], [LPM.bush(0x2f9a4a), 110, 1.6, 26, 0.7, 1.8, 0.06], [LPM.flower(0xff5a3a, 0xffd94d), 60, 1.6, 14, 0.8, 1.4, 0.08], [LPM.rock(0x5a6b5a), 25, 2, 20, 0.5, 1.4]],
     fx: ['fly', 0xfff27a, 350] },
   w_cyber: { name: 'Cyber City', top: 0x05030f, fog: 0x3a1466, amb: 0x2a2a55, key: 0x8fb0ff, ground: [0x070812, 0x0a0c1a, 3, 0x38e8ff], lane: [0x10132a, 2], stars: 1,
-    props: [[LPM.tower(0x38e8ff), 70, 4.5, 30, 0.8, 2.2], [LPM.tower(0xff3df0), 60, 4.5, 34, 0.7, 2.6], [LPM.block(0xff3df0), 60, 3.4, 20, 0.7, 1.3], [LPM.fighter(), 10, 1, 12, 0.5, 0.8, 0, [5, 12], 0.4]],
+    props: [[LPM.tower(0x38e8ff), 70, 4.5, 30, 0.8, 2.2], [LPM.tower(0xff3df0), 60, 4.5, 34, 0.7, 2.6], [LPM.block(0xff3df0), 60, 3.4, 20, 0.7, 1.3], [['fighter2', 3, LPM.fighter()], 10, 1, 12, 0.5, 0.8, 0, [5, 12], 0.4]],
     fx: ['rain', 0x9fd0ff, 900], camY: 2.6 },
   w_doom: { name: 'Doom Lands', top: 0x0a0505, fog: 0x7a2410, amb: 0x4a2018, key: 0xff9a50, ground: [0x1a1212, 0x241616, 1, 0xff5a1a], sun: [0xff4a1a, 0.36, 0.06],
     props: [[LPM.spike(), 150, 2.4, 30, 0.7, 2.2], [LPM.volcano(), 9, 16, 44, 1, 2], [LPM.eyeTower(), 6, 9, 26, 0.9, 1.5], [LPM.rock(0x2a2020), 50, 2, 20, 0.5, 1.6]], fx: ['ember', 0xff8a2a, 900] },
@@ -275,27 +312,27 @@ const LP_WORLDS = {
     props: [[LPM.coral(0xff7a8a), 90, 1.8, 26, 0.6, 1.8, 0.03], [LPM.coral(0xffb347), 70, 1.8, 26, 0.6, 1.6, 0.03], [LPM.weed(), 160, 1.4, 26, 0.7, 2, 0.16], [LPM.fish(0xffb347), 50, 0.5, 14, 0.4, 0.9, 0, [1, 8], 0.5],
       [LPM.fish(0x5ad0ff), 50, 0.5, 16, 0.3, 0.8, 0, [1, 9], 0.5], [LPM.rock(0x2f5a66), 30, 2, 22, 0.6, 1.8]], fx: ['bubble', 0xbff4ff, 500] },
   w_alien: { name: 'Alien Planet', top: 0x10052a, fog: 0x6a2a8f, amb: 0x4a3a7a, key: 0xb0ffe0, ground: [0x2a1a55, 0x3a2470, 0], stars: 1, sun: [0x7dffd0, 0.6, 0.07],
-    props: [[LPM.mushroom(0xff4de0), 90, 2.2, 28, 0.6, 2.4, 0.03], [LPM.mushroom(0x38e8ff), 70, 2.2, 28, 0.5, 2, 0.03], [LPM.crystal(0x7dff9a), 80, 1.8, 24, 0.5, 1.6], [LPM.alien(), 16, 2, 9, 0.6, 0.9],
-      [LPM.ufo(), 10, 2, 18, 0.5, 1.1, 0, [5, 11], 0.6]], fx: ['fly', 0xff9af0, 500] },
+    props: [[LPM.mushroom(0xff4de0), 90, 2.2, 28, 0.6, 2.4, 0.03], [LPM.mushroom(0x38e8ff), 70, 2.2, 28, 0.5, 2, 0.03], [LPM.crystal(0x7dff9a), 80, 1.8, 24, 0.5, 1.6], [['alien', 2.2, LPM.alien()], 16, 2, 9, 0.7, 1.1],
+      [['ufo', 3, LPM.ufo()], 10, 2, 18, 0.5, 1.1, 0, [5, 11], 0.6]], fx: ['fly', 0xff9af0, 500] },
   w_dino: { name: 'Dino Valley', top: 0x2a5ab0, fog: 0xf2c890, amb: 0x7a6a55, key: 0xfff0d0, ground: [0x4a7a34, 0x5f8f3f, 0], lane: [0x7a6a44, 1.4], sun: [0xffe6a0, 0.4, 0.05],
-    props: [[LPM.trex(), 30, 2.6, 16, 1.1, 2.2], [LPM.trex(0x8f6a3a, 0x7a5a2e), 18, 2.6, 20, 0.8, 1.6], [LPM.palm(), 80, 2.6, 28, 1, 2, 0.04], [LPM.volcano(), 6, 20, 46, 1, 1.8], [LPM.bush(0x3f8f3a), 80, 1.8, 24, 0.6, 1.6, 0.05],
+    props: [[['trex', 3.4, LPM.trex()], 22, 2.8, 16, 0.9, 1.8], [['trike', 3.2, LPM.trex(0x8f6a3a, 0x7a5a2e)], 14, 2.8, 20, 0.8, 1.4], [['raptor', 2.2, LPM.trex()], 16, 2.4, 14, 0.8, 1.2], [LPM.palm(), 80, 2.6, 28, 1, 2, 0.04], [LPM.volcano(), 6, 20, 46, 1, 1.8], [LPM.bush(0x3f8f3a), 80, 1.8, 24, 0.6, 1.6, 0.05],
       [LPM.rock(0x8a7a66), 40, 2, 22, 0.5, 1.8]], fx: ['ember', 0xffc070, 250] },
   w_space: { name: 'Asteroid Run', top: 0x02030a, fog: 0x0a0a22, amb: 0x2a2a44, key: 0xffffff, stars: 1, sun: [0x9fb8ff, 0.7, 0.02], camY: 0.6,
-    props: [[LPM.asteroid(), 150, 1.6, 26, 0.3, 2.2, 0, [-9, 10], 0.3], [LPM.fighter(), 14, 1.5, 10, 0.5, 0.9, 0, [-3, 5], 0.5], [LPM.ufo(), 6, 4, 16, 0.6, 1, 0, [-2, 7], 0.6],
+    props: [[LPM.asteroid(), 150, 1.6, 26, 0.3, 2.2, 0, [-9, 10], 0.3], [['fighter', 3, LPM.fighter()], 14, 1.5, 10, 0.5, 0.9, 0, [-3, 5], 0.5], [['ufo', 3, LPM.ufo()], 6, 4, 16, 0.6, 1, 0, [-2, 7], 0.6], [['rocket', 3, LPM.rocket()], 6, 3, 14, 0.5, 0.9, 0, [-4, 6], 0.4],
       [LPM.crystal(0xff3df0), 30, 3, 20, 0.5, 1.2, 0, [-8, 8], 0.4]], fx: ['star', 0xffffff, 900], fxY: -5 },
   w_war: { name: 'Battlefield', top: 0x1a1e22, fog: 0x8a7a66, amb: 0x5a5548, key: 0xffe0b0, ground: [0x4a4a3a, 0x56543f, 0], lane: [0x3f3d30, 1.6], sun: [0xff9a5a, 0.34, 0.045],
-    props: [[LPM.tank(), 44, 2.6, 20, 1.1, 1.8], [LPM.cannon(), 16, 3.4, 18, 0.9, 1.4], [LPM.rock(0x4a463a), 80, 2, 26, 0.5, 2], [LPM.spike(), 30, 6, 30, 0.4, 0.9], [LPM.fighter(), 12, 0, 16, 0.5, 0.9, 0, [5, 11], 0.5]],
+    props: [[['tank', 3.2, LPM.tank()], 40, 2.8, 20, 0.9, 1.5], [['cannon', 2.4, LPM.cannon()], 16, 3.4, 18, 0.9, 1.4], [LPM.rock(0x4a463a), 80, 2, 26, 0.5, 2], [LPM.spike(), 30, 6, 30, 0.4, 0.9], [['fighter', 3, LPM.fighter()], 12, 0, 16, 0.5, 0.9, 0, [5, 11], 0.5]],
     fx: ['ember', 0xffa040, 500] },
 };
 for (const k in LP_WORLDS) SCENES3D[k] = { name: LP_WORLDS[k].name, group: 'world', params: LP_WORLD_PARAMS, build: lpWorld(LP_WORLDS[k]) };
 
 // ---------- stylized objects ----------
 const LP_OBJECT_PARAMS = [P('Speed', 0.3), P('Hue', 0.55), P('Dissolve into particles', 0.2), P('Copies (1, 3, 5)', 0), P('Size', 0.5), P('Music react', 0.6), P('Turn (hand / camera)', 0.5)];
-function lpObject(parts, tilt = 0.2) {
+function lpObject(parts, tilt = 0.2) {   // parts: a model's parts, or [name in models3d.js, its size, stand-in parts]
   return function () {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100); camera.position.z = 8;
-    const sh = lpShared({ uAmb: { value: new THREE.Color(0x62668a) }, uKey: { value: new THREE.Color(0xfff6ea) }, uRimK: { value: 1.6 } });
-    const geo = lpGeo(parts, 3.6), solid = new THREE.InstancedMesh(geo, lpMat(sh), 5); solid.frustumCulled = false;
+    const sh = lpShared({ uAmb: { value: new THREE.Color(0.66, 0.68, 0.84) }, uKey: { value: new THREE.Color(1.22, 1.17, 1.08) }, uRimK: { value: 0.7 }, uSpec: { value: 0.3 } });   // a bright studio: the models' own colours are dark
+    const geo = lpPick(parts, 3.6), solid = new THREE.InstancedMesh(geo, lpMat(sh), 5); solid.frustumCulled = false;
     //                 the leader, then two and four more behind it in a V, smaller
     const SPOT = [[0, 0, 0, 1], [-2.4, -0.2, -1.6, 0.6], [2.4, -0.2, -1.6, 0.6], [-3.9, -0.4, -3.2, 0.45], [3.9, -0.4, -3.2, 0.45]], I = new Float32Array(20), J = new Float32Array(20);
     SPOT.forEach((s, i) => { I[i * 4] = s[0]; I[i * 4 + 1] = s[1]; I[i * 4 + 2] = s[2]; I[i * 4 + 3] = 0.5; J[i * 4] = s[3]; });
@@ -332,11 +369,15 @@ function lpObject(parts, tilt = 0.2) {
       tx += (aimX() * 2.5 * p[6] - tx) * 0.08; ty += (aimY() * 1.5 * p[6] - ty) * 0.08;
       sh.uSpin.value = spin + tx; pts.rotation.y = spin + tx;   // every copy turns on its own spot: the formation itself stays put
       g.rotation.x = tilt + ty + Math.sin(t * 0.4) * 0.08; g.position.y = Math.sin(t * 0.9) * 0.12;
-      g.scale.setScalar((0.75 + p[4] * 1) * (1 + kick * 0.08));
+      g.scale.setScalar((0.6 + p[4] * 0.9) * (1 + kick * 0.08));
     } };
   };
 }
-const LP_OBJECTS = { o_blaster: ['Blaster', LPM.blaster()], o_cannon: ['Laser Cannon', LPM.cannon()], o_tank: ['Tank', LPM.tank()], o_sword: ['Sword', LPM.sword(), 0.1], o_trex: ['T-Rex', LPM.trex()],
-  o_ufo: ['UFO', LPM.ufo(), 0.45], o_alien: ['Alien', LPM.alien(), 0.1], o_fighter: ['Starfighter', LPM.fighter(), 0.35], o_rocket: ['Rocket', LPM.rocket(), 0.1], o_skull: ['Skull', LPM.skull(), 0.1],
-  o_diamond: ['Diamond', LPM.diamond(), 0.25], o_heart: ['Heart', LPM.heart(), 0.05], o_robot: ['Robot', LPM.robot(), 0.1] };
+// [name, model (its name in models3d.js, size, the built-in stand-in), tilt]
+const LP_OBJECTS = { o_blaster: ['Blaster', ['blaster', 3.6, LPM.blaster()]], o_rifle: ['Rifle', ['rifle', 3.8, LPM.blaster()]], o_cannon: ['Laser Cannon', ['cannon', 3.2, LPM.cannon()]],
+  o_tank: ['Tank', ['tank', 3.8, LPM.tank()]], o_sword: ['Sword', ['sword', 3.8, LPM.sword()], 0.1], o_trex: ['T-Rex', ['trex', 3.8, LPM.trex()]], o_raptor: ['Velociraptor', ['raptor', 3.8, LPM.trex()]],
+  o_trike: ['Triceratops', ['trike', 3.8, LPM.trex()]], o_ufo: ['UFO', LPM.ufo(), 0.45], o_alien: ['Alien', ['alien', 3.4, LPM.alien()], 0.1],
+  o_fighter: ['Starfighter', ['fighter', 3.8, LPM.fighter()], 0.35], o_fighter2: ['Shuttle', ['fighter2', 3.8, LPM.fighter()], 0.35], o_rocket: ['Rocket', ['rocket', 3.4, LPM.rocket()], 0.1],
+  o_skull: ['Skull', ['skull', 3, LPM.skull()], 0.1], o_diamond: ['Diamond', ['diamond', 3, LPM.diamond()], 0.25], o_heart: ['Heart', ['heart', 3, LPM.heart()], 0.05],
+  o_robot: ['Robot', ['robot', 3.4, LPM.robot()], 0.1] };
 for (const k in LP_OBJECTS) SCENES3D[k] = { name: LP_OBJECTS[k][0], group: 'object', params: LP_OBJECT_PARAMS, build: lpObject(LP_OBJECTS[k][1], LP_OBJECTS[k][2]) };

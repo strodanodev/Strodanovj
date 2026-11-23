@@ -48,21 +48,25 @@ function stock3d(scene, hue, speed) {
 const HUE = { magenta: 0.86, cyan: 0.5, yellow: 0.15, violet: 0.75, blue: 0.62 };
 
 // The show. Columns: 1-2 Calm, 3-4 Groove, 5-6 Peak, 7-8 Drop.
-//   STRODANO video  picture   the mid-section video for builds, the top-section video for the drops
+//   Backdrop        picture   the mid-section video for builds, the top-section video for the drops, and an endless
+//                             low-poly world (lowpoly.js) in every other column, the darker ones, so the 3D FX added
+//                             on top still read
 //   3D FX           picture   three.js scenes added on top (Add blend), calm ones first, the busiest on the drops
+//   3D objects      picture   a low-poly object turning in front of it all (see-through around it), in five columns
 //   Pro 3D          picture   the Pro visualizers over that (Glass Prism and Event Horizon bend the 3D FX picture under
 //                             them); locked clips with a PRO badge on Free, where they do not play
 //   Strobe          effect    Beat Flash, Drop columns only
 //   Artist          overlay   the duo and the Audius logo, in the calm parts
 //   STRODANO logo   overlay   locked, always up
 function stockComp() {
-  resetComp(6, 8);
+  resetComp(7, 8);
   scoreLoad(null);
   if (typeof snapsFromJSON === 'function') snapsFromJSON(null);
   stockMedia();
-  const [V, D, PR, S, A, LG] = comp.layers;
-  Object.assign(V, { name: 'STRODANO video', agentRole: 'main', trans: 2, transType: 0 });
+  const [V, D, OB, PR, S, A, LG] = comp.layers;
+  Object.assign(V, { name: 'Backdrop', agentRole: 'main', trans: 2, transType: 0 });
   Object.assign(D, { name: '3D FX', agentRole: 'main', blend: 1, opacity: 0.9, trans: 2 });
+  Object.assign(OB, { name: '3D objects', agentRole: 'main', blend: 0, opacity: 1, trans: 2, scale: 0.62 });   // smaller: the world behind stays the picture
   Object.assign(PR, { name: 'Pro 3D', agentRole: 'main', blend: 0, opacity: 1, trans: 2 });
   Object.assign(S, { name: 'Strobe', agentRole: 'fx', blend: 1, opacity: 0.6 });
   Object.assign(A, { name: 'Artist', agentRole: 'overlay', fit: 1, scale: 0.62, y: -0.06, opacity: 0.95, trans: 4 });
@@ -71,6 +75,10 @@ function stockComp() {
   const put = (L, ci, c) => { if (c) L.clips[ci] = c; };
   // each stock file is in the grid once (every copy would be another full video decoder)
   put(V, 2, stockClip(mid)); put(V, 6, stockClip(top));
+  [['w_sea', HUE.cyan, 0.2], ['w_forest', HUE.cyan, 0.25], null, ['w_alien', HUE.magenta, 0.35], ['w_cyber', HUE.cyan, 0.5], ['w_doom', HUE.yellow, 0.5], null, ['w_space', HUE.violet, 0.7]]
+    .forEach((x, ci) => { if (x) put(V, ci, stock3d(x[0], x[1], x[2])); });
+  [null, ['o_diamond', HUE.cyan, 0.25], null, ['o_ufo', HUE.magenta, 0.3], ['o_fighter', HUE.cyan, 0.4], ['o_skull', HUE.magenta, 0.4], null, ['o_robot', HUE.cyan, 0.5]]
+    .forEach((x, ci) => { const c = x && stock3d(x[0], x[1], x[2]); if (c) { c.params[4] = 0.25; put(OB, ci, c); } });   // slider 4 = Size
   [['aurora', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['chrome', HUE.magenta, 0.35], ['horizon', HUE.magenta, 0.4],
     ['lasertunnel', HUE.cyan, 0.55], ['vortex', HUE.violet, 0.5], ['lasers', HUE.cyan, 0.7], ['particles', HUE.magenta, 0.7]]
     .forEach(([k, h, s], ci) => put(D, ci, stock3d(k, h, s)));
@@ -81,9 +89,10 @@ function stockComp() {
   put(LG, 0, stockClip('strodano-logo.webp')); put(LG, 1, stockClip('strodano-logo-glow.webp'));
   comp.agentTags = { 0: 'Calm', 1: 'Calm', 2: 'Groove', 3: 'Groove', 4: 'Peak', 5: 'Peak', 6: 'Drop', 7: 'Drop' };
   // what shows before the music starts: the calm column, with the logo
+  if (V.clips[0]) trigger(0, 0);
   if (D.clips[0]) trigger(1, 0);
-  if (A.clips[0]) trigger(4, 0);
-  trigger(5, 0);
+  if (A.clips[0]) trigger(5, 0);
+  trigger(6, 0);
   LG.locked = true;
   if (typeof plDirty === 'function') plDirty();
   ui.gridDirty = ui.propsDirty = ui.browserDirty = true;

@@ -5,12 +5,12 @@
 // Never cached: vdo.ninja and other sites (the web link is online by nature), and the MediaPipe hand tracking
 // bundle (14 MB, a desktop feature), and the desktop page (index.html): only the files in SHELL go through here.
 'use strict';
-const VERSION = 'svj-mobile-10';
+const VERSION = 'svj-mobile-11';
 const SHELL = [
   'mobile.html', 'manifest.webmanifest', 'logo.png', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'theme.js', 'core.js', 'plan.js', 'shaders.js', 'engine.js', 'mediafolder.js', 'midi.js', 'audio.js', 'live.js', 'looks.js', 'prodl.js',
   'motion.js', 'camera.js', 'text.js',
-  'vendor/three.min.js', 'smart3d.js', 'lowpoly.js', 'hands.js', 'inputs.js', 'safety.js', 'display.js', 'ndi.js', 'vdo.js', 'clipopts.js', 'snapshots.js',
+  'vendor/three.min.js', 'smart3d.js', 'models3d.js', 'lowpoly.js', 'hands.js', 'inputs.js', 'safety.js', 'display.js', 'ndi.js', 'vdo.js', 'clipopts.js', 'snapshots.js',
   'vendor/qrcode.js', 'vendor/vdoninja-sdk.min.js', 'medialib.js', 'starter.js', 'workspace.js', 'mobileui.js',
 ];
 // Strodano VJ Pro is not cached here: prodl.js keeps the downloaded bundle in localStorage.
