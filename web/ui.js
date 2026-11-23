@@ -78,9 +78,10 @@ function renderGrid() {
         cell.append(c.thumb ? el('img', { src: c.thumb, draggable: false }) : el('div', { className: 'ph' }), el('div', { className: 'prog' }, el('i')), el('span', { textContent: c.name, title: c.fileName || c.name }));
         if (c.missing) cell.append(el('div', { className: 'miss', textContent: 'missing file' }));
         if (c.error) cell.append(el('div', { className: 'miss', textContent: 'cannot play' }));
+        if (viz3dLocked(c)) { cell.classList.add('prolocked'); cell.append(el('div', { className: 'prolock', textContent: 'PRO', title: c.name + ' is a Pro visualizer: click to see Pro' })); }
         draggable(cell, { kind: 'clip', l: li, c: ci });
       }
-      cell.addEventListener('click', () => { sel.l = li; sel.c = ci; if (c) { trigger(li, ci); propTab = 'clip'; } ui.gridDirty = ui.propsDirty = true; });
+      cell.addEventListener('click', () => { sel.l = li; sel.c = ci; if (c) { if (viz3dLocked(c)) proGate('viz3d'); else trigger(li, ci); propTab = 'clip'; } ui.gridDirty = ui.propsDirty = true; });
       cell.addEventListener('contextmenu', e => { e.preventDefault(); if (c) setClip(li, ci, null); });
       dropTarget(cell, e => hasFiles(e) || (drag && (drag.kind !== 'fx' || c)), e => dropOnCell(li, ci, e));
       cellEls[li][ci] = cell;

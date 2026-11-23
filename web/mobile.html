@@ -123,6 +123,7 @@ button.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 .tile span{position:absolute;left:0;right:0;bottom:0;font-size:11px;font-weight:500;padding:10px 6px 3px;background:linear-gradient(transparent,rgba(0,0,0,.85));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .tile .num{position:absolute;left:5px;top:4px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.6);color:#ddd}
 .tile .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--acc);width:0}
+.tile .prolock{position:absolute;right:4px;top:4px;font:700 9px var(--mono);letter-spacing:.08em;font-style:normal;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.72);color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)} .tile.prolocked{filter:saturate(.6) brightness(.75)}
 .tile.empty{border:1.5px dashed #34343c;box-shadow:none;color:var(--faint);font-size:24px;background:none}
 .tile.active{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-muted)}
 .tile.pending{border-color:var(--warn)}
@@ -391,6 +392,7 @@ details.more[open]{padding-bottom:12px}
 <script src="text.js"></script>
 <script src="vendor/three.min.js"></script>
 <script src="smart3d.js"></script>
+<script src="lowpoly.js"></script>
 <script src="hands.js"></script>
 <script src="inputs.js"></script>
 <script src="safety.js"></script>

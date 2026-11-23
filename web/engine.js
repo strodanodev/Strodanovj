@@ -424,6 +424,7 @@ function endTransition(L) { if (L.from >= 0 && L.from !== L.active) pauseClip(L.
 function trigger(li, ci) {
   const L = comp.layers[li], c = L && L.clips[ci];
   if (!c || c.missing || c.error) return;
+  if (typeof viz3dLocked === 'function' && viz3dLocked(c)) return;   // smart3d.js: a Pro visualizer on a plan without them
   if (typeof quantHold === 'function' && quantHold(li, ci)) return;   // mix.js: wait for the next beat or bar while music plays
   if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
   if (c.video) {

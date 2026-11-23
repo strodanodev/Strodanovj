@@ -105,6 +105,7 @@ function tileEl(c, li, ci, onclick) {
   const t = el('button', { className: 'tile' + (c.missing ? ' miss' : ''), style: { backgroundImage: thumbCss(c) }, onclick },
     el('i', { className: 'num', textContent: String(ci + 1) }), el('span', { textContent: c.name }));
   if (c.type === 'video') t.append(el('i', { className: 'bar' }));
+  if (typeof viz3dLocked === 'function' && viz3dLocked(c)) { t.classList.add('prolocked'); t.append(el('i', { className: 'prolock', textContent: 'PRO' })); }
   t.dataset.l = li; t.dataset.c = ci; t._thumb = c.thumb;
   M.tiles.push(t);
   return t;
@@ -364,7 +365,7 @@ function renderPerform(v) {
     card._now = now; card._L = L;
     const strip = el('div', { className: 'strip' });
     if (!filled.length) strip.append(hint('Empty: add clips in Build.'));
-    for (const [c, ci] of filled) strip.append(tileEl(c, li, ci, () => { buzz(); trigger(li, ci); }));
+    for (const [c, ci] of filled) strip.append(tileEl(c, li, ci, () => { buzz(); if (typeof viz3dLocked === 'function' && viz3dLocked(c)) proGate('viz3d'); else trigger(li, ci); }));
     card.append(strip);
     M.layerCards.push(card);
     v.append(card);
@@ -413,8 +414,12 @@ function addSheet(li, ci) {
     }
     s.append(h3('Visuals'), el('div', { className: 'chips' }, ...[...DEFS.gen.values()].map(d => btn(d.name, () => placeAndClose(li, ci, genClip(d.name))))));
     if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined')
-      s.append(h3('3D', el('span', { className: 'x hint', textContent: 'heavier on older phones' })), el('div', { className: 'chips' }, ...Object.keys(SCENES3D).filter(k => !SCENES3D[k].pro).map(k => btn(SCENES3D[k].name || k, () => placeAndClose(li, ci, clip3d(k)))),
+      s.append(h3('3D', el('span', { className: 'x hint', textContent: 'heavier on older phones' })), el('div', { className: 'chips' }, ...Object.keys(SCENES3D).filter(k => !SCENES3D[k].pro && !SCENES3D[k].group).map(k => btn(SCENES3D[k].name || k, () => placeAndClose(li, ci, clip3d(k)))),
         ...Object.keys(SCENES3D_PRO).map(k => btn((SCENES3D[k] ? SCENES3D[k].name : SCENES3D_PRO[k]) + ' · PRO', () => { if (proGate('viz3d') && SCENES3D[k]) placeAndClose(li, ci, clip3d(k)); }))));
+    if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined') for (const [grp, title] of SCENES3D_GROUPS) {
+      const ks = Object.keys(SCENES3D).filter(k => SCENES3D[k].group === grp);
+      if (ks.length) s.append(h3(title), el('div', { className: 'chips' }, ...ks.map(k => btn(SCENES3D[k].name, () => placeAndClose(li, ci, clip3d(k))))));
+    }
     const txt = el('input', { type: 'text', placeholder: 'Words, one line per cue', value: '' });
     s.append(h3('Text'), el('div', { className: 'row' }, txt, btn('Add', () => placeAndClose(li, ci, textClip({ text: txt.value || 'STRODANO VJ' })), 'shrink')));
     if (canCamera) s.append(h3('Camera'), btn('Live camera', () => placeAndClose(li, ci, camClip('')), 'big'));
@@ -426,7 +431,7 @@ function clipSheet(li, ci) {
   const L = comp.layers[li], c = clipAt(li, ci);
   if (!c) return addSheet(li, ci);
   openSheet(c.name, s => {
-    s.append(el('div', { className: 'row' }, btn('Play', () => { trigger(li, ci); buzz(); }, 'pri'), btn('Replace', () => addSheet(li, ci)),
+    s.append(el('div', { className: 'row' }, btn('Play', () => { if (typeof viz3dLocked === 'function' && viz3dLocked(c)) proGate('viz3d'); else trigger(li, ci); buzz(); }, 'pri'), btn('Replace', () => addSheet(li, ci)),
       btn('Remove', e => armThen(e.currentTarget, 'remove ' + c.name, () => { setClip(li, ci, null); closeSheet(); }), 'danger')));
     s.append(el('div', { className: 'row', style: { marginTop: '8px' } },
       btn('◀  Move left', () => moveClip(li, ci, -1), '', { disabled: ci === 0 }), btn('Move right  ▶', () => moveClip(li, ci, 1), '', { disabled: ci >= comp.columns - 1 })));

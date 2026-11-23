@@ -39,30 +39,31 @@ function stockClip(file, name) {
   c.name = name || STOCK_NAMES[file] || (STOCK_VIDEOS.find(v => v[0] === file) || [])[1] || c.name;
   return c;
 }
-// A 3D scene in STRODANO colours: hue (0..1) and speed set on the scene's own sliders.
+// A 3D scene in STRODANO colours: hue (0..1) and speed set on the scene's own sliders. A Pro scene on an app without
+// the Pro bundle comes back as its locked clip (smart3d.js), which carries the two values for when it unlocks.
 function stock3d(scene, hue, speed) {
-  if (typeof SCENES3D === 'undefined' || typeof THREE === 'undefined' || !SCENES3D[scene]) return null;
-  const c = clip3d(scene);
-  c.params[1] = hue;
-  if (speed !== undefined) c.params[0] = speed;
-  return c;
+  if (typeof SCENES3D === 'undefined' || typeof THREE === 'undefined') return null;
+  return clip3d(scene, { params: [speed === undefined ? (SCENES3D[scene] ? SCENES3D[scene].params[0].def : 0.35) : speed, hue] });
 }
 const HUE = { magenta: 0.86, cyan: 0.5, yellow: 0.15, violet: 0.75, blue: 0.62 };
 
 // The show. Columns: 1-2 Calm, 3-4 Groove, 5-6 Peak, 7-8 Drop.
 //   STRODANO video  picture   the mid-section video for builds, the top-section video for the drops
 //   3D FX           picture   three.js scenes added on top (Add blend), calm ones first, the busiest on the drops
+//   Pro 3D          picture   the Pro visualizers over that (Glass Prism and Event Horizon bend the 3D FX picture under
+//                             them); locked clips with a PRO badge on Free, where they do not play
 //   Strobe          effect    Beat Flash, Drop columns only
 //   Artist          overlay   the duo and the Audius logo, in the calm parts
 //   STRODANO logo   overlay   locked, always up
 function stockComp() {
-  resetComp(5, 8);
+  resetComp(6, 8);
   scoreLoad(null);
   if (typeof snapsFromJSON === 'function') snapsFromJSON(null);
   stockMedia();
-  const [V, D, S, A, LG] = comp.layers;
+  const [V, D, PR, S, A, LG] = comp.layers;
   Object.assign(V, { name: 'STRODANO video', agentRole: 'main', trans: 2, transType: 0 });
   Object.assign(D, { name: '3D FX', agentRole: 'main', blend: 1, opacity: 0.9, trans: 2 });
+  Object.assign(PR, { name: 'Pro 3D', agentRole: 'main', blend: 0, opacity: 1, trans: 2 });
   Object.assign(S, { name: 'Strobe', agentRole: 'fx', blend: 1, opacity: 0.6 });
   Object.assign(A, { name: 'Artist', agentRole: 'overlay', fit: 1, scale: 0.62, y: -0.06, opacity: 0.95, trans: 4 });
   Object.assign(LG, { name: 'STRODANO logo', agentRole: 'overlay', fit: 1, scale: 0.34, y: -0.3, trans: 4 });
@@ -73,14 +74,16 @@ function stockComp() {
   [['aurora', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['chrome', HUE.magenta, 0.35], ['horizon', HUE.magenta, 0.4],
     ['lasertunnel', HUE.cyan, 0.55], ['vortex', HUE.violet, 0.5], ['lasers', HUE.cyan, 0.7], ['particles', HUE.magenta, 0.7]]
     .forEach(([k, h, s], ci) => put(D, ci, stock3d(k, h, s)));
+  [['swarm', HUE.violet, 0.3], ['blackhole', 0.07, 0.3], ['glass', HUE.cyan, 0.3], null, ['city', HUE.cyan, 0.4], ['ledcube', HUE.magenta, 0.45]]
+    .forEach((x, ci) => { if (x) put(PR, ci, stock3d(x[0], x[1], x[2])); });
   put(S, 6, genClip('Beat Flash')); put(S, 7, genClip('Beat Flash'));
   put(A, 0, stockClip('strodano-duo.webp')); put(A, 1, stockClip('audius-logo.webp'));
   put(LG, 0, stockClip('strodano-logo.webp')); put(LG, 1, stockClip('strodano-logo-glow.webp'));
   comp.agentTags = { 0: 'Calm', 1: 'Calm', 2: 'Groove', 3: 'Groove', 4: 'Peak', 5: 'Peak', 6: 'Drop', 7: 'Drop' };
   // what shows before the music starts: the calm column, with the logo
   if (D.clips[0]) trigger(1, 0);
-  if (A.clips[0]) trigger(3, 0);
-  trigger(4, 0);
+  if (A.clips[0]) trigger(4, 0);
+  trigger(5, 0);
   LG.locked = true;
   if (typeof plDirty === 'function') plDirty();
   ui.gridDirty = ui.propsDirty = ui.browserDirty = true;

@@ -21,7 +21,8 @@ const d3 = (scene, extra) => ({ type: '3d', scene, ...extra });
 // mod = { paramIndex: { src: 'kick' | 'bass' | ..., depth } } pushes a parameter up with the music (motion.js).
 const packFx = (def, params, mod) => ({ def, params, mix: 1, ...(mod && { mod }) });
 const onKick = depth => ({ shape: 0, rate: 4, depth, src: 'kick' });
-// The first-start template: 4 scenes (Intro, Groove, Peak, Drop; the column tags drive Auto) on 3 layers.
+// The first-start template: 4 scenes (Intro, Groove, Peak, Drop; the column tags drive Auto) on 4 layers. The Pro 3D
+// layer holds four Pro visualizers: on Free they are locked tiles with a PRO badge (smart3d.js viz3dLocked).
 // Visuals at the back (STRODANO footage or a 3D world), a 3D glow screened over it, ONE brand element on top, placed
 // off the faces. A few clip effects follow the kick, so it moves with the music from the first tap.
 function starterProject() {
@@ -34,6 +35,8 @@ function starterProject() {
       { name: 'Visuals', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
         clips: [m('strodano-hero.mp4', { fx: [packFx('Vignette', [0.45, 0.6])] }), d3('horizon'),
           m('strodano-stage.mp4', { fx: [packFx('Audio Pulse', [0.2, 0.15, 0])] }), d3('lasertunnel')] },
+      { name: 'Pro 3D', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
+        clips: [d3('swarm'), d3('glass'), d3('ledcube'), d3('blackhole')] },
       { name: '3D', opacity: 0.85, blend: 4, fit: 0, trans: 1, transType: 0,
         clips: [d3('vortex'), null, d3('chrome'), d3('lasers')] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
@@ -47,13 +50,13 @@ function starterProject() {
 // Load the starter project (layout first; media arrives through starterFetch)
 function loadStarter() {
   const j = starterProject();
-  j.layers.forEach(l => { l.clips = l.clips.map(c => (c && c.type === '3d' && typeof SCENES3D !== 'undefined' && !SCENES3D[c.scene] ? null : c)); });
+  j.layers.forEach(l => { l.clips = l.clips.map(c => (c && c.type === '3d' && typeof SCENES3D !== 'undefined' && !SCENES3D[c.scene] && !SCENES3D_PRO[c.scene] ? null : c)); });
   if (!loadComp(j)) return false;
   if (!screens[0].slices.length) screens[0].slices.push(newSlice('Slice 1'));
   starterPlay();
   return true;
 }
-function starterPlay() { [[0, 0], [1, 0], [2, 0]].forEach(([li, ci]) => { const L = comp.layers[li]; if (L && L.active < 0 && L.pendingCol < 0) trigger(li, ci); }); }
+function starterPlay() { [[0, 0], [1, 0], [2, 0], [3, 0]].forEach(([li, ci]) => { const L = comp.layers[li]; if (L && L.active < 0 && L.pendingCol < 0) trigger(li, ci); }); }
 const starterState = { busy: false, done: 0, total: 0 };
 // Download the pack files the project needs and the library does not have yet; then copy them in (relinks the clips)
 async function starterFetch() {

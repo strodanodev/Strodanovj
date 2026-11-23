@@ -104,6 +104,7 @@ button.armed,.lctl button.del.armed,#sidebar button.armed{background:rgba(203,36
 .cell span{position:absolute;left:6px;right:6px;bottom:2px;height:16px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cell .prog{position:absolute;left:3px;right:3px;bottom:19px;height:2px} .cell .prog i{display:block;height:100%;width:0;background:var(--acc)}
 .cell .miss{position:absolute;left:6px;top:6px;background:var(--bad);color:#fff;padding:1px 6px;border-radius:var(--r-ctl);font-size:11px}
+.cell .prolock{position:absolute;right:6px;top:6px;z-index:2;background:rgba(0,0,0,.72);color:var(--acc);border:1px solid var(--acc);padding:0 6px;border-radius:var(--r-ctl);font-size:10px;font-weight:600;letter-spacing:.08em} .cell.prolocked img{filter:saturate(.55) brightness(.6)}
 
 /* live layer previews (preview.js) */
 .lmon{min-width:0;display:grid;place-items:center;background:#000;border:1px solid var(--card-line);border-radius:6px;overflow:hidden;position:relative}
@@ -431,6 +432,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="text.js"></script>
 <script src="vendor/three.min.js"></script>
 <script src="smart3d.js"></script>
+<script src="lowpoly.js"></script>
 <script src="stock-images.js"></script>
 <script src="stock.js"></script>
 <script src="audius.js"></script>
