@@ -462,7 +462,12 @@ function toggleBroadcastMenu() {
       el('div', { textContent: off ? 'Desktop app only' : BC_KINDS[kind].hint, style: { color: 'var(--dim)', fontSize: '12px' } }));
   };
   bcMenuEl = el('div', { role: 'menu', style: { position: 'fixed', left: Math.max(8, Math.min(r.left, innerWidth - 276)) + 'px', top: r.bottom + 4 + 'px', zIndex: '20', width: '268px', boxSizing: 'border-box', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '4px', boxShadow: '0 12px 40px rgba(0,0,0,.7)' } },
-    item('vdo'), item('ndi'));
+    item('vdo'), item('ndi'),
+    // remote control (Festival): the host's side is in Strodano VJ Pro; without it this opens the upgrade prompt
+    el('button', { role: 'menuitem', onclick: () => { closeBroadcastMenu(); if (typeof remoteHostUI === 'function') remoteHostUI(); else proGate('remote'); },
+      style: { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: '0', background: 'none', height: 'auto' } },
+      el('div', { textContent: 'Remote control (phone)' }),
+      el('div', { textContent: 'Play this show from your phone. Festival', style: { color: 'var(--dim)', fontSize: '12px' } })));
   document.body.append(bcMenuEl);
   b.setAttribute('aria-expanded', 'true');
 }

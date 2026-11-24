@@ -30,6 +30,7 @@ const ENT_FEATURES = {
   viz3d:     { plan: 'pro',      name: 'The Pro 3D pack',    what: 'Five more 3D visualizers: Glass Prism, Neon City, Murmuration, LED Cube and Event Horizon.' },
   pack:      { plan: 'pro',      name: 'STRODANO 3D show', what: 'A ready show on the advanced 3D visualizers, with STRODANO footage in full HD.' },
   mapping:   { plan: 'festival', name: 'Advanced mapping', what: 'Several screens, slices, mesh warp, masks and soft edges.' },
+  remote:    { plan: 'festival', name: 'Remote control',   what: 'Play the show on this computer from your phone: clips, levels, effects and blackout. Nothing is uploaded.' },
 };
 const ENT_REC_MAX = { free: 0, pro: 3600, festival: 36000 };   // seconds of recording per file
 const ENT_SITE = 'https://www.strodano.live';

@@ -66,4 +66,4 @@ function snapPanel() {
 }
 
 // One per-frame hook for the show-safety and clip features (ui.js frame, after update()).
-function vjTick(dt) { safetyTick(dt); clipOptsTick(dt); snapTick(); if (typeof gpTick === 'function') gpTick(dt); ctlTick(); }
+function vjTick(dt) { safetyTick(dt); clipOptsTick(dt); snapTick(); if (typeof gpTick === 'function') gpTick(dt); ctlTick(); if (typeof remoteTick === 'function') remoteTick(); }   // remoteTick: the state a remote control mirrors (Festival)

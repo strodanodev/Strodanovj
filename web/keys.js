@@ -56,6 +56,7 @@ function prefsUI() {
       el('input', { type: 'checkbox', checked: display.autoOut, onchange: e => { display.autoOut = e.target.checked; saveDisplayPref(); if (display.autoOut) syncDisplays(display.list.map(d => d.key)); if (!$('outModal').hidden) renderOutPanels(); } }),
       ' Auto output: open on a display when it is connected')),
     row('Mapping', text('Screens, slices, warping and masks'), el('button', { textContent: 'Advanced Output...', onclick: () => { close(); $('outModal').hidden = false; renderOutPanels(); } })),
+    row('Remote control', text('Play this show from your phone (Festival)'), el('button', { textContent: 'Remote control...', onclick: () => { close(); if (typeof remoteHostUI === 'function') remoteHostUI(); else proGate('remote'); } })),
     el('h4', { textContent: 'Window' }),
     row('Panels', text('Sizes and minimised panels'), el('button', { textContent: 'Reset layout', title: 'Every panel back to its automatic size, none minimised', onclick: () => { pnl.sizes = {}; pnl.min = {}; panelSave(); panelSync(); setStatus('Panels are back to their automatic sizes'); } })),
     row('Full screen', text('Hides the menu bar for more room (F11)'), el('button', { textContent: 'Full screen', onclick: () => appFullscreen() })),

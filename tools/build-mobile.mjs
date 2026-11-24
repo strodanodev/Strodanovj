@@ -30,7 +30,8 @@ const copy = (rel, from = path.join(WEB, rel)) => { if (!existsSync(from)) fail(
 // 1. the app
 const html = readFileSync(path.join(WEB, 'mobile.html'), 'utf8');
 const refs = [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map(m => m[1]).filter(r => !r.startsWith('/'));
-const extra = ['mobile.html', 'watch.html', 'sw.js', 'vendor/vdoninja-sdk.min.js', 'vendor/vdoninja-LICENSE-MPL-2.0.txt', 'vendor/qrcode-LICENSE.txt', 'vendor/three-LICENSE.txt',
+// remote.html (the remote control screen) is its own small page: its scripts are not in the service worker's list
+const extra = ['mobile.html', 'watch.html', 'remote.html', 'remote.js', 'remotelink.js', 'sw.js', 'vendor/vdoninja-sdk.min.js', 'vendor/vdoninja-LICENSE-MPL-2.0.txt', 'vendor/qrcode-LICENSE.txt', 'vendor/three-LICENSE.txt',
   ...readdirSync(path.join(WEB, 'icons')).map(f => 'icons/' + f)];
 const files = [...new Set([...refs, ...extra])];
 files.forEach(f => copy(f));
@@ -139,9 +140,10 @@ writeFileSync(path.join(OUT, '.nojekyll'), '');
 writeFileSync(path.join(OUT, 'vercel.json'), JSON.stringify({
   cleanUrls: false, trailingSlash: false,
   // the branded web link viewer: <site>/live/<name>#<password>
-  rewrites: [{ source: '/live/:name', destination: '/watch.html' }],
+  // and the remote control screen: <site>/remote#<room>.<secret> (the QR code the desktop app shows)
+  rewrites: [{ source: '/live/:name', destination: '/watch.html' }, { source: '/remote', destination: '/remote.html' }],
   headers: [
-    { source: '/(sw.js|mobile.html|watch.html|index.html|manifest.webmanifest)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(sw.js|mobile.html|watch.html|remote.html|remote|remote.js|remotelink.js|index.html|manifest.webmanifest)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     // the desktop app downloads the pack from file:// (origin null), so the files allow any origin: the signature is the lock
     { source: '/premium/(.*)', headers: [{ key: 'Cache-Control', value: 'private, no-store' }, { key: 'Access-Control-Allow-Origin', value: '*' }] },
     { source: '/starter/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=86400' }] },

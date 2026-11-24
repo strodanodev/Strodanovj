@@ -521,6 +521,9 @@ function settingsSheet() {
     }));
     s.append(h3('Colour'), sw);
     settingsProject(s);
+    // remote.html: this phone as the remote control of a show running in the desktop app (the desktop needs Festival)
+    s.append(h3('Remote control'), el('div', { className: 'card' }, el('div', { className: 'setting' }, el('span', { textContent: 'Play a show running on a computer' }),
+      btn('Open', () => { autosave(); location.href = 'remote.html'; }))), hint('This phone\'s own show stops while the remote is open.'));
     s.append(h3('Help'), btn('Take the tour again', () => { closeSheet(); setTimeout(tourStart, 250); }));
     s.append(h3('Account'), el('div', { className: 'card' }, el('div', { className: 'setting' }, el('span', { textContent: ent.token ? 'Signed in: ' + ENT_NAMES[entPlan()] : 'Free (not signed in)' }),
       btn(ent.token ? 'Account' : 'Sign in', () => { closeSheet(); entAccount(); }, ent.token ? '' : 'pri'))));
