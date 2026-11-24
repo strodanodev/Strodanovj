@@ -8,6 +8,9 @@
 // Internet: the VDO.Ninja SDK's data channel (vendor/vdoninja-sdk.min.js, loaded on first use). The devices talk directly
 // (WebRTC, encrypted); vdo.ninja's server only introduces them, as for the web link. sendData is never given
 // allowFallback, so no message can go through that server. Nothing is stored anywhere.
+// A host cannot see from its own side whether remotes can find it (2026-11-24: a host that said "live" was unreachable for
+// minutes, cause unknown). So rlHost asks for its own room from a second SDK session, right after announcing and every two
+// minutes while no remote is connected, and announces again on a new connection when that fails.
 // Tests on a page served from this computer: {local: true} uses a BroadcastChannel between two tabs instead.
 // The host's side of the feature (what a message does to the show) is not in this repo: it is part of Festival.
 'use strict';
@@ -15,6 +18,7 @@ const RL_V = 1;                                      // protocol version: hello.
 const RL_ALPHA = 'abcdefghijkmnpqrstuvwxyz23456789';   // 32 characters, none that look alike (same as vdo.js vdoRand)
 const RL_SITE = 'https://vj.strodano.live';
 const RL_PART = 48000;                               // a message longer than this (JSON characters) travels in pieces
+const RL_PROBE_FIRST = 2000, RL_PROBE_EVERY = 120e3, RL_PROBE_WAIT = 12000;   // the host's own reachability check (rlHost)
 const RL_DEV = typeof location !== 'undefined' && location.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 
 // ---------- SHA-256, HMAC ----------
@@ -123,7 +127,7 @@ const rlSdkEnd = sdk => { try { const p = sdk.disconnect(); if (p && p.catch) p.
 // ---------- host ----------
 function rlHost(o) {
   if (o.local && RL_DEV) return rlLocalHost(o);
-  const h = { sdk: null, stopped: false, parts: new Map(), retry: 0 };
+  const h = { sdk: null, stopped: false, parts: new Map(), retry: 0, probeT: 0, probeId: null, repairs: 0 };
   const state = (s, text) => { if (!h.stopped && o.onState) o.onState(s, text || ''); };
   const take = (peer, d, lossy) => {
     if (h.stopped || !d || typeof d !== 'object') return;
@@ -140,8 +144,8 @@ function rlHost(o) {
     if (h.stopped) return;
     try {
       const sdk = h.sdk = rlSdkNew(o.secret);
-      sdk.addEventListener('dataChannelOpen', e => { const u = e.detail && e.detail.uuid; if (u && !h.stopped) { h.parts.set(u, {}); if (o.onOpen) o.onOpen(u); } });
-      sdk.addEventListener('dataReceived', e => take(e.detail.uuid, e.detail.data, false));
+      sdk.addEventListener('dataChannelOpen', e => { const u = e.detail && e.detail.uuid; if (u && !h.stopped && u !== h.probeId) { h.parts.set(u, {}); if (o.onOpen) o.onOpen(u); } });
+      sdk.addEventListener('dataReceived', e => { if (e.detail.uuid !== h.probeId) take(e.detail.uuid, e.detail.data, false); });
       // the remote's second channel (fader moves): unordered, no resends
       sdk.addEventListener('channelOpen', e => { const d = e.detail || {}; if (d.channel && /ctl$/.test(d.label || '')) d.channel.onmessage = ev => { try { take(d.uuid, JSON.parse(ev.data), true); } catch (err) {} }; });
       for (const ev of ['peerDisconnected', 'dataChannelClose']) sdk.addEventListener(ev, e => gone(e.detail && e.detail.uuid));
@@ -152,14 +156,38 @@ function rlHost(o) {
       if (h.stopped) return rlSdkEnd(sdk);
       await sdk.announce({ streamID: o.room });   // no media: publish() refuses to run without a stream
       state('live');
+      clearTimeout(h.probeT); h.probeT = setTimeout(probe, RL_PROBE_FIRST);
     } catch (e) { again(e && e.message ? e.message : String(e)); }
   }
-  function again(text) {
+  function again(text, soon) {
     if (h.stopped) return;
-    state('error', text);
+    state(soon ? 'reconnecting' : 'error', text);
+    clearTimeout(h.probeT);
     if (h.sdk) { rlSdkEnd(h.sdk); h.sdk = null; }
     for (const p of [...h.parts.keys()]) gone(p);
-    clearTimeout(h.retry); h.retry = setTimeout(start, 5000);
+    clearTimeout(h.retry); h.retry = setTimeout(start, soon ? 500 : 5000);
+  }
+  // Can this room be found? A second session asks for it, exactly as a remote would. Not while a remote is connected:
+  // that is proof enough, and nothing may disturb it.
+  async function probe() {
+    if (h.stopped || !h.sdk) return;
+    const sdk = h.sdk, next = () => { if (!h.stopped && h.sdk === sdk) { clearTimeout(h.probeT); h.probeT = setTimeout(probe, RL_PROBE_EVERY); } };
+    if (h.parts.size) return next();
+    let p = null, ok = false;
+    try {
+      p = rlSdkNew(o.secret);
+      const opened = new Promise(res => p.addEventListener('dataChannelOpen', () => res(true)));
+      await p.connect();
+      h.probeId = (p.state && p.state.uuid) || null;   // the host's side ignores this peer
+      p.view(o.room, { dataOnly: true }).catch(() => {});
+      ok = await Promise.race([opened, new Promise(res => setTimeout(() => res(false), RL_PROBE_WAIT))]);
+    } catch (e) {}
+    if (p) rlSdkEnd(p);
+    if (h.stopped || h.sdk !== sdk) return;
+    if (ok || h.parts.size) { h.repairs = 0; return next(); }
+    h.repairs++;
+    if (o.onRepair) o.onRepair(h.repairs);
+    again('this room could not be reached: announcing it again', h.repairs < 4);   // after three quick tries, the slower retry
   }
   h.retry = setTimeout(start, 0);   // never inside this call: the caller's callbacks may use what it returns
   return {
@@ -172,7 +200,7 @@ function rlHost(o) {
       h.parts.delete(peer);
       try { const c = h.sdk && h.sdk.connections && h.sdk.connections.get(peer); for (const k of ['viewer', 'publisher']) if (c && c[k] && c[k].pc) c[k].pc.close(); } catch (e) {}
     },
-    stop() { h.stopped = true; clearTimeout(h.retry); if (h.sdk) { rlSdkEnd(h.sdk); h.sdk = null; } h.parts.clear(); },
+    stop() { h.stopped = true; clearTimeout(h.retry); clearTimeout(h.probeT); if (h.sdk) { rlSdkEnd(h.sdk); h.sdk = null; } h.parts.clear(); },
   };
 }
 
@@ -203,10 +231,15 @@ function rlJoin(o) {
       await sdk.connect();
       if (r.stopped) return rlSdkEnd(sdk);
       state('looking');
-      // the host may not be there yet: ask again every 3 s, as watch.html does
-      const ask = async () => {
+      // The host may not be there yet: ask again every 3 s. But every request makes the host start a new connection, so
+      // once its offer is here (a peer connection exists) the handshake gets 12 s to finish before the next request.
+      const under = () => { try { for (const [, c] of sdk.connections || []) { const v = c && c.viewer; if (v && v.pc && v.pc.connectionState !== 'failed' && v.pc.connectionState !== 'closed') return true; } } catch (e) {} return false; };
+      let since = 0;
+      const ask = () => {
         if (r.stopped || r.host) return;
-        try { await sdk.view(o.room, { dataOnly: true }); } catch (e) {}
+        if (under()) { since = since || Date.now(); if (Date.now() - since < 12000) { r.ask = setTimeout(ask, 500); return; } }
+        since = 0;
+        try { const p = sdk.view(o.room, { dataOnly: true }); if (p && p.catch) p.catch(() => {}); } catch (e) {}
         r.ask = setTimeout(ask, 3000);
       };
       ask();
