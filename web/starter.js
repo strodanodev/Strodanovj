@@ -38,7 +38,7 @@ function starterProject() {
       { name: 'Pro 3D', opacity: 1, blend: 0, fit: 0, trans: 1, transType: 0,
         clips: [d3('swarm'), d3('glass'), d3('ledcube'), d3('blackhole')] },
       { name: '3D', opacity: 0.85, blend: 4, fit: 0, trans: 1, transType: 0,
-        clips: [d3('vortex'), d3('o_diamond'), d3('chrome'), d3('lasers')] },
+        clips: [d3('vortex'), d3('aurora'), d3('chrome'), d3('lasers')] },
       { name: 'Brand', opacity: 1, blend: 0, fit: 1, trans: 1, transType: 0,
         clips: [m('strodano-logo.webp', LOWER), m('strodano-duo.webp', DUO),
           m('strodano-logo.webp', { ...CENTRE, fx: [packFx('RGB Shift', [0.03, 0], { 0: onKick(0.5) })] }),

@@ -4,13 +4,10 @@ All are **CC0 1.0 (public domain)** works downloaded from [Poly Pizza](https://p
 people are named because they made them. `tools/models3d.py` thins each to about 2,400 triangles and keeps one colour per face.
 To add or replace a model: put its `.glb` beside the others, check that its licence is CC0, run the script, add it to this list.
 
-| Name in the file | Shown as | Model | Creator | Page |
+| Name in the file | Used as | Model | Creator | Page |
 |---|---|---|---|---|
-| blaster | Blaster | Ray gun | MiniPoly | https://poly.pizza/m/kd1jjjCni7 |
-| rifle | Rifle | Rifle | Quaternius | https://poly.pizza/m/K2lXTYFSLC |
 | cannon | Laser Cannon | Turret | Quaternius | https://poly.pizza/m/mNJ6poH7Cp |
 | tank | Tank | Tank | Quaternius | https://poly.pizza/m/cW3zvvkMOM |
-| sword | Sword | Sword | Quaternius | https://poly.pizza/m/9lLmH8Et4K |
 | trex | T-Rex | T-Rex | Quaternius | https://poly.pizza/m/UYtneO5FpF |
 | raptor | Velociraptor | Velociraptor | Quaternius | https://poly.pizza/m/cnlGH2UcDd |
 | trike | Triceratops | Triceratops | Quaternius | https://poly.pizza/m/IGvrUqGrRM |

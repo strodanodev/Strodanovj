@@ -418,7 +418,8 @@ function addSheet(li, ci) {
         ...Object.keys(SCENES3D_PRO).map(k => btn((SCENES3D[k] ? SCENES3D[k].name : SCENES3D_PRO[k]) + ' · PRO', () => { if (proGate('viz3d') && SCENES3D[k]) placeAndClose(li, ci, clip3d(k)); }))));
     if (typeof SCENES3D !== 'undefined' && typeof THREE !== 'undefined') for (const [grp, title] of SCENES3D_GROUPS) {
       const ks = Object.keys(SCENES3D).filter(k => SCENES3D[k].group === grp);
-      if (ks.length) s.append(h3(title), el('div', { className: 'chips' }, ...ks.map(k => btn(SCENES3D[k].name, () => placeAndClose(li, ci, clip3d(k))))));
+      if (ks.length) s.append(h3(title), el('div', { className: 'chips' }, ...ks.map(k => (SCENES3D[k].pro
+        ? btn(SCENES3D[k].name + ' · PRO', () => { if (proGate('viz3d')) placeAndClose(li, ci, clip3d(k)); }) : btn(SCENES3D[k].name, () => placeAndClose(li, ci, clip3d(k)))))));
     }
     const txt = el('input', { type: 'text', placeholder: 'Words, one line per cue', value: '' });
     s.append(h3('Text'), el('div', { className: 'row' }, txt, btn('Add', () => placeAndClose(li, ci, textClip({ text: txt.value || 'STRODANO VJ' })), 'shrink')));

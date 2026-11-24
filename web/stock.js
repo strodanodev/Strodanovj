@@ -77,12 +77,13 @@ function stockComp() {
   put(V, 2, stockClip(mid)); put(V, 6, stockClip(top));
   [['w_sea', HUE.cyan, 0.2], ['w_forest', HUE.cyan, 0.25], null, ['w_alien', HUE.magenta, 0.35], ['w_cyber', HUE.cyan, 0.5], ['w_doom', HUE.yellow, 0.5], null, ['w_space', HUE.violet, 0.7]]
     .forEach((x, ci) => { if (x) put(V, ci, stock3d(x[0], x[1], x[2])); });
-  [null, ['o_diamond', HUE.cyan, 0.25], null, ['o_ufo', HUE.magenta, 0.3], ['o_fighter', HUE.cyan, 0.4], ['o_skull', HUE.magenta, 0.4], null, ['o_robot', HUE.cyan, 0.5]]
+  [null, ['o_diamond', HUE.cyan, 0.25], null, ['o_ufo', HUE.magenta, 0.3], ['o_heart', HUE.magenta, 0.4], ['o_skull', HUE.magenta, 0.4], null, ['o_robot', HUE.cyan, 0.5]]
     .forEach((x, ci) => { const c = x && stock3d(x[0], x[1], x[2]); if (c) { c.params[4] = 0.25; put(OB, ci, c); } });   // slider 4 = Size
   [['aurora', HUE.cyan, 0.2], ['stars', HUE.violet, 0.25], ['chrome', HUE.magenta, 0.35], ['horizon', HUE.magenta, 0.4],
     ['lasertunnel', HUE.cyan, 0.55], ['vortex', HUE.violet, 0.5], ['lasers', HUE.cyan, 0.7], ['particles', HUE.magenta, 0.7]]
     .forEach(([k, h, s], ci) => put(D, ci, stock3d(k, h, s)));
-  [['swarm', HUE.violet, 0.3], ['blackhole', 0.07, 0.3], ['glass', HUE.cyan, 0.3], null, ['city', HUE.cyan, 0.4], ['ledcube', HUE.magenta, 0.45]]
+  [['swarm', HUE.violet, 0.3], ['blackhole', 0.07, 0.3], ['glass', HUE.cyan, 0.3], ['mirrorball', HUE.cyan, 0.3], ['city', HUE.cyan, 0.4], ['ledcube', HUE.magenta, 0.45],
+    ['eqring', HUE.violet, 0.4], ['heads', HUE.cyan, 0.5]]
     .forEach((x, ci) => { if (x) put(PR, ci, stock3d(x[0], x[1], x[2])); });
   put(S, 6, genClip('Beat Flash')); put(S, 7, genClip('Beat Flash'));
   put(A, 0, stockClip('strodano-duo.webp')); put(A, 1, stockClip('audius-logo.webp'));

@@ -373,11 +373,10 @@ function lpObject(parts, tilt = 0.2) {   // parts: a model's parts, or [name in 
     } };
   };
 }
-// [name, model (its name in models3d.js, size, the built-in stand-in), tilt]
-const LP_OBJECTS = { o_blaster: ['Blaster', ['blaster', 3.6, LPM.blaster()]], o_rifle: ['Rifle', ['rifle', 3.8, LPM.blaster()]], o_cannon: ['Laser Cannon', ['cannon', 3.2, LPM.cannon()]],
-  o_tank: ['Tank', ['tank', 3.8, LPM.tank()]], o_sword: ['Sword', ['sword', 3.8, LPM.sword()], 0.1], o_trex: ['T-Rex', ['trex', 3.8, LPM.trex()]], o_raptor: ['Velociraptor', ['raptor', 3.8, LPM.trex()]],
-  o_trike: ['Triceratops', ['trike', 3.8, LPM.trex()]], o_ufo: ['UFO', LPM.ufo(), 0.45], o_alien: ['Alien', ['alien', 3.4, LPM.alien()], 0.1],
-  o_fighter: ['Starfighter', ['fighter', 3.8, LPM.fighter()], 0.35], o_fighter2: ['Shuttle', ['fighter2', 3.8, LPM.fighter()], 0.35], o_rocket: ['Rocket', ['rocket', 3.4, LPM.rocket()], 0.1],
-  o_skull: ['Skull', ['skull', 3, LPM.skull()], 0.1], o_diamond: ['Diamond', ['diamond', 3, LPM.diamond()], 0.25], o_heart: ['Heart', ['heart', 3, LPM.heart()], 0.05],
-  o_robot: ['Robot', ['robot', 3.4, LPM.robot()], 0.1] };
-for (const k in LP_OBJECTS) SCENES3D[k] = { name: LP_OBJECTS[k][0], group: 'object', params: LP_OBJECT_PARAMS, build: lpObject(LP_OBJECTS[k][1], LP_OBJECTS[k][2]) };
+// [name, model (its name in models3d.js, size, the built-in stand-in), tilt]. The object scenes are Pro (plan feature viz3d,
+// since 2026-11-24): `pro: true` is what locks them on Free (smart3d.js viz3dLocked), their code stays here with the
+// kit the worlds use. Weapons, the tank and the ships were taken out (SCENES3D_OLD in smart3d.js says what opens instead).
+const LP_OBJECTS = { o_diamond: ['Diamond', ['diamond', 3, LPM.diamond()], 0.25], o_heart: ['Heart', ['heart', 3, LPM.heart()], 0.05], o_skull: ['Skull', ['skull', 3, LPM.skull()], 0.1],
+  o_robot: ['Robot', ['robot', 3.4, LPM.robot()], 0.1], o_ufo: ['UFO', LPM.ufo(), 0.45], o_alien: ['Alien', ['alien', 3.4, LPM.alien()], 0.1],
+  o_trex: ['T-Rex', ['trex', 3.8, LPM.trex()]], o_raptor: ['Velociraptor', ['raptor', 3.8, LPM.trex()]], o_trike: ['Triceratops', ['trike', 3.8, LPM.trex()]] };
+for (const k in LP_OBJECTS) SCENES3D[k] = { name: LP_OBJECTS[k][0], group: 'object', pro: true, params: LP_OBJECT_PARAMS, build: lpObject(LP_OBJECTS[k][1], LP_OBJECTS[k][2]) };
