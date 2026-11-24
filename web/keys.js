@@ -57,6 +57,7 @@ function prefsUI() {
       ' Auto output: open on a display when it is connected')),
     row('Mapping', text('Screens, slices, warping and masks'), el('button', { textContent: 'Advanced Output...', onclick: () => { close(); $('outModal').hidden = false; renderOutPanels(); } })),
     row('Remote control', text('Play this show from your phone (Festival)'), el('button', { textContent: 'Remote control...', onclick: () => { close(); if (typeof remoteHostUI === 'function') remoteHostUI(); else proGate('remote'); } })),
+    ...(window.strodanoDesktop && window.strodanoDesktop.remoteMode ? [row('Remote mode', text('Use this computer (a ROG Ally, a laptop) to play a show on another one'), el('button', { textContent: 'Use as a remote...', onclick: () => { close(); remoteModeAsk(); } }))] : []),
     el('h4', { textContent: 'Window' }),
     row('Panels', text('Sizes and minimised panels'), el('button', { textContent: 'Reset layout', title: 'Every panel back to its automatic size, none minimised', onclick: () => { pnl.sizes = {}; pnl.min = {}; panelSave(); panelSync(); setStatus('Panels are back to their automatic sizes'); } })),
     row('Full screen', text('Hides the menu bar for more room (F11)'), el('button', { textContent: 'Full screen', onclick: () => appFullscreen() })),
@@ -66,6 +67,15 @@ function prefsUI() {
     row('Version', text(upd.s && upd.s.current ? 'Strodano VJ ' + upd.s.current : 'Strodano VJ'), el('button', { textContent: 'Check for updates', onclick: () => { upd.api.check(); setStatus('Checking for a newer version...'); } })));
 }
 window.addEventListener('strodano-plan', () => { if (!$('keysModal').hidden && keysTab === 'prefs') prefsUI(); });
+// Desktop app: the window becomes the remote control screen (remote.html) for a show on another computer, until its
+// Exit button. This computer's own show stops (its project is autosaved and comes back). No plan needed here: the
+// computer running the show is the one on Festival.
+function remoteModeAsk() {
+  const live = typeof proShowLive === 'function' && proShowLive();
+  entDialog('REMOTE MODE', 'Use this computer as a remote?', 'This window becomes a remote control for a show running in Strodano VJ on another computer (there: Broadcast > Remote control). ' +
+    (live ? 'The show on this computer stops now and its outputs close.' : 'The show on this computer stops.') + ' Your project is saved: Exit on the remote screen brings it back.',
+    [entBtn('Cancel', entClose), entBtn('Use as a remote', () => { entClose(); try { autosave(); } catch (e) {} window.strodanoDesktop.remoteMode.set(true); }, true)]);
+}
 // Full screen for the control window: the desktop app hides its menu bar too (desktop/main.js); a browser uses the page's.
 function appFullscreen(on) {
   const d = window.strodanoDesktop && window.strodanoDesktop.fullscreen;

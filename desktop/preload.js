@@ -48,5 +48,10 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     set: on => ipcRenderer.invoke('window:fullscreen', !!on),
     onChange: fn => { ipcRenderer.on('window:fullscreen', (e, on) => fn(!!on)); },
   },
+  // Remote mode: the window shows the remote control screen (web/remote.html) instead of the show, and back
+  remoteMode: {
+    get: () => ipcRenderer.invoke('window:remote', null),
+    set: on => ipcRenderer.invoke('window:remote', !!on),
+  },
   identify: marks => ipcRenderer.invoke('displays:identify', (Array.isArray(marks) ? marks : []).slice(0, 16).map(m => ({ id: Number(m.id), text: String(m.text).slice(0, 80) }))),
 });

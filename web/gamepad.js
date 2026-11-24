@@ -7,6 +7,9 @@
 // there, "spring" offsets it from where it was and goes back on release (per mapping, midi.stick[key]). Triggers on a
 // bipolar target (the clip nudge) bend it by how far they are pressed. Chromium reports a pad only after a button press.
 // Gyro: none here on purpose; Steam Input or Armoury Crate can turn tilt into stick motion, which arrives as a stick.
+// A remote control's gamepad (remote.html on a ROG Ally in Remote mode, Festival) comes in as one more pad: remotePads()
+// (private bundle) returns it shaped like a browser Gamepad, and returns nothing once that remote goes quiet, which
+// releases whatever it held exactly as unplugging a pad does.
 'use strict';
 const GP_DEV = 'gamepad';
 const GP_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'View / Share', 'Menu / Options',
@@ -56,10 +59,9 @@ const gpName = id => String(id || 'Gamepad').replace(/\s*\((STANDARD GAMEPAD )?V
 
 // Each frame: read every standard pad (a button counts as pressed on any pad, a stick takes the pad pushed furthest).
 function gpTick(dt) {
-  if (!navigator.getGamepads) return;
-  let list;
-  try { list = navigator.getGamepads(); } catch (e) { return; }
-  const pads = [...(list || [])].filter(g => g && g.connected && g.mapping === 'standard');
+  let list = [];
+  if (navigator.getGamepads) { try { list = [...(navigator.getGamepads() || [])]; } catch (e) {} }
+  const pads = list.filter(g => g && g.connected && g.mapping === 'standard').concat(typeof remotePads === 'function' ? remotePads() : []);
   if (!pads.length) { if (midi.devs[GP_DEV]) gpGone(); return; }
   if (!midi.devs[GP_DEV]) {
     midi.devs[GP_DEV] = { kind: 'gamepad', name: gpName(pads[0].id), profile: GP_PROFILE, input: null, output: null };

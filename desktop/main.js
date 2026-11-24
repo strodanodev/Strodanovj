@@ -9,6 +9,7 @@
 const { app, BrowserWindow, session, powerSaveBlocker, dialog, Menu, shell, screen, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { setupNdi, stopNdi } = require('./ndi');
 const { setupNdiNet } = require('./ndinet');
 const { setupPower } = require('./power');
@@ -49,6 +50,21 @@ function setFull(on) {
   win.setFullScreen(!!on);
 }
 ipcMain.handle('window:fullscreen', (e, on) => { if (on === null || on === undefined) return !!(win && win.isFullScreen()); setFull(on); return !!on; });
+// Remote mode (Phase 3 of ../remote-control-spec.md): the control window shows web/remote.html instead of the show, so
+// this computer (a ROG Ally) plays a show running on another one. Kept in window.json, so a computer set up as a remote
+// starts as one; never during the self-test. Switching closes this computer's output windows: its own show stops.
+// get = { on, name }: name is this computer's name, which the remote page gives the other computer to tell devices apart.
+const remoteOn = () => !selftest && !!readWinState().remote;
+const pageFile = () => path.join(webDir, remoteOn() ? 'remote.html' : 'index.html');
+ipcMain.handle('window:remote', (e, on) => {
+  if (!win || win.isDestroyed() || e.sender !== win.webContents) return null;   // only the control window may ask
+  if (on === null || on === undefined) return { on: remoteOn(), name: String(os.hostname() || '').replace(/[^\w .\-]/g, '').slice(0, 40) };
+  if (selftest) return false;
+  writeWinState({ ...readWinState(), remote: !!on });
+  for (const c of outputs.values()) if (!c.isDestroyed()) c.close();
+  win.loadFile(pageFile());
+  return !!on;
+});
 
 function createWindow() {
   const st = selftest ? {} : readWinState(), wa = screen.getPrimaryDisplay().workAreaSize;
@@ -87,11 +103,11 @@ function createWindow() {
   win.on('close', e => {
     if (quitting || selftest) return;
     const r = dialog.showMessageBoxSync(win, { type: 'question', buttons: ['Quit', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Strodano VJ',
-      message: 'Quit Strodano VJ?', detail: 'The show stops and the output windows close. Your composition is saved automatically.' });
+      message: 'Quit Strodano VJ?', detail: remoteOn() ? 'This is the remote: the show on the other computer keeps running.' : 'The show stops and the output windows close. Your composition is saved automatically.' });
     if (r === 0) quitting = true; else e.preventDefault();
   });
   win.on('closed', () => { win = null; app.quit(); });
-  win.loadFile(path.join(webDir, 'index.html'));
+  win.loadFile(pageFile());
   if (selftest) runSelftest();
 }
 

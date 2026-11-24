@@ -109,6 +109,32 @@ body.away #pv{opacity:.45}
 .pads{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .pads button{min-height:56px;padding:0 4px;font-size:12px;font-weight:600;touch-action:none;line-height:1.15}
 .pads button.held{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+/* the wide layout (the ROG Ally, a tablet): the clip grid beside output, knobs, tempo and snapshots */
+body.wide #pv{max-height:24vh}
+.show{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:16px;align-items:start}
+.show .side h3{margin:14px 2px 6px}
+.show .side .card{margin:6px 0}
+.show .main{overflow-x:auto;padding-top:14px}
+.grid{display:grid;gap:6px;grid-template-columns:170px repeat(var(--cols),minmax(72px,1fr));align-items:center}
+.grid .corner{font:600 11px var(--display);letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+.grid .lname{min-width:0;padding-left:6px;border-left:3px solid transparent}
+.grid .lname.sel{border-left-color:var(--acc)}
+.grid .lname .row{gap:6px}.grid .lname .name{font-size:13px}
+.grid .lname button.sq{min-height:32px;min-width:32px}
+.grid .scene{aspect-ratio:16/9}
+.grid .tile{flex:none;width:100%;height:auto;aspect-ratio:16/9}
+.grid .cell-empty{aspect-ratio:16/9;border:1px dashed #22232a;border-radius:10px}
+.tile.sel{outline:2px solid #fff;outline-offset:1px}
+.knobs{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.knobs .k[hidden]{display:none}
+#exitBtn{flex:none;min-height:40px;font-size:13px}
+#exitBtn[hidden]{display:none}
+/* the computer's controller cheat-sheet, while View is held on this device's pad */
+#ovl{position:fixed;left:6%;right:6%;top:8%;bottom:8%;z-index:70;background:rgba(10,10,13,.97);border:1px solid var(--ctl-line);border-radius:16px;padding:18px 22px;overflow:auto;box-shadow:0 20px 80px rgba(0,0,0,.8)}
+#ovl[hidden]{display:none}
+#ovl h3{margin:0 0 12px;color:var(--txt)}
+#ovl .rows{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px}
+#ovl b{color:var(--acc);font-weight:600;white-space:nowrap}
 /* Mix */
 .bpm{font:700 34px var(--mono);letter-spacing:.02em}
 .dots{display:flex;gap:6px}.dots i{width:12px;height:12px;border-radius:50%;background:#2b2b32}.dots i.on{background:var(--acc);box-shadow:0 0 10px var(--acc)}
@@ -137,6 +163,7 @@ body.away #pv{opacity:.45}
 <body>
 <header id="top">
   <div id="who"><i id="dot"></i><div style="min-width:0"><b id="hostName">Remote</b><small id="linkText">Not connected</small></div></div>
+  <button id="exitBtn" class="ghost" hidden title="Leave Remote mode: back to the show on this computer">Exit</button>
   <button id="black" aria-label="Blackout">BLACKOUT</button>
 </header>
 <div id="lost" role="status">Connection lost. Reconnecting... This is the last state this phone saw.</div>
@@ -157,6 +184,7 @@ body.away #pv{opacity:.45}
   <a id="backLink" href="mobile.html">Open Strodano VJ on this phone instead</a>
 </div>
 <div id="toast" role="status"></div>
+<div id="ovl" role="dialog" aria-label="What each controller button does" hidden></div>
 <script src="core.js"></script>
 <script src="remotelink.js"></script>
 <script src="remote.js"></script>

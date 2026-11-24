@@ -12,11 +12,18 @@
 // wants and whether its page is hidden), hold-to-apply effect pads (`fx`), and remembered computers.
 // Kept on this device, and nothing of the show: localStorage RM_HOSTS = the last 5 computers this phone was allowed on
 // ({room, secret, key, host, at}), so it connects again without a code or a question, and RM_PREFS (preview quality).
+// Phase 3: a wide layout (900 px and up: the ROG Ally's screen, a tablet) with the clip grid, the host's selection and
+// eight knobs that follow what the host has in focus; a gamepad on this device plays the host (`pad`: its buttons and
+// sticks, read there through the host's own gamepad mappings); holding View shows the host's cheat-sheet (`overlay`).
+// In the desktop app's Remote mode (window.strodanoDesktop.remoteMode) this page IS the window, with a way back.
 // All names here start with rm / RM (core.js is loaded for $ and el).
 'use strict';
 const RM_HOSTS = 'strodano-vj-remote-hosts', RM_PREFS = 'strodano-vj-remote-prefs';
 const RM_PREVIEW = { mid: 'Preview: high', low: 'Preview: low', off: 'Preview: off' };
 const RM_TABS = [['clips', 'Clips'], ['mix', 'Mix'], ['fx', 'Effects'], ['agent', 'Agent']];
+const RM_TABS_WIDE = [['show', 'Show'], ['fx', 'Effects'], ['agent', 'Agent']];
+const RM_WIDE = window.matchMedia ? window.matchMedia('(min-width: 900px)') : { matches: false, addEventListener() {} };
+const RM_DESK = window.strodanoDesktop && window.strodanoDesktop.remoteMode;   // the desktop app in Remote mode
 const RM_REFUSED = {
   plan: 'That computer is not on the Festival plan. Remote control is part of Festival.',
   busy: 'The computer is busy with another device. Try again in a moment.',
@@ -32,6 +39,7 @@ const rm = {
   busy: new Map(), pend: new Map(), raf: 0, rtt: 0, relayed: false, lastRx: 0, lastPath: 0, tries: 0, retryT: 0, slowT: 0,
   touch: false, wantBuild: false, btAt: 0, wake: null, toastT: 0,
   pv: false, prefs: { preview: 'mid' }, latch: false, pads: new Set(),
+  padSt: { b: [], a: [0, 0, 0, 0], at: 0, seen: false }, deskName: '', lnames: [],
 };
 const rmLS = { get: k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
 { const p = rmLS.get(RM_PREFS); if (p && RM_PREVIEW[p.preview]) rm.prefs.preview = p.preview; }
@@ -41,6 +49,7 @@ const rmKeyFor = room => (rmHosts().find(h => h.room === room) || {}).key || '';
 function rmRemember() { rmLS.set(RM_HOSTS, [{ room: rm.room, secret: rm.secret, key: rm.key, host: rm.host, at: Date.now() }, ...rmHosts().filter(h => h.room !== rm.room)].slice(0, 5)); }
 const rmNow = () => performance.now();
 function rmName() {
+  if (rm.deskName) return rm.deskName;   // the desktop app: this computer's own name
   const u = navigator.userAgent;
   return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Android phone' : 'Android tablet') : /Windows/.test(u) ? 'Windows PC' : /Mac/.test(u) ? 'Mac' : 'A device';
 }
@@ -69,7 +78,7 @@ function rmCover(mode, text, err, btn, onBtn) {
 }
 function rmEnter(text, err) {
   rmDrop(); rm.phase = 'enter'; rm.s = null; rm.v = {}; rm.thumbs.clear(); rm.tries = 0; rm.pads.clear();
-  document.body.classList.remove('live', 'away'); rmMon();
+  document.body.classList.remove('live', 'away'); rmMon(); rmOverlay(null);
   rmCover('enter', text || 'On the computer, open Broadcast > Remote control. Scan its QR code with this phone, or type the code shown there.', err);
   rmHeader();
 }
@@ -96,7 +105,7 @@ function rmConnect(room, secret, intro) {
     onOpen: () => {
       if (rm.link !== link) return;
       const n = ++rm.n;
-      link.send({ t: 'hello', v: RL_V, name: rmName(), kind: 'phone', key: !intro && rm.key ? rm.key : undefined, n, proof: rlProof(secret, room, n) });
+      link.send({ t: 'hello', v: RL_V, name: rmName(), kind: RM_DESK ? 'pad' : 'phone', key: !intro && rm.key ? rm.key : undefined, n, proof: rlProof(secret, room, n) });
     },
     onMsg: m => { if (rm.link === link) rmMsg(m); },
     onClose: () => { if (rm.link === link) rmLost(); } });
@@ -124,7 +133,7 @@ function rmMsg(m) {
   else if (m.t === 'welcome') {
     rm.key = String(m.key || ''); rm.host = String(m.host || 'Computer').slice(0, 40);
     rmRemember();
-    rm.pv = !!m.pv; rm.pads.clear();
+    rm.pv = !!m.pv; rm.pads.clear(); rmPadReset();   // a pad held through a reconnect is sent again
     clearTimeout(rm.slowT);
     rm.phase = 'live'; rm.tries = 0; rm.v = {}; rm.ack = 0; rm.busy.clear(); rm.pend.clear(); rm.sigs = {};
     document.body.classList.add('live'); document.body.classList.remove('away');
@@ -140,7 +149,8 @@ function rmMsg(m) {
     document.querySelectorAll('[data-k="' + m.k.replace(/[^a-z0-9]/g, '') + '"]').forEach(e => { e.style.backgroundImage = 'url("' + m.d + '")'; });
   }
   else if (m.t === 'pong') { const d = rmNow() - m.at; if (d >= 0 && d < 60000) rm.rtt = rm.rtt ? rm.rtt * 0.7 + d * 0.3 : d; }
-  else if (m.t === 'released') { rm.pads.clear(); rm.busy.clear(); if (rm.tab === 'fx' && !rm.touch) rmBuild(); }   // the host lost us for a moment and let go of what we held
+  else if (m.t === 'released') { rm.pads.clear(); rm.busy.clear(); rmPadReset(); if (rm.tab === 'fx' && !rm.touch) rmBuild(); }
+  else if (m.t === 'overlay') rmOverlay(m.rows, m.shift);   // the host lost us for a moment and let go of what we held
   else if (m.t === 'status') rmToast(String(m.text || '').slice(0, 200), !!m.bad);
   else if (m.t === 'bye') { if (m.why === 'forgot') rmForget(); rmEnter(RM_BYE[m.why] || 'The computer ended the connection.', true); }
 }
@@ -149,7 +159,7 @@ function rmLost() {
   if (rm.phase === 'enter') return;
   if (rm.intro) return rmEnter('The connection dropped. Try the code again.', true);
   if (rm.phase === 'live') { rm.phase = 'away'; document.body.classList.remove('live'); document.body.classList.add('away'); rm.busy.clear(); rm.pend.clear(); rm.pads.clear(); rm.sigs = {}; }   // the host let go of every held effect
-  rmHeader(); rmRetry();
+  rmOverlay(null); rmHeader(); rmRetry();
 }
 function rmRetry() {
   rmDrop();
@@ -262,15 +272,15 @@ const rmThumb = k => (k && rm.thumbs.has(k) ? 'url("' + rm.thumbs.get(k) + '")' 
 
 // ---------- tabs ----------
 function rmTabs() {
-  const has = rm.s && rm.s.has && rm.s.has.agent;
-  if (rm.tab === 'agent' && !has) rm.tab = 'clips';
-  $('tabs').replaceChildren(...RM_TABS.filter(([id]) => id !== 'agent' || has).map(([id, name]) => rmBtn(name, () => { rm.tab = id; rmTabs(); rmBuild(); }, id === rm.tab ? 'on' : '')));
+  const has = rm.s && rm.s.has && rm.s.has.agent, list = (RM_WIDE.matches ? RM_TABS_WIDE : RM_TABS).filter(([id]) => id !== 'agent' || has);
+  if (!list.some(([id]) => id === rm.tab)) rm.tab = list[0][0];
+  $('tabs').replaceChildren(...list.map(([id, name]) => rmBtn(name, () => { rm.tab = id; rmTabs(); rmBuild(); }, id === rm.tab ? 'on' : '')));
 }
 // What a tab is built from: it is rebuilt only when that changes, so launching a clip never resets a scrolled row.
 function rmSig(tab) {
   const s = rm.s;
   if (!s) return '';
-  return JSON.stringify(tab === 'clips' ? [s.layers, s.cols, s.tags] : tab === 'mix' ? [s.snaps] : tab === 'fx' ? [s.fx, s.gens, s.pads, rm.latch] : [s.has]);
+  return JSON.stringify(tab === 'clips' ? [s.layers, s.cols, s.tags] : tab === 'show' ? [s.layers, s.cols, s.tags, s.snaps] : tab === 'mix' ? [s.snaps] : tab === 'fx' ? [s.fx, s.gens, s.pads, rm.latch] : [s.has]);
 }
 function rmBuildIfChanged() {
   if (rmSig(rm.tab) === rm.sigs[rm.tab]) return;
@@ -283,42 +293,48 @@ function rmBuildIfChanged() {
 }, true));
 function rmBuild() {
   const v = $('view'), top = v.scrollTop, strips = [...v.querySelectorAll('.strip')].map(x => [x.dataset.l, x.scrollLeft]);
-  rm.binds.clear(); rm.tiles = []; rm.scenes = [];
+  rm.binds.clear(); rm.tiles = []; rm.scenes = []; rm.lnames = [];
   rm.sigs[rm.tab] = rmSig(rm.tab);
   const root = document.createDocumentFragment();
-  if (rm.s) ({ clips: rmClipsTab, mix: rmMixTab, fx: rmFxTab, agent: rmAgentTab })[rm.tab](root);
+  if (rm.s) ({ clips: rmClipsTab, show: rmShowTab, mix: rmMixTab, fx: rmFxTab, agent: rmAgentTab })[rm.tab](root);
   v.replaceChildren(root);
   v.scrollTop = top;
   for (const [l, x] of strips) { const e = v.querySelector('.strip[data-l="' + l + '"]'); if (e) e.scrollLeft = x; }
   rmScenesOn();
 }
 
+// The pieces both layouts share: a scene button, a clip tile, a layer's tiles following what plays.
+function rmSceneBtn(c) {
+  const s = rm.s, tag = String((s.tags && s.tags[c]) || ''), top = [...s.layers].reverse().map(L => L.clips[c]).find(x => x && x.k);
+  const b = el('button', { className: 'scene ' + tag.toLowerCase().replace(/[^a-z]/g, ''), ariaLabel: 'Scene ' + (c + 1), onclick: () => rmFire('column:' + c) },
+    el('b', { textContent: String(c + 1) }), el('small', { textContent: tag }));
+  if (top) { b.dataset.k = top.k; b.style.backgroundImage = rmThumb(top.k); }
+  rm.scenes.push(b);
+  return b;
+}
+function rmTile(i, ci, c) {
+  const t = el('button', { className: 'tile' + (c.x ? ' off' : ''), ariaLabel: c.n, onclick: () => rmFire('clip:' + i + ':' + ci) },
+    el('i', { className: 'num', textContent: String(ci + 1) }), el('span', { textContent: c.n }), el('i', { className: 'bar' }));
+  if (c.x) t.append(el('i', { className: 'tag', textContent: c.x === 'pro' ? 'PRO' : 'missing' }));
+  if (c.k) { t.dataset.k = c.k; t.style.backgroundImage = rmThumb(c.k); }
+  (rm.tiles[i] || (rm.tiles[i] = []))[ci] = t;
+  return t;
+}
+function rmLayerLive(i) {
+  const mark = () => (rm.tiles[i] || []).forEach((t, ci) => { if (!t) return; const a = rm.v['a' + i] === ci; t.classList.toggle('active', a); t.classList.toggle('pending', rm.v['p' + i] === ci); if (!a) t.querySelector('.bar').style.width = '0'; });
+  rmBind('a' + i, mark); rmBind('p' + i, mark);
+  rmBind('v' + i, x => { const t = (rm.tiles[i] || [])[rm.v['a' + i]]; if (t) t.querySelector('.bar').style.width = x >= 0 ? (100 * x).toFixed(1) + '%' : '0'; });
+}
 // Clips: scenes (columns) on top, then a card per layer, top layer first as on the computer.
 function rmClipsTab(root) {
   const s = rm.s, n = s.layers.length;
   const sc = el('div', { className: 'scenes' });
-  for (let c = 0; c < s.cols; c++) {
-    const tag = String((s.tags && s.tags[c]) || ''), top = [...s.layers].reverse().map(L => L.clips[c]).find(x => x && x.k);
-    const b = el('button', { className: 'scene ' + tag.toLowerCase().replace(/[^a-z]/g, ''), ariaLabel: 'Scene ' + (c + 1), onclick: () => rmFire('column:' + c) },
-      el('b', { textContent: String(c + 1) }), el('small', { textContent: tag }));
-    if (top) { b.dataset.k = top.k; b.style.backgroundImage = rmThumb(top.k); }
-    rm.scenes.push(b); sc.append(b);
-  }
+  for (let c = 0; c < s.cols; c++) sc.append(rmSceneBtn(c));
   root.append(rmH3('Scenes'), sc, rmH3('Layers'));
   for (let i = n - 1; i >= 0; i--) {
     const L = s.layers[i], strip = el('div', { className: 'strip', dataset: { l: i } });
-    rm.tiles[i] = [];
-    L.clips.forEach((c, ci) => {
-      if (!c) return;
-      const t = el('button', { className: 'tile' + (c.x ? ' off' : ''), ariaLabel: c.n, onclick: () => rmFire('clip:' + i + ':' + ci) },
-        el('i', { className: 'num', textContent: String(ci + 1) }), el('span', { textContent: c.n }), el('i', { className: 'bar' }));
-      if (c.x) t.append(el('i', { className: 'tag', textContent: c.x === 'pro' ? 'PRO' : 'missing' }));
-      if (c.k) { t.dataset.k = c.k; t.style.backgroundImage = rmThumb(c.k); }
-      rm.tiles[i][ci] = t; strip.append(t);
-    });
-    const mark = () => rm.tiles[i].forEach((t, ci) => { if (!t) return; const a = rm.v['a' + i] === ci; t.classList.toggle('active', a); t.classList.toggle('pending', rm.v['p' + i] === ci); if (!a) t.querySelector('.bar').style.width = '0'; });
-    rmBind('a' + i, mark); rmBind('p' + i, mark);
-    rmBind('v' + i, x => { const t = rm.tiles[i][rm.v['a' + i]]; if (t) t.querySelector('.bar').style.width = x >= 0 ? (100 * x).toFixed(1) + '%' : '0'; });
+    L.clips.forEach((c, ci) => { if (c) strip.append(rmTile(i, ci, c)); });
+    rmLayerLive(i);
     root.append(el('div', { className: 'card' },
       el('div', { className: 'row' }, el('div', { className: 'name' }, L.name, el('small', { textContent: (L.blend || '') + (L.lock ? ' · locked' : '') })),
         rmToggle('B', 'layer:' + i + ':bypass', 'y' + i, 'sq shrink'), rmToggle('S', 'layer:' + i + ':solo', 's' + i, 'sq shrink'), rmBtn('Stop', () => rmFire('layer:' + i + ':eject'), 'shrink')),
@@ -336,21 +352,72 @@ function rmScenesOn() {
     b.classList.toggle('on', have > 0 && on === have);
   });
 }
-function rmMixTab(root) {
-  const s = rm.s, bpm = el('div', { className: 'bpm' }), dots = el('div', { className: 'dots', id: 'beatDots' }, el('i'), el('i'), el('i'), el('i'));
-  rmBind('bpm', v => { bpm.textContent = Number(v).toFixed(1); });
-  root.append(rmH3('Output'), el('div', { className: 'card' },
+function rmOutputCard() {
+  return el('div', { className: 'card' },
     el('div', { className: 'lab' }, el('span', { textContent: 'Master' })), rmSlider('master', 'm'),
-    el('div', { className: 'lab' }, el('span', { textContent: 'Crossfade A' }), el('span', { textContent: 'B' })), rmSlider('crossfade', 'x')));
-  root.append(rmH3('Tempo'), el('div', { className: 'card' },
+    el('div', { className: 'lab' }, el('span', { textContent: 'Crossfade A' }), el('span', { textContent: 'B' })), rmSlider('crossfade', 'x'));
+}
+function rmTempoCard() {
+  const bpm = el('div', { className: 'bpm' }), dots = el('div', { className: 'dots', id: 'beatDots' }, el('i'), el('i'), el('i'), el('i'));
+  rmBind('bpm', v => { bpm.textContent = Number(v).toFixed(1); });
+  return el('div', { className: 'card' },
     el('div', { className: 'row' }, bpm, el('div', { className: 'shrink' }, dots)),
     el('div', { className: 'row', style: { marginTop: '10px' } },
-      rmBtn('-1', () => rmSend({ t: 'step', id: 'bpm', d: -10 })), rmBtn('+1', () => rmSend({ t: 'step', id: 'bpm', d: 10 })), rmBtn('Tap', () => rmFire('tap'), 'pri'), rmBtn('Resync', () => rmFire('resync')))));
+      rmBtn('-1', () => rmSend({ t: 'step', id: 'bpm', d: -10 })), rmBtn('+1', () => rmSend({ t: 'step', id: 'bpm', d: 10 })), rmBtn('Tap', () => rmFire('tap'), 'pri'), rmBtn('Resync', () => rmFire('resync'))));
+}
+function rmSnaps() {
   const sn = el('div', { className: 'snaps' });
-  (s.snaps || []).forEach((x, i) => sn.append(rmBtn(typeof x === 'string' ? x : String(i + 1), () => { if (x) rmFire('snap:' + i); else rmToast('Snapshot ' + (i + 1) + ' is empty. Store it on the computer (Shift+F' + (i + 1) + ').'); }, x ? 'has' : '')));
-  root.append(rmH3('Snapshots'), sn);
-  const stop = rmBtn('Stop all clips', () => armThen(stop, 'stop every clip', () => rmFire('stopall')), 'big');
-  root.append(rmH3('All layers'), stop);
+  (rm.s.snaps || []).forEach((x, i) => sn.append(rmBtn(typeof x === 'string' ? x : String(i + 1), () => { if (x) rmFire('snap:' + i); else rmToast('Snapshot ' + (i + 1) + ' is empty. Store it on the computer (Shift+F' + (i + 1) + ').'); }, x ? 'has' : '')));
+  return sn;
+}
+function rmStopAll() { const stop = rmBtn('Stop all clips', () => armThen(stop, 'stop every clip', () => rmFire('stopall')), 'big'); return stop; }
+function rmMixTab(root) {
+  root.append(rmH3('Output'), rmOutputCard(), rmH3('Tempo'), rmTempoCard(), rmH3('Snapshots'), rmSnaps(), rmH3('All layers'), rmStopAll());
+}
+// Eight knobs that follow what the computer has in focus (its properties panel: the selected effect or clip), the
+// same focus:0-7 targets a hardware controller's knobs drive. The pad's D-pad moves that selection.
+function rmKnobs() {
+  const name = el('span'), sub = el('small'), ks = [], grid = el('div', { className: 'knobs' }), none = rmHint('');
+  for (let k = 0; k < 8; k++) { const lab = el('span'), box = el('div', { className: 'k' }, el('div', { className: 'lab' }, lab), rmSlider('focus:' + k, 'f' + k)); ks.push({ box, lab }); grid.append(box); }
+  const pageRow = el('div', { className: 'row', style: { marginTop: '6px' } }, rmBtn('Fewer', () => rmFire('focus:page-')), rmBtn('More', () => rmFire('focus:page+')));
+  rmBind('fo', v => {
+    let f = {};
+    try { f = JSON.parse(v) || {}; } catch (e) {}
+    const l = Array.isArray(f.l) ? f.l : [];
+    name.textContent = f.n || 'Nothing in focus';
+    sub.textContent = f.pp > 1 ? 'Parameters, page ' + f.p + ' of ' + f.pp : '';
+    ks.forEach((x, k) => { x.box.hidden = !l[k]; x.lab.textContent = String(l[k] || '').slice(0, 40); });
+    pageRow.hidden = !(f.pp > 1);
+    none.textContent = l.length ? '' : 'Select an effect or a clip on the computer, or move the selection with the D-pad.';
+  });
+  return el('div', { className: 'card' },
+    el('div', { className: 'row' }, el('div', { className: 'name' }, name, sub), rmBtn('<', () => rmFire('focus:prev'), 'sq shrink'), rmBtn('>', () => rmFire('focus:next'), 'sq shrink')),
+    grid, pageRow, none);
+}
+// The wide layout's main tab: the clip grid as on the computer (layers as rows, columns as scenes), with the host's
+// selection marked, and beside it output, knobs, tempo and snapshots.
+function rmSelMark() {
+  const l = rm.v.sl, c = rm.v.sc;
+  rm.tiles.forEach((row, i) => (row || []).forEach((t, ci) => { if (t) t.classList.toggle('sel', i === l && ci === c); }));
+  rm.lnames.forEach((e, i) => { if (e) e.classList.toggle('sel', i === l); });
+}
+function rmShowTab(root) {
+  const s = rm.s, n = s.layers.length, grid = el('div', { className: 'grid' });
+  grid.style.setProperty('--cols', s.cols);
+  grid.append(el('div', { className: 'corner', textContent: 'Scenes' }));
+  for (let c = 0; c < s.cols; c++) grid.append(rmSceneBtn(c));
+  for (let i = n - 1; i >= 0; i--) {
+    const L = s.layers[i], name = el('div', { className: 'lname' },
+      el('div', { className: 'row' }, el('div', { className: 'name', textContent: L.name, title: L.name }), rmToggle('B', 'layer:' + i + ':bypass', 'y' + i, 'sq shrink')),
+      rmSlider('layer:' + i + ':opacity', 'o' + i));
+    rm.lnames[i] = name;
+    grid.append(name);
+    for (let c = 0; c < s.cols; c++) { const clip = L.clips[c]; grid.append(clip ? rmTile(i, c, clip) : el('div', { className: 'cell-empty' })); }
+    rmLayerLive(i);
+  }
+  rmBind('sl', rmSelMark); rmBind('sc', rmSelMark);
+  const side = el('div', { className: 'side' }, rmH3('Output'), rmOutputCard(), rmH3('Knobs'), rmKnobs(), rmH3('Tempo'), rmTempoCard(), rmH3('Snapshots'), rmSnaps(), el('div', { style: { height: '10px' } }), rmStopAll());
+  root.append(el('div', { className: 'show' }, side, el('div', { className: 'main' }, grid)));
 }
 // the beat dots run on this phone's clock between patches
 setInterval(() => {
@@ -410,6 +477,49 @@ function rmAgentTab(root) {
     rmBtn('Next look', () => rmFire('agent:next')), rmToggle('Hold', 'agent:hold', 'ah'), rmBtn('Drop!', () => rmFire('agent:drop'))), vibe);
 }
 
+// ---------- a gamepad on this device plays the computer ----------
+// Every standard pad here counts as one (as on the computer). Buttons go on the channel that never drops. Sticks go on
+// the one that may drop, as all four axes at once, at most 30 times a second and again every 100 ms while one is pushed,
+// so a lost message is replaced at once; a stick back at rest goes on the reliable channel. Raw values: the computer
+// applies its own dead zone, stick modes and mappings.
+// Read on a timer, not on animation frames: a window that is covered gets no frames, and a pad pushed just then would
+// stay pushed on the computer. While this page is hidden or not focused the pad counts as let go (browsers stop
+// reporting it then), and that is sent at once.
+function rmPadReset() { rm.padSt.b = []; rm.padSt.a = [0, 0, 0, 0]; rm.padSt.at = 0; }
+const rmPadIdle = () => document.hidden || (typeof document.hasFocus === 'function' && !document.hasFocus() && window.top === window);
+function rmPadPoll() {
+  if (rm.phase !== 'live' || !navigator.getGamepads) return;
+  let list = [];
+  if (!rmPadIdle()) { try { list = [...(navigator.getGamepads() || [])]; } catch (e) { return; } }
+  const pads = list.filter(g => g && g.connected && g.mapping === 'standard'), P = rm.padSt;
+  if (!pads.length && !P.seen) return;
+  if (pads.length && !P.seen) { P.seen = true; rmToast('Controller found: it plays the show on ' + rm.host + '. Hold View for what each button does.'); }
+  const b = [];
+  for (let n = 0; n < 17; n++) {
+    let v = 0;
+    for (const g of pads) { const x = g.buttons[n]; if (x) v = Math.max(v, x.value || (x.pressed ? 1 : 0)); }
+    v = Math.round(v * 20) / 20;
+    if (v !== (P.b[n] || 0)) { P.b[n] = v; b.push([n, v]); }
+  }
+  if (b.length) rmSend({ t: 'pad', b });
+  const a = [0, 1, 2, 3].map(n => { let raw = 0; for (const g of pads) { const x = g.axes[n] || 0; if (Math.abs(x) > Math.abs(raw)) raw = x; } return Math.abs(raw) < 0.05 ? 0 : Math.round(raw * 100) / 100; });
+  const changed = a.some((v, n) => v !== P.a[n]), held = a.some(v => v !== 0), now = rmNow();
+  if ((changed && now - P.at >= 33) || (held && now - P.at >= 100)) {
+    P.a = a; P.at = now;
+    rmSend({ t: 'pad', a: a.map((v, n) => [n, v]) }, held);   // at rest: the reliable channel
+  }
+}
+// The computer's cheat-sheet for its gamepad mappings, while View is held on this device's pad.
+function rmOverlay(rows, shift) {
+  const o = $('ovl');
+  if (!Array.isArray(rows)) { o.hidden = true; return; }
+  o.replaceChildren(el('h3', { textContent: 'Controller on ' + (rm.host || 'the computer') + (shift ? ': Shift held' : '') }),
+    el('div', { className: 'rows' }, ...rows.slice(0, 40).flatMap(r => [el('b', { textContent: String((r && r[0]) || '').slice(0, 60) }), el('span', { textContent: String((r && r[1]) || '').slice(0, 120) })])));
+  o.hidden = false;
+}
+// The desktop app's Remote mode: back to this computer's own show.
+function rmLeaveDesk() { if (rm.phase === 'live') rmSend({ t: 'bye' }); setTimeout(() => RM_DESK.set(false), 150); }
+
 // ---------- start ----------
 $('black').addEventListener('click', () => rmFire('blackout'));
 $('pvBtn').addEventListener('click', () => {
@@ -426,7 +536,17 @@ $('codeForm').addEventListener('submit', e => {
   const c = rlCodeIds(code);
   rmConnect(c.room, c.secret, true);
 });
-(function rmStart() {
+document.body.classList.toggle('wide', RM_WIDE.matches);
+RM_WIDE.addEventListener('change', () => { document.body.classList.toggle('wide', RM_WIDE.matches); rmTabs(); if (rm.s) rmBuild(); });
+if (RM_DESK) {
+  const b = $('backLink'), x = $('exitBtn');
+  b.textContent = 'Back to the show on this computer'; b.href = '#'; b.onclick = e => { e.preventDefault(); rmLeaveDesk(); };
+  x.hidden = false; x.onclick = () => armThen(x, 'leave Remote mode', rmLeaveDesk);
+}
+setInterval(rmPadPoll, 16);
+for (const ev of ['blur', 'visibilitychange']) window.addEventListener(ev, () => rmPadPoll());   // let go at once
+(async function rmStart() {
+  if (RM_DESK) { try { const r = await RM_DESK.get(); if (r && r.name) rm.deskName = String(r.name).slice(0, 40); } catch (e) {} }
   rmTabs();
   const ids = rlParseLink(location.hash);
   if (!ids) return rmEnter();
