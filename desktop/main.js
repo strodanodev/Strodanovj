@@ -201,11 +201,16 @@ function runSelftest() {
           const s = screens[0]; return { opened: ok, live: !!(s.win && !s.win.closed), size: s.ctx ? [s.ctx.canvas.width, s.ctx.canvas.height] : null }; })()`);
         report.fps = await js(`new Promise(r => setTimeout(() => r(Math.round(window.__fps || 0)), 2500))`);
         report.displays = await js(`(async () => { const l = await window.strodanoDesktop.displays(); return { count: l.length, bridge: display.desktop, known: display.list.length }; })()`);
-        // output fullscreen on a display (the control one: CI has only one), then Esc puts it back in a window
+        // output fullscreen on a display (the control one: CI has only one), then Esc puts it back in a window. Each step is
+        // waited for (up to 10 s) and timed, inMs / backMs: with software GL the FIRST fullscreen takes about 4 s on v0.4.8
+        // and on v0.4.9 alike (measured 2026-11-25), so the fixed 2.5 s wait used before failed or passed by chance.
         report.place = await js(`(async () => { const d = display.list[0], s = screens[0], w = s.win, nap = ms => new Promise(r => setTimeout(r, ms));
-          s.device = d.key; openOnDisplay(0, d); await nap(2500);
-          const r = { size: [w.innerWidth, w.innerHeight], display: [d.w, d.h], placed: s.placedOn === d.key, label: document.getElementById('outBtn').textContent };
-          outputEscape(0); await nap(2000); r.back = [w.innerWidth, w.innerHeight]; s.device = 'auto'; r.live = liveScreens().length; return r; })()`);
+          s.device = d.key; let t0 = performance.now(); openOnDisplay(0, d);
+          while (w.innerWidth !== d.w && performance.now() - t0 < 10000) await nap(50);
+          const r = { size: [w.innerWidth, w.innerHeight], display: [d.w, d.h], inMs: Math.round(performance.now() - t0), placed: s.placedOn === d.key, label: document.getElementById('outBtn').textContent };
+          t0 = performance.now(); outputEscape(0);
+          while (w.innerWidth >= d.w && performance.now() - t0 < 10000) await nap(50);
+          r.back = [w.innerWidth, w.innerHeight]; r.backMs = Math.round(performance.now() - t0); s.device = 'auto'; r.live = liveScreens().length; return r; })()`);
         // NDI: a network screen sends for 8 s (only checked where an NDI Runtime is installed; CI has none)
         report.ndi = await js(`(async () => { const st = await ndiStatus(); if (!st.ok) return { available: false, error: st.error };
           screens.push({ name: 'NDI test', device: 'ndi', ndiName: 'Strodano VJ selftest', ndiRes: '1280x720', ndiFps: 30, win: null, ctx: null, slices: [newSlice('Slice 1')] });
