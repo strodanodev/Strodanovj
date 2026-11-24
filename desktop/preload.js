@@ -48,6 +48,19 @@ contextBridge.exposeInMainWorld('strodanoDesktop', {
     set: on => ipcRenderer.invoke('window:fullscreen', !!on),
     onChange: fn => { ipcRenderer.on('window:fullscreen', (e, on) => fn(!!on)); },
   },
+  // Remote control without internet (desktop/remote.js, web/remotelink.js): this computer serves the remote page and a
+  // WebSocket on one adapter; the page signs and checks every message. find: computers heard on this network (Remote mode).
+  lan: {
+    addresses: () => ipcRenderer.invoke('lan:addresses'),
+    start: o => ipcRenderer.invoke('lan:start', { address: String((o && o.address) || '').slice(0, 64), room: String((o && o.room) || '').slice(0, 40) }),
+    stop: () => ipcRenderer.invoke('lan:stop'),
+    send: (id, text) => ipcRenderer.send('lan:send', { id: String(id).slice(0, 20), text: String(text) }),
+    drop: id => ipcRenderer.send('lan:drop', String(id).slice(0, 20)),
+    onEvent: fn => { ipcRenderer.on('lan:event', (e, ev) => fn(ev)); },
+    find: on => ipcRenderer.invoke('lan:find', !!on),
+    hosts: () => ipcRenderer.invoke('lan:hosts'),
+    onHosts: fn => { ipcRenderer.on('lan:hosts', (e, l) => fn(l)); },
+  },
   // Remote mode: the window shows the remote control screen (web/remote.html) instead of the show, and back
   remoteMode: {
     get: () => ipcRenderer.invoke('window:remote', null),

@@ -12,6 +12,13 @@
 // A host cannot see from its own side whether remotes can find it (2026-11-24: a host that said "live" was unreachable for
 // minutes, cause unknown). So rlHost asks for its own room from a second SDK session, right after announcing and every two
 // minutes while no remote is connected, and announces again on a new connection when that fails.
+// LAN mode (Phase 4, no internet): the desktop app serves the remote page and a WebSocket on one network adapter
+// (desktop/remote.js only carries text). The host's link turns it on with link.lan({address}); a remote joins with
+// rlJoin({lan: 'ws://<address>:<port>/link'}). Plain ws:// on a local network, so every message is signed both ways:
+// the host sends a random challenge c when a socket opens, and each message travels as {k, m, s}: m = the message's JSON,
+// k = a counter per direction that only goes up, s = HMAC(secret, c + ':r:' | ':h:' + k + ':' + m). The secret itself
+// never travels; a socket that signs nothing correctly within 10 s is closed. A short code works here too: a socket
+// signed with the current code's secret only reaches o.onCode, which answers with the real room and secret (move).
 // Tests on a page served from this computer: {local: true} uses a BroadcastChannel between two tabs instead.
 // The host's side of the feature (what a message does to the show) is not in this repo: it is part of Festival.
 'use strict';
@@ -20,6 +27,8 @@ const RL_ALPHA = 'abcdefghijkmnpqrstuvwxyz23456789';   // 32 characters, none th
 const RL_SITE = 'https://vj.strodano.live';
 const RL_PART = 48000;                               // a message longer than this (JSON characters) travels in pieces
 const RL_PROBE_FIRST = 2000, RL_PROBE_EVERY = 120e3, RL_PROBE_WAIT = 12000;   // the host's own reachability check (rlHost)
+const rlDesk = typeof window !== 'undefined' && window.strodanoDesktop && window.strodanoDesktop.lan;   // the desktop app's LAN bridge
+let rlLanTo = null, rlLanHooked = false;   // the host link that receives the LAN server's events
 const RL_DEV = typeof location !== 'undefined' && location.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 
 // ---------- SHA-256, HMAC ----------
@@ -193,23 +202,129 @@ function rlHost(o) {
     if (o.onRepair) o.onRepair(h.repairs);
     again('this room could not be reached: announcing it again', h.repairs < 4);   // after three quick tries, the slower retry
   }
+  // ---------- the same host on the local network (LAN mode): desktop app only ----------
+  const L = { on: false, conns: new Map(), code: '' };   // socket id -> {c challenge, sec, code, kin, kout, parts}
+  const lanPeer = id => 'lan:' + id;
+  function lanEvent(ev) {
+    if (h.stopped || !L.on || !ev) return;
+    const id = String(ev.id || '');
+    if (ev.k === 'open') {
+      const conn = { c: rlRand(16), sec: '', code: false, kin: -1, kout: 0, parts: {} };
+      L.conns.set(id, conn);
+      rlDesk.send(id, JSON.stringify({ t: 'lan', v: RL_V, c: conn.c }));
+      setTimeout(() => { if (L.conns.get(id) === conn && !conn.sec) rlDesk.drop(id); }, 10000);   // nothing signed in 10 s
+    } else if (ev.k === 'msg') {
+      const conn = L.conns.get(id);
+      let d = null;
+      try { d = JSON.parse(ev.text); } catch (e) {}
+      if (!conn || !d || typeof d.m !== 'string' || !Number.isInteger(d.k) || d.k <= conn.kin || typeof d.s !== 'string') return;
+      const signed = sec => !!sec && d.s === rlHmac(sec, conn.c + ':r:' + d.k + ':' + d.m);
+      if (!conn.sec) {   // the first signed message says which secret this socket knows
+        if (signed(o.secret)) { conn.sec = o.secret; h.parts.set(lanPeer(id), {}); }
+        else if (signed(L.code)) { conn.sec = L.code; conn.code = true; }
+        else { rlDesk.drop(id); return; }
+      } else if (!signed(conn.sec)) return;
+      conn.kin = d.k;
+      let m = null;
+      try { m = rlUnpack(conn.parts, JSON.parse(d.m)); } catch (e) { return; }
+      if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+      if (conn.code) { if (o.onCode) o.onCode(lanPeer(id), m); } else o.onMsg(lanPeer(id), m, false);
+    } else if (ev.k === 'close') {
+      const conn = L.conns.get(id);
+      L.conns.delete(id);
+      if (conn && !conn.code) gone(lanPeer(id));
+    }
+  }
+  function lanSend(peer, msg) {
+    const id = peer.slice(4), conn = L.conns.get(id);
+    if (!conn || !conn.sec || !rlDesk) return false;
+    for (const part of rlPack(msg)) { const text = JSON.stringify(part), k = ++conn.kout; rlDesk.send(id, JSON.stringify({ k, m: text, s: rlHmac(conn.sec, conn.c + ':h:' + k + ':' + text) })); }
+    return true;
+  }
+  function lanStop() {
+    if (!L.on) return;
+    L.on = false;
+    for (const [id, c] of L.conns) if (!c.code) gone(lanPeer(id));
+    L.conns.clear();
+    if (rlLanTo === lanEvent) rlLanTo = null;
+    if (rlDesk) rlDesk.stop();
+  }
   h.retry = setTimeout(start, 0);   // never inside this call: the caller's callbacks may use what it returns
   return {
+    // LAN mode on (address = the adapter to serve on; '' = the first real one): {ok, address, port, adapter, url} or {ok: false, error}
+    async lan(opt) {
+      if (!rlDesk) return { ok: false, error: 'Only the desktop app can do this' };
+      if (!rlLanHooked) { rlLanHooked = true; rlDesk.onEvent(ev => { if (rlLanTo) rlLanTo(ev); }); }
+      rlLanTo = lanEvent; L.on = true;
+      let r = null;
+      try { r = await rlDesk.start({ address: (opt && opt.address) || '', room: o.room }); } catch (e) {}
+      if (!r || !r.ok) { L.on = false; if (rlLanTo === lanEvent) rlLanTo = null; }
+      return r || { ok: false, error: 'No answer from the app' };
+    },
+    lanStop,
+    lanCode(sec) { L.code = sec || ''; },   // the short code's secret, while a code is valid
     send(peer, msg) {
-      if (!h.sdk || h.stopped) return false;
+      if (h.stopped) return false;
+      if (peer.startsWith('lan:')) return lanSend(peer, msg);
+      if (!h.sdk) return false;
       try { let ok = true; for (const part of rlPack(msg)) ok = h.sdk.sendData(part, peer) !== false && ok; return ok; } catch (e) { return false; }
     },
     // the SDK has no call to close one peer: its connection is closed underneath, and the host ignores it from now on
     drop(peer) {
       h.parts.delete(peer);
+      if (peer.startsWith('lan:')) { if (rlDesk) rlDesk.drop(peer.slice(4)); return; }
       try { const c = h.sdk && h.sdk.connections && h.sdk.connections.get(peer); for (const k of ['viewer', 'publisher']) if (c && c[k] && c[k].pc) c[k].pc.close(); } catch (e) {}
     },
-    stop() { h.stopped = true; clearTimeout(h.retry); clearTimeout(h.probeT); if (h.sdk) { rlSdkEnd(h.sdk); h.sdk = null; } h.parts.clear(); },
+    stop() { lanStop(); h.stopped = true; clearTimeout(h.retry); clearTimeout(h.probeT); if (h.sdk) { rlSdkEnd(h.sdk); h.sdk = null; } h.parts.clear(); },
   };
 }
 
 // ---------- remote ----------
+// LAN mode: a WebSocket to the host's own server, every message signed (see the top of this file).
+function rlLanJoin(o) {
+  const r = { ws: null, stopped: false, c: '', kin: -1, kout: 0, parts: {}, open: false };
+  const state = (s, text) => { if (!r.stopped && o.onState) o.onState(s, text || ''); };
+  const where = String(o.lan).replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
+  function start() {
+    if (r.stopped) return;
+    state('connecting');
+    let ws;
+    try { ws = r.ws = new WebSocket(o.lan); } catch (e) { return state('error', 'Could not reach the computer at ' + where + '.'); }
+    ws.onopen = () => state('looking');
+    ws.onmessage = e => {
+      if (r.stopped || typeof e.data !== 'string') return;
+      let d = null;
+      try { d = JSON.parse(e.data); } catch (err) { return; }
+      if (!d) return;
+      if (!r.c) { if (d.t === 'lan' && typeof d.c === 'string' && d.c.length >= 16) { r.c = d.c; r.open = true; if (o.onOpen) o.onOpen(); } return; }
+      // only what the computer that knows the secret signed, in order
+      if (typeof d.m !== 'string' || !Number.isInteger(d.k) || d.k <= r.kin || d.s !== rlHmac(o.secret, r.c + ':h:' + d.k + ':' + d.m)) return;
+      r.kin = d.k;
+      let m = null;
+      try { m = rlUnpack(r.parts, JSON.parse(d.m)); } catch (err) { return; }
+      if (m && typeof m === 'object' && typeof m.t === 'string') o.onMsg(m);
+    };
+    ws.onclose = () => {
+      const was = r.open;
+      r.open = false; r.c = ''; r.kin = -1; r.kout = 0; r.parts = {};
+      if (r.stopped) return;
+      if (was) { if (o.onClose) o.onClose(); } else state('error', 'Could not reach the computer at ' + where + '. Is this device on the same network, and Remote control turned on there?');
+    };
+    ws.onerror = () => {};
+  }
+  setTimeout(start, 0);   // never inside this call (as rlJoin)
+  return {
+    send(msg) {
+      if (!r.open || !r.c || r.stopped) return false;
+      const text = JSON.stringify(msg), k = ++r.kout;
+      try { r.ws.send(JSON.stringify({ k, m: text, s: rlHmac(o.secret, r.c + ':r:' + k + ':' + text) })); return true; } catch (e) { return false; }
+    },
+    openLossy() {}, path: async () => ({ relayed: false, type: 'lan', rttMs: null }),
+    stop() { r.stopped = true; try { if (r.ws) r.ws.close(); } catch (e) {} },
+  };
+}
 function rlJoin(o) {
+  if (o.lan) return rlLanJoin(o);
   if (o.local && RL_DEV) return rlLocalJoin(o);
   const r = { sdk: null, stopped: false, host: null, lossy: null, parts: {}, ask: 0, open: false };
   const state = (s, text) => { if (!r.stopped && o.onState) o.onState(s, text || ''); };

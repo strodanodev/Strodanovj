@@ -105,6 +105,9 @@ body.away #view{opacity:.45}
 #pvBtn{position:absolute;right:8px;top:8px;min-height:30px;padding:0 10px;font-size:11px;border-radius:15px;background:rgba(0,0,0,.6);border-color:rgba(255,255,255,.22);color:#ddd}
 #mon.off{justify-content:flex-end;padding:6px 8px}#mon.off #pv{display:none}#mon.off #pvBtn{position:static}
 body.away #pv{opacity:.45}
+#pvImg{display:none;width:100%;max-height:30vh;aspect-ratio:var(--ar,16 / 9);object-fit:contain;background:#000}
+#mon.jpg #pv{display:none}#mon.jpg #pvImg{display:block}#mon.jpg.off #pvImg{display:none}
+body.wide #pvImg{max-height:24vh}body.away #pvImg{opacity:.45}
 /* Effects: hold-to-apply pads */
 .pads{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .pads button{min-height:56px;padding:0 4px;font-size:12px;font-weight:600;touch-action:none;line-height:1.15}
@@ -152,7 +155,8 @@ body.wide #pv{max-height:24vh}
 #cover form{display:flex;flex-direction:column;gap:10px;width:min(320px,100%)}
 #code{font:600 26px var(--mono);letter-spacing:.14em;text-align:center;text-transform:uppercase}
 #cover a{color:var(--dim);font-size:13px}
-#saved{display:flex;flex-direction:column;gap:8px;width:min(320px,100%)}#saved[hidden]{display:none}
+#saved,#found{display:flex;flex-direction:column;gap:8px;width:min(320px,100%)}#saved[hidden],#found[hidden]{display:none}
+#found button{text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#found .hint{margin:4px 2px 0;text-align:left}
 #saved .row button.pri{min-height:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--ctl-line);border-top-color:var(--acc);animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -167,7 +171,7 @@ body.wide #pv{max-height:24vh}
   <button id="black" aria-label="Blackout">BLACKOUT</button>
 </header>
 <div id="lost" role="status">Connection lost. Reconnecting... This is the last state this phone saw.</div>
-<div id="mon" hidden><video id="pv" muted playsinline autoplay disablepictureinpicture></video><button id="pvBtn">Preview: high</button></div>
+<div id="mon" hidden><video id="pv" muted playsinline autoplay disablepictureinpicture></video><img id="pvImg" alt=""><button id="pvBtn">Preview: high</button></div>
 <main id="view"></main>
 <nav id="tabs"></nav>
 <div id="cover">
@@ -180,6 +184,7 @@ body.wide #pv{max-height:24vh}
     <button class="pri big" type="submit">Connect</button>
   </form>
   <div id="saved" hidden></div>
+  <div id="found" hidden></div>
   <button id="coverBtn" class="ghost" hidden></button>
   <a id="backLink" href="mobile.html">Open Strodano VJ on this phone instead</a>
 </div>

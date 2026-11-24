@@ -16,6 +16,10 @@
 // eight knobs that follow what the host has in focus; a gamepad on this device plays the host (`pad`: its buttons and
 // sticks, read there through the host's own gamepad mappings); holding View shows the host's cheat-sheet (`overlay`).
 // In the desktop app's Remote mode (window.strodanoDesktop.remoteMode) this page IS the window, with a way back.
+// Phase 4, no internet: served by the computer itself (desktop/remote.js marks the page with <meta name="svj-lan">), it
+// talks to ws://<that computer>/link (remotelink.js rlLanJoin, every message signed); the preview comes as JPEG frames
+// (`jpeg`). In Remote mode the desktop app lists the computers it hears on the network (strodanoDesktop.lan.find) and
+// takes their code, or an address typed into the code field.
 // All names here start with rm / RM (core.js is loaded for $ and el).
 'use strict';
 const RM_HOSTS = 'strodano-vj-remote-hosts', RM_PREFS = 'strodano-vj-remote-prefs';
@@ -24,6 +28,8 @@ const RM_TABS = [['clips', 'Clips'], ['mix', 'Mix'], ['fx', 'Effects'], ['agent'
 const RM_TABS_WIDE = [['show', 'Show'], ['fx', 'Effects'], ['agent', 'Agent']];
 const RM_WIDE = window.matchMedia ? window.matchMedia('(min-width: 900px)') : { matches: false, addEventListener() {} };
 const RM_DESK = window.strodanoDesktop && window.strodanoDesktop.remoteMode;   // the desktop app in Remote mode
+const RM_LAN_URL = document.querySelector('meta[name="svj-lan"]') ? 'ws://' + location.host + '/link' : '';   // served by the computer: LAN only
+const rmWsUrl = (address, port) => 'ws://' + address + ':' + (port || 8787) + '/link';
 const RM_REFUSED = {
   plan: 'That computer is not on the Festival plan. Remote control is part of Festival.',
   busy: 'The computer is busy with another device. Try again in a moment.',
@@ -40,6 +46,7 @@ const rm = {
   touch: false, wantBuild: false, btAt: 0, wake: null, toastT: 0,
   pv: false, prefs: { preview: 'mid' }, latch: false, pads: new Set(),
   padSt: { b: [], a: [0, 0, 0, 0], at: 0, seen: false }, deskName: '', lnames: [],
+  lanUrl: RM_LAN_URL, lanTarget: null, found: [],   // LAN: the socket to use; a computer picked (or typed) that still needs its code; computers heard
 };
 const rmLS = { get: k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
 { const p = rmLS.get(RM_PREFS); if (p && RM_PREVIEW[p.preview]) rm.prefs.preview = p.preview; }
@@ -66,20 +73,42 @@ function rmCover(mode, text, err, btn, onBtn) {
   c.hidden = mode === 'none';
   if (mode === 'none') return;
   $('coverText').textContent = text; $('coverText').className = err ? 'err' : '';
-  $('codeForm').hidden = mode !== 'enter'; $('backLink').hidden = mode !== 'enter'; $('spin').hidden = mode !== 'busy';
+  $('codeForm').hidden = mode !== 'enter'; $('spin').hidden = mode !== 'busy';
+  const back = $('backLink');
+  if (back) back.hidden = mode !== 'enter';   // not on the page the computer serves (removed there)
   const b = $('coverBtn');
   b.hidden = !btn; b.textContent = btn || ''; b.onclick = onBtn || null;
-  // remembered computers: one tap, no code
+  // remembered computers: one tap, no code (on this network when it is heard here, else over the internet)
   const saved = $('saved'), hosts = mode === 'enter' ? rmHosts() : [];
   saved.hidden = !hosts.length;
   saved.replaceChildren(...hosts.map(h => el('div', { className: 'row' },
-    el('button', { className: 'pri', textContent: 'Connect to ' + (h.host || 'computer'), onclick: () => { rm.room = h.room; rm.secret = h.secret; rm.key = h.key; try { history.replaceState(null, '', '#' + h.room + '.' + h.secret); } catch (e) {} rmConnect(h.room, h.secret); } }),
+    el('button', { className: 'pri', textContent: 'Connect to ' + (h.host || 'computer'), onclick: () => {
+      const near = rm.found.find(f => f.room === h.room);
+      rm.room = h.room; rm.secret = h.secret; rm.key = h.key; rm.lanUrl = RM_LAN_URL || (near ? rmWsUrl(near.address, near.port) : '');
+      try { history.replaceState(null, '', '#' + h.room + '.' + h.secret); } catch (e) {}
+      rmConnect(h.room, h.secret);
+    } }),
     el('button', { className: 'ghost shrink', textContent: 'Forget', onclick: () => { rmForget(h.room); rmCover(mode, text, err, btn, onBtn); } }))));
+  rmFoundList(mode === 'enter');
+}
+// Remote mode: computers heard on this network that this device does not know yet. A tap picks one; its code follows.
+function rmFoundList(show) {
+  const box = $('found'), known = new Set(rmHosts().map(h => h.room)), list = show ? rm.found.filter(f => !known.has(f.room)) : [];
+  box.hidden = !list.length;
+  box.replaceChildren(...(list.length ? [el('div', { className: 'hint', textContent: 'On this network:' })] : []), ...list.map(f => {
+    const url = rmWsUrl(f.address, f.port), on = rm.lanTarget === url;
+    return el('button', { className: on ? 'on' : '', textContent: f.name + '  (' + f.address + ')', onclick: () => { rmPickLan(url, f.name); } });
+  }));
+}
+function rmPickLan(url, name) {
+  rm.lanTarget = url;
+  rmCover('enter', 'Type the code shown on ' + (name || url.replace(/^ws:\/\//, '').replace(/\/.*$/, '')) + ' (Broadcast > Remote control > This network).');
+  setTimeout(() => $('code').focus(), 50);
 }
 function rmEnter(text, err) {
-  rmDrop(); rm.phase = 'enter'; rm.s = null; rm.v = {}; rm.thumbs.clear(); rm.tries = 0; rm.pads.clear();
+  rmDrop(); rm.phase = 'enter'; rm.s = null; rm.v = {}; rm.thumbs.clear(); rm.tries = 0; rm.pads.clear(); rm.lanTarget = null;
   document.body.classList.remove('live', 'away'); rmMon(); rmOverlay(null);
-  rmCover('enter', text || 'On the computer, open Broadcast > Remote control. Scan its QR code with this phone, or type the code shown there.', err);
+  rmCover('enter', text || (RM_LAN_URL ? 'On the computer: Broadcast > Remote control > This network. Scan its QR code, or type the code shown there.' : 'On the computer, open Broadcast > Remote control. Scan its QR code with this phone, or type the code shown there.'), err);
   rmHeader();
 }
 function rmDrop() {
@@ -100,7 +129,7 @@ function rmConnect(room, secret, intro) {
   rmDrop();
   rm.intro = !!intro;
   if (rm.phase !== 'away') { rm.phase = 'busy'; rmCover('busy', 'Looking for the computer...', false, 'Cancel', () => rmEnter()); }
-  const link = rm.link = rlJoin({ room, secret, local: rm.local, video: !intro, onTrack: t => { if (rm.link === link) rmTrack(t); },
+  const link = rm.link = rlJoin({ room, secret, local: rm.local, lan: rm.lanUrl || undefined, video: !intro && !rm.lanUrl, onTrack: t => { if (rm.link === link) rmTrack(t); },
     onState: (s, text) => { if (rm.link === link && s === 'error') { if (rm.phase === 'away') rmRetry(); else rmEnter(text, true); } },
     onOpen: () => {
       if (rm.link !== link) return;
@@ -112,7 +141,7 @@ function rmConnect(room, secret, intro) {
   // nobody answered: say so, and keep looking (the host may be starting, or remotes are off there)
   rm.slowT = setTimeout(() => {
     if (rm.link !== link || rm.phase !== 'busy') return;
-    if (intro) rmEnter('No computer answered that code. Check it (a code works for 5 minutes, once) and that Remote control is turned on.', true);
+    if (intro) rmEnter('No computer answered that code. Check it (a code works for 5 minutes, once) and that Remote control is turned on' + (rm.lanUrl ? ' for this network.' : '.'), true);
     else rmCover('busy', 'Still looking. Is Remote control turned on, on the computer? Is this phone online?', false, 'Cancel', () => rmEnter());
   }, 20000);
 }
@@ -150,7 +179,8 @@ function rmMsg(m) {
   }
   else if (m.t === 'pong') { const d = rmNow() - m.at; if (d >= 0 && d < 60000) rm.rtt = rm.rtt ? rm.rtt * 0.7 + d * 0.3 : d; }
   else if (m.t === 'released') { rm.pads.clear(); rm.busy.clear(); rmPadReset(); if (rm.tab === 'fx' && !rm.touch) rmBuild(); }
-  else if (m.t === 'overlay') rmOverlay(m.rows, m.shift);   // the host lost us for a moment and let go of what we held
+  else if (m.t === 'overlay') rmOverlay(m.rows, m.shift);
+  else if (m.t === 'jpeg' && typeof m.d === 'string' && m.d.length < 400000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(m.d)) $('pvImg').src = m.d;   // LAN preview frame   // the host lost us for a moment and let go of what we held
   else if (m.t === 'status') rmToast(String(m.text || '').slice(0, 200), !!m.bad);
   else if (m.t === 'bye') { if (m.why === 'forgot') rmForget(); rmEnter(RM_BYE[m.why] || 'The computer ended the connection.', true); }
 }
@@ -206,6 +236,7 @@ function rmMon() {
   const m = $('mon'), on = rm.pv && (rm.phase === 'live' || rm.phase === 'away');
   m.hidden = !on;
   m.classList.toggle('off', rm.prefs.preview === 'off');
+  m.classList.toggle('jpg', !!rm.lanUrl);   // on the local network the picture comes as JPEG frames
   $('pvBtn').textContent = RM_PREVIEW[rm.prefs.preview];
 }
 
@@ -527,17 +558,27 @@ $('pvBtn').addEventListener('click', () => {
   rmLS.set(RM_PREFS, rm.prefs);
   rmMon(); if (rm.phase === 'live') rmView();
 });
-$('code').addEventListener('input', e => { const c = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase(); e.target.value = c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; });
+$('code').addEventListener('input', e => { if (/^[\d.:]+$/.test(e.target.value)) return; const c = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase(); e.target.value = c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; });   // digits and dots: an address
 $('codeForm').addEventListener('submit', e => {
   e.preventDefault();
-  const typed = $('code').value, ids = rlParseLink(typed), code = rlCleanCode(typed);
-  if (ids) { rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room); rmConnect(ids.room, ids.secret); return; }   // a pasted link works too
+  const typed = $('code').value.trim(), ids = rlParseLink(typed), code = rlCleanCode(typed);
+  const ip = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)(:(\d{2,5}))?$/.exec(typed);
+  if (ip && !RM_LAN_URL) { $('code').value = ''; rmPickLan(rmWsUrl(typed.split(':')[0], ip[5] ? +ip[5] : 0)); return; }   // an address shown on the computer
+  if (ids) { rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room); rm.lanUrl = RM_LAN_URL; rmConnect(ids.room, ids.secret); return; }   // a pasted link works too
+  if (code) rm.lanUrl = RM_LAN_URL || rm.lanTarget || '';
   if (!code) { rmCover('enter', 'A code is 8 letters and digits, like ABCD-EFGH. It never has 0, 1, O or L.', true); return; }
   const c = rlCodeIds(code);
   rmConnect(c.room, c.secret, true);
 });
 document.body.classList.toggle('wide', RM_WIDE.matches);
 RM_WIDE.addEventListener('change', () => { document.body.classList.toggle('wide', RM_WIDE.matches); rmTabs(); if (rm.s) rmBuild(); });
+if (RM_LAN_URL) $('backLink').remove();   // the computer serves only this page
+// Remote mode on the desktop app: listen for computers on this network (their beacons, desktop/remote.js)
+if (RM_DESK && typeof rlDesk !== 'undefined' && rlDesk && rlDesk.find) {
+  rlDesk.onHosts(list => { rm.found = Array.isArray(list) ? list : []; if (rm.phase === 'enter') rmFoundList(true); });
+  rlDesk.find(true).then(() => rlDesk.hosts()).then(l => { rm.found = Array.isArray(l) ? l : []; if (rm.phase === 'enter') rmFoundList(true); }).catch(() => {});
+  $('code').placeholder = 'XXXX-XXXX or an address';
+}
 if (RM_DESK) {
   const b = $('backLink'), x = $('exitBtn');
   b.textContent = 'Back to the show on this computer'; b.href = '#'; b.onclick = e => { e.preventDefault(); rmLeaveDesk(); };
@@ -550,7 +591,7 @@ for (const ev of ['blur', 'visibilitychange']) window.addEventListener(ev, () =>
   rmTabs();
   const ids = rlParseLink(location.hash);
   if (!ids) return rmEnter();
-  rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room);
+  rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room); rm.lanUrl = RM_LAN_URL;
   rmConnect(ids.room, ids.secret);
 })();
 window.addEventListener('hashchange', () => { const ids = rlParseLink(location.hash); if (ids && ids.room !== rm.room) location.reload(); });

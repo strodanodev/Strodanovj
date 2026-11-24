@@ -16,6 +16,7 @@ const { setupPower } = require('./power');
 const { setupUpdater } = require('./updater');
 const { setupRekordbox, stopRekordbox } = require('./rekordbox');
 const { setupPro } = require('./pro');
+const { setupRemote, stopRemote, resetRemote } = require('./remote');
 
 const selftest = process.argv.includes('--selftest');
 // Packaged, the page is inside app.asar (package.json build.files), whose hash the Electron binary checks on start
@@ -98,6 +99,8 @@ function createWindow() {
   // the control window moved to another display: which displays count as "external" changes
   let movedT = 0;
   win.on('moved', () => { clearTimeout(movedT); movedT = setTimeout(sendDisplays, 300); });
+  // a new page in the control window (Remote mode switch, a reload): its LAN remote session ends with it (desktop/remote.js)
+  win.webContents.on('did-start-navigation', d => { if (d && d.isMainFrame && !d.isSameDocument) resetRemote(); });
   win.webContents.on('will-prevent-unload', e => e.preventDefault());   // the page's own "leave?" prompt: the close dialog below asks instead
   win.webContents.on('render-process-gone', (e, d) => { if (d.reason !== 'clean-exit' && win && !win.isDestroyed()) setTimeout(() => win.reload(), 500); });
   win.on('close', e => {
@@ -246,10 +249,11 @@ app.whenReady().then(() => {
   setupNdiNet();   // desktop/ndinet.js: NDI network check (firewall, addresses) for the NDI panel
   setupPower();   // desktop/power.js: Windows must not slow the app down while its window is minimized or covered
   setupRekordbox(() => win);   // desktop/rekordbox.js: finds rekordbox USB sticks as they are plugged in
+  setupRemote(() => win, webDir);   // desktop/remote.js: remote control without internet (LAN server, beacon)
   updater = setupUpdater(() => win, { selftest, beforeInstall: () => { quitting = true; } });   // desktop/updater.js
   screen.on('display-added', displaysChanged); screen.on('display-removed', displaysChanged); screen.on('display-metrics-changed', displaysChanged);
 });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => { stopNdi(); stopRekordbox(); });
+app.on('will-quit', () => { stopNdi(); stopRekordbox(); stopRemote(); });
 app.on('window-all-closed', () => app.quit());
