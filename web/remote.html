@@ -98,6 +98,17 @@ body.away #view{opacity:.45}
 .tile.pending{border-color:var(--warn)}
 .tile.off{filter:saturate(.5) brightness(.6)}
 .tile .tag{position:absolute;right:4px;top:4px;font:700 9px var(--mono);font-style:normal;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.72);color:var(--warn)}
+/* the monitor: the host's live picture, above the tabs' content */
+#mon{position:relative;background:#000;border-bottom:1px solid var(--line);display:flex;justify-content:center;flex:none}
+#mon[hidden]{display:none}
+#pv{display:block;width:100%;max-height:30vh;aspect-ratio:var(--ar,16 / 9);object-fit:contain;background:#000}
+#pvBtn{position:absolute;right:8px;top:8px;min-height:30px;padding:0 10px;font-size:11px;border-radius:15px;background:rgba(0,0,0,.6);border-color:rgba(255,255,255,.22);color:#ddd}
+#mon.off{justify-content:flex-end;padding:6px 8px}#mon.off #pv{display:none}#mon.off #pvBtn{position:static}
+body.away #pv{opacity:.45}
+/* Effects: hold-to-apply pads */
+.pads{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pads button{min-height:56px;padding:0 4px;font-size:12px;font-weight:600;touch-action:none;line-height:1.15}
+.pads button.held{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
 /* Mix */
 .bpm{font:700 34px var(--mono);letter-spacing:.02em}
 .dots{display:flex;gap:6px}.dots i{width:12px;height:12px;border-radius:50%;background:#2b2b32}.dots i.on{background:var(--acc);box-shadow:0 0 10px var(--acc)}
@@ -115,6 +126,8 @@ body.away #view{opacity:.45}
 #cover form{display:flex;flex-direction:column;gap:10px;width:min(320px,100%)}
 #code{font:600 26px var(--mono);letter-spacing:.14em;text-align:center;text-transform:uppercase}
 #cover a{color:var(--dim);font-size:13px}
+#saved{display:flex;flex-direction:column;gap:8px;width:min(320px,100%)}#saved[hidden]{display:none}
+#saved .row button.pri{min-height:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--ctl-line);border-top-color:var(--acc);animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #toast{position:fixed;left:12px;right:12px;top:calc(64px + var(--safe-t));z-index:60;background:#15161c;border:1px solid var(--ctl-line);border-radius:12px;padding:10px 14px;font-size:14px;box-shadow:0 10px 40px rgba(0,0,0,.7);opacity:0;pointer-events:none;transition:opacity .2s}
@@ -127,6 +140,7 @@ body.away #view{opacity:.45}
   <button id="black" aria-label="Blackout">BLACKOUT</button>
 </header>
 <div id="lost" role="status">Connection lost. Reconnecting... This is the last state this phone saw.</div>
+<div id="mon" hidden><video id="pv" muted playsinline autoplay disablepictureinpicture></video><button id="pvBtn">Preview: high</button></div>
 <main id="view"></main>
 <nav id="tabs"></nav>
 <div id="cover">
@@ -138,6 +152,7 @@ body.away #view{opacity:.45}
     <input id="code" type="text" inputmode="text" maxlength="9" placeholder="XXXX-XXXX" aria-label="Code shown on the computer" autocapitalize="characters" autocorrect="off" spellcheck="false">
     <button class="pri big" type="submit">Connect</button>
   </form>
+  <div id="saved" hidden></div>
   <button id="coverBtn" class="ghost" hidden></button>
   <a id="backLink" href="mobile.html">Open Strodano VJ on this phone instead</a>
 </div>

@@ -8,10 +8,14 @@
 //         thumb (one clip picture, kept in memory only), pong, status, bye.
 // A slider sends at most one move per animation frame on the link's second channel (may be dropped, never queued) and its
 // resting value once more on the main one; while a finger is on it, patches for it are ignored.
-// Kept on this device: the tab's sessionStorage holds the room and the key the host gave, so a reload reconnects
-// without asking again. All names here start with rm / RM (core.js is loaded for $ and el).
+// Phase 2: the host's small live picture (a video track in the same session; `view` says which quality this phone
+// wants and whether its page is hidden), hold-to-apply effect pads (`fx`), and remembered computers.
+// Kept on this device, and nothing of the show: localStorage RM_HOSTS = the last 5 computers this phone was allowed on
+// ({room, secret, key, host, at}), so it connects again without a code or a question, and RM_PREFS (preview quality).
+// All names here start with rm / RM (core.js is loaded for $ and el).
 'use strict';
-const RM_KEY = 'strodano-vj-remote';
+const RM_HOSTS = 'strodano-vj-remote-hosts', RM_PREFS = 'strodano-vj-remote-prefs';
+const RM_PREVIEW = { mid: 'Preview: high', low: 'Preview: low', off: 'Preview: off' };
 const RM_TABS = [['clips', 'Clips'], ['mix', 'Mix'], ['fx', 'Effects'], ['agent', 'Agent']];
 const RM_REFUSED = {
   plan: 'That computer is not on the Festival plan. Remote control is part of Festival.',
@@ -20,14 +24,21 @@ const RM_REFUSED = {
   version: 'This page and the app on the computer are different versions. Update the app, then reload this page.',
   code: 'That code or link no longer works. Open Remote control on the computer for a new one.',
 };
-const RM_BYE = { off: 'Remote control was turned off on the computer.', replaced: 'Another device took over the show.', host: 'This phone was disconnected on the computer.' };
+const RM_BYE = { off: 'Remote control was turned off on the computer.', replaced: 'Another device took over the show.', host: 'This phone was disconnected on the computer.', forgot: 'The computer no longer remembers this phone. Scan its QR code again.' };
 const rm = {
   link: null, local: new URLSearchParams(location.search).get('local') === '1', room: '', secret: '', key: '', intro: false,
   phase: 'enter',        // enter | busy | live | away
   n: 0, host: '', s: null, v: {}, ack: 0, thumbs: new Map(), tab: 'clips', sigs: {}, binds: new Map(), tiles: [], scenes: [],
   busy: new Map(), pend: new Map(), raf: 0, rtt: 0, relayed: false, lastRx: 0, lastPath: 0, tries: 0, retryT: 0, slowT: 0,
   touch: false, wantBuild: false, btAt: 0, wake: null, toastT: 0,
+  pv: false, prefs: { preview: 'mid' }, latch: false, pads: new Set(),
 };
+const rmLS = { get: k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+{ const p = rmLS.get(RM_PREFS); if (p && RM_PREVIEW[p.preview]) rm.prefs.preview = p.preview; }
+// the computers this phone was allowed on, newest first
+function rmHosts() { const a = rmLS.get(RM_HOSTS); return (Array.isArray(a) ? a : []).filter(h => h && rlParseLink(h.room + '.' + h.secret) && typeof h.key === 'string' && h.key.length === 32); }
+const rmKeyFor = room => (rmHosts().find(h => h.room === room) || {}).key || '';
+function rmRemember() { rmLS.set(RM_HOSTS, [{ room: rm.room, secret: rm.secret, key: rm.key, host: rm.host, at: Date.now() }, ...rmHosts().filter(h => h.room !== rm.room)].slice(0, 5)); }
 const rmNow = () => performance.now();
 function rmName() {
   const u = navigator.userAgent;
@@ -49,10 +60,16 @@ function rmCover(mode, text, err, btn, onBtn) {
   $('codeForm').hidden = mode !== 'enter'; $('backLink').hidden = mode !== 'enter'; $('spin').hidden = mode !== 'busy';
   const b = $('coverBtn');
   b.hidden = !btn; b.textContent = btn || ''; b.onclick = onBtn || null;
+  // remembered computers: one tap, no code
+  const saved = $('saved'), hosts = mode === 'enter' ? rmHosts() : [];
+  saved.hidden = !hosts.length;
+  saved.replaceChildren(...hosts.map(h => el('div', { className: 'row' },
+    el('button', { className: 'pri', textContent: 'Connect to ' + (h.host || 'computer'), onclick: () => { rm.room = h.room; rm.secret = h.secret; rm.key = h.key; try { history.replaceState(null, '', '#' + h.room + '.' + h.secret); } catch (e) {} rmConnect(h.room, h.secret); } }),
+    el('button', { className: 'ghost shrink', textContent: 'Forget', onclick: () => { rmForget(h.room); rmCover(mode, text, err, btn, onBtn); } }))));
 }
 function rmEnter(text, err) {
-  rmDrop(); rm.phase = 'enter'; rm.s = null; rm.v = {}; rm.thumbs.clear(); rm.tries = 0;
-  document.body.classList.remove('live', 'away');
+  rmDrop(); rm.phase = 'enter'; rm.s = null; rm.v = {}; rm.thumbs.clear(); rm.tries = 0; rm.pads.clear();
+  document.body.classList.remove('live', 'away'); rmMon();
   rmCover('enter', text || 'On the computer, open Broadcast > Remote control. Scan its QR code with this phone, or type the code shown there.', err);
   rmHeader();
 }
@@ -60,7 +77,7 @@ function rmDrop() {
   clearTimeout(rm.retryT); clearTimeout(rm.slowT);
   if (rm.link) { rm.link.stop(); rm.link = null; }
 }
-function rmForget() { rm.key = ''; try { sessionStorage.removeItem(RM_KEY); } catch (e) {} }
+function rmForget(room = rm.room) { rmLS.set(RM_HOSTS, rmHosts().filter(h => h.room !== room)); if (room === rm.room) rm.key = ''; }
 
 // ---------- the link ----------
 function rmSend(m, lossy) {
@@ -74,7 +91,7 @@ function rmConnect(room, secret, intro) {
   rmDrop();
   rm.intro = !!intro;
   if (rm.phase !== 'away') { rm.phase = 'busy'; rmCover('busy', 'Looking for the computer...', false, 'Cancel', () => rmEnter()); }
-  const link = rm.link = rlJoin({ room, secret, local: rm.local,
+  const link = rm.link = rlJoin({ room, secret, local: rm.local, video: !intro, onTrack: t => { if (rm.link === link) rmTrack(t); },
     onState: (s, text) => { if (rm.link === link && s === 'error') { if (rm.phase === 'away') rmRetry(); else rmEnter(text, true); } },
     onOpen: () => {
       if (rm.link !== link) return;
@@ -96,40 +113,42 @@ function rmMsg(m) {
     if (m.t === 'move') {
       const ids = rlParseLink(m.room + '.' + m.secret);
       if (!ids) return rmEnter(RM_REFUSED.code, true);
-      rmForget(); rm.room = ids.room; rm.secret = ids.secret;
+      rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room);
       try { history.replaceState(null, '', '#' + ids.room + '.' + ids.secret); } catch (e) {}   // a reload reconnects
       rmConnect(ids.room, ids.secret);
     } else if (m.t === 'refuse') rmEnter(RM_REFUSED[m.why] || RM_REFUSED.code, true);
     return;
   }
   if (m.t === 'wait') { if (rm.phase !== 'away') { clearTimeout(rm.slowT); rmCover('busy', 'Now press Allow on the computer.', false, 'Cancel', () => rmEnter()); } }
-  else if (m.t === 'refuse') { if (m.why === 'code' || m.why === 'denied') rmForget(); rmEnter(RM_REFUSED[m.why] || 'The computer refused the connection.', true); }
+  else if (m.t === 'refuse') { if (m.why === 'denied') rmForget(); rmEnter(RM_REFUSED[m.why] || 'The computer refused the connection.', true); }
   else if (m.t === 'welcome') {
     rm.key = String(m.key || ''); rm.host = String(m.host || 'Computer').slice(0, 40);
-    try { sessionStorage.setItem(RM_KEY, JSON.stringify({ room: rm.room, key: rm.key })); } catch (e) {}
+    rmRemember();
+    rm.pv = !!m.pv; rm.pads.clear();
     clearTimeout(rm.slowT);
     rm.phase = 'live'; rm.tries = 0; rm.v = {}; rm.ack = 0; rm.busy.clear(); rm.pend.clear(); rm.sigs = {};
     document.body.classList.add('live'); document.body.classList.remove('away');
     rmCover('none');
     rm.link.openLossy();
-    rmSend({ t: 'view', hidden: document.hidden });
+    rmView(); rmMon();
     rmHeader(); rmWake();
   }
-  else if (m.t === 'state' && m.s && typeof m.s === 'object') { rm.s = m.s; rmTabs(); rmBuildIfChanged(); }
+  else if (m.t === 'state' && m.s && typeof m.s === 'object') { rm.s = m.s; if (m.s.w > 0 && m.s.h > 0) $('mon').style.setProperty('--ar', m.s.w + ' / ' + m.s.h); rmTabs(); rmBuildIfChanged(); }
   else if (m.t === 'patch' && m.p && typeof m.p === 'object') rmPatch(m.p, m.ack);
   else if (m.t === 'thumb' && typeof m.k === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(m.d || '')) {
     rm.thumbs.set(m.k, m.d);
     document.querySelectorAll('[data-k="' + m.k.replace(/[^a-z0-9]/g, '') + '"]').forEach(e => { e.style.backgroundImage = 'url("' + m.d + '")'; });
   }
   else if (m.t === 'pong') { const d = rmNow() - m.at; if (d >= 0 && d < 60000) rm.rtt = rm.rtt ? rm.rtt * 0.7 + d * 0.3 : d; }
+  else if (m.t === 'released') { rm.pads.clear(); rm.busy.clear(); if (rm.tab === 'fx' && !rm.touch) rmBuild(); }   // the host lost us for a moment and let go of what we held
   else if (m.t === 'status') rmToast(String(m.text || '').slice(0, 200), !!m.bad);
-  else if (m.t === 'bye') { if (m.why !== 'off') rmForget(); rmEnter(RM_BYE[m.why] || 'The computer ended the connection.', true); }
+  else if (m.t === 'bye') { if (m.why === 'forgot') rmForget(); rmEnter(RM_BYE[m.why] || 'The computer ended the connection.', true); }
 }
 // The link closed or went quiet: keep the last state on screen, marked as old, and try again (2 s, then every 5 s).
 function rmLost() {
   if (rm.phase === 'enter') return;
   if (rm.intro) return rmEnter('The connection dropped. Try the code again.', true);
-  if (rm.phase === 'live') { rm.phase = 'away'; document.body.classList.remove('live'); document.body.classList.add('away'); rm.busy.clear(); rm.pend.clear(); }
+  if (rm.phase === 'live') { rm.phase = 'away'; document.body.classList.remove('live'); document.body.classList.add('away'); rm.busy.clear(); rm.pend.clear(); rm.pads.clear(); rm.sigs = {}; }   // the host let go of every held effect
   rmHeader(); rmRetry();
 }
 function rmRetry() {
@@ -154,7 +173,7 @@ function rmHeader() {
 document.addEventListener('visibilitychange', () => {
   if (rm.phase !== 'live') return;
   rm.lastRx = rmNow();   // timers stood still while the page was hidden: give the link a moment before calling it lost
-  rmSend({ t: 'view', hidden: document.hidden });
+  rmView();
   if (!document.hidden) rmWake();
 });
 window.addEventListener('pagehide', () => { if (rm.phase === 'live') rmSend({ t: 'bye' }); });
@@ -164,6 +183,21 @@ async function rmWake() {
   try { rm.wake = await navigator.wakeLock.request('screen'); rm.wake.addEventListener('release', () => { rm.wake = null; }); } catch (e) {}
 }
 window.addEventListener('pointerdown', rmWake, true);
+
+// ---------- the monitor: the host's live picture ----------
+// What this phone wants from the host: the preview quality, and nothing at all while the page is hidden.
+function rmView() { rmSend({ t: 'view', hidden: document.hidden, preview: rm.pv ? rm.prefs.preview : 'off' }); }
+function rmTrack(t) {
+  const v = $('pv');
+  v.srcObject = new MediaStream([t]);
+  v.play().catch(() => {});
+}
+function rmMon() {
+  const m = $('mon'), on = rm.pv && (rm.phase === 'live' || rm.phase === 'away');
+  m.hidden = !on;
+  m.classList.toggle('off', rm.prefs.preview === 'off');
+  $('pvBtn').textContent = RM_PREVIEW[rm.prefs.preview];
+}
 
 // ---------- live values ----------
 function rmBind(key, fn) {
@@ -236,7 +270,7 @@ function rmTabs() {
 function rmSig(tab) {
   const s = rm.s;
   if (!s) return '';
-  return JSON.stringify(tab === 'clips' ? [s.layers, s.cols, s.tags] : tab === 'mix' ? [s.snaps] : tab === 'fx' ? [s.fx, s.gens] : [s.has]);
+  return JSON.stringify(tab === 'clips' ? [s.layers, s.cols, s.tags] : tab === 'mix' ? [s.snaps] : tab === 'fx' ? [s.fx, s.gens, s.pads, rm.latch] : [s.has]);
 }
 function rmBuildIfChanged() {
   if (rmSig(rm.tab) === rm.sigs[rm.tab]) return;
@@ -325,6 +359,32 @@ setInterval(() => {
   const b = (rm.v.bt || 0) + (rmNow() - rm.btAt) / 60000 * (rm.v.bpm || 120), at = ((Math.floor(b) % 4) + 4) % 4;
   [...d.children].forEach((x, i) => x.classList.toggle('on', i === at));
 }, 40);
+// A hold-to-apply effect: on while a finger is down (or tapped on and off with Latch). The host lets go of all of
+// them when this phone goes quiet.
+function rmPad(name, on) {
+  if (on === rm.pads.has(name)) return;
+  if (on) rm.pads.add(name); else rm.pads.delete(name);
+  rmSend({ t: 'fx', name, on });
+}
+function rmPads(root) {
+  const names = rm.s.pads || [];
+  if (!names.length) return;
+  const pads = el('div', { className: 'pads' });
+  for (const name of names) {
+    const b = el('button', { textContent: name, className: rm.pads.has(name) ? 'held' : '' });
+    b.addEventListener('pointerdown', e => {
+      if (rm.latch) rmPad(name, !rm.pads.has(name)); else { rmPad(name, true); try { b.setPointerCapture(e.pointerId); } catch (err) {} }
+      b.classList.toggle('held', rm.pads.has(name));
+    });
+    const up = () => { if (!rm.latch) { rmPad(name, false); b.classList.remove('held'); } };
+    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    pads.append(b);
+  }
+  const latch = rmBtn('Latch', () => { rm.latch = !rm.latch; if (!rm.latch) [...rm.pads].forEach(n => rmPad(n, false)); rmBuild(); }, 'shrink' + (rm.latch ? ' on' : ''));
+  root.append(el('div', { className: 'row', style: { margin: '20px 2px 8px' } }, el('h3', { textContent: 'Hold effects', style: { margin: '0' } }), latch),
+    pads, rmHint(rm.latch ? 'Tap an effect to turn it on or off.' : 'Hold an effect: it is on while your finger is down.'));
+}
 function rmFxTab(root) {
   const s = rm.s, card = (title, sub, ...kids) => el('div', { className: 'card' }, el('div', { className: 'row' }, el('div', { className: 'name' }, title, el('small', { textContent: sub })), kids.shift()), ...kids);
   const lab = (name, input) => [el('div', { className: 'lab' }, el('span', { textContent: name })), input];
@@ -336,8 +396,11 @@ function rmFxTab(root) {
     const pre = 'fx:' + e.u + ':';
     root.append(card(e.d, e.o, rmToggle('On', pre + 'bypass', pre + 'bypass', 'shrink', true), ...e.p.flatMap((name, k) => lab(name, rmSlider(pre + k, pre + k))), ...(e.mix ? lab('Mix', rmSlider(pre + 'mix', pre + 'mix')) : [])));
   }
-  if (!root.childElementCount) root.append(rmHint('No effects or visual settings in this show yet. Add effects on the computer and they appear here.'));
-  else root.prepend(rmH3('Playing visuals and effects'));
+  if (root.childElementCount) root.prepend(rmH3('Playing visuals and effects'));
+  const sliders = root.childElementCount > 0, top = document.createDocumentFragment();
+  rmPads(top);
+  root.prepend(top);
+  if (!sliders) root.append(rmHint('No effect sliders in this show yet. Add effects on the computer and they appear here.'));
 }
 function rmAgentTab(root) {
   const go = rmBtn('Start the Agent', () => rmFire('agent:on'), 'big pri'), vibe = rmHint('');
@@ -349,11 +412,16 @@ function rmAgentTab(root) {
 
 // ---------- start ----------
 $('black').addEventListener('click', () => rmFire('blackout'));
+$('pvBtn').addEventListener('click', () => {
+  rm.prefs.preview = { mid: 'low', low: 'off', off: 'mid' }[rm.prefs.preview];
+  rmLS.set(RM_PREFS, rm.prefs);
+  rmMon(); if (rm.phase === 'live') rmView();
+});
 $('code').addEventListener('input', e => { const c = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase(); e.target.value = c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; });
 $('codeForm').addEventListener('submit', e => {
   e.preventDefault();
   const typed = $('code').value, ids = rlParseLink(typed), code = rlCleanCode(typed);
-  if (ids) { rm.room = ids.room; rm.secret = ids.secret; rmConnect(ids.room, ids.secret); return; }   // a pasted link works too
+  if (ids) { rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room); rmConnect(ids.room, ids.secret); return; }   // a pasted link works too
   if (!code) { rmCover('enter', 'A code is 8 letters and digits, like ABCD-EFGH. It never has 0, 1, O or L.', true); return; }
   const c = rlCodeIds(code);
   rmConnect(c.room, c.secret, true);
@@ -362,8 +430,7 @@ $('codeForm').addEventListener('submit', e => {
   rmTabs();
   const ids = rlParseLink(location.hash);
   if (!ids) return rmEnter();
-  rm.room = ids.room; rm.secret = ids.secret;
-  try { const s = JSON.parse(sessionStorage.getItem(RM_KEY) || 'null'); if (s && s.room === ids.room && typeof s.key === 'string') rm.key = s.key; } catch (e) {}
+  rm.room = ids.room; rm.secret = ids.secret; rm.key = rmKeyFor(ids.room);
   rmConnect(ids.room, ids.secret);
 })();
 window.addEventListener('hashchange', () => { const ids = rlParseLink(location.hash); if (ids && ids.room !== rm.room) location.reload(); });

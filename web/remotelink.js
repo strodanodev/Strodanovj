@@ -3,8 +3,9 @@
 // What is here: the protocol version, pairing ids (QR link, short code), the check every control id must pass, a small
 // SHA-256 / HMAC (crypto.subtle does not exist on plain http pages, which LAN mode will need), and the transports.
 // A transport carries JSON messages between one host and its remotes:
-//   rlHost({room, secret, onOpen(peer), onMsg(peer, msg, lossy), onClose(peer), onState(state, text)}) -> {send(peer, msg), drop(peer), stop()}
-//   rlJoin({room, secret, onOpen(), onMsg(msg), onClose(), onState(state, text)}) -> {send(msg, lossy), openLossy(), path(), stop()}
+//   rlHost({room, secret, stream?, kbps?, fps?, onOpen(peer), onMsg(peer, msg, lossy), onClose(peer), onState(state, text)}) -> {send(peer, msg), drop(peer), stop()}
+//   rlJoin({room, secret, video?, onTrack?(track), onOpen(), onMsg(msg), onClose(), onState(state, text)}) -> {send(msg, lossy), openLossy(), path(), stop()}
+// stream / video: the host's small preview picture rides in the same session as a video track (Phase 2).
 // Internet: the VDO.Ninja SDK's data channel (vendor/vdoninja-sdk.min.js, loaded on first use). The devices talk directly
 // (WebRTC, encrypted); vdo.ninja's server only introduces them, as for the web link. sendData is never given
 // allowFallback, so no message can go through that server. Nothing is stored anywhere.
@@ -154,7 +155,10 @@ function rlHost(o) {
       sdk.addEventListener('reconnectFailed', () => again('lost the connection to the handshake server'));
       await sdk.connect();
       if (h.stopped) return rlSdkEnd(sdk);
-      await sdk.announce({ streamID: o.room });   // no media: publish() refuses to run without a stream
+      // With a preview picture (o.stream: a small video track, no sound) the room is published; without, only announced
+      // (publish() refuses to run without a stream). Bitrate in kbps: the SDK reads a number under 10000 that way.
+      if (o.stream) await sdk.publish(o.stream, { streamID: o.room, label: 'Strodano VJ remote', media: { video: { maxBitrate: o.kbps || 400, frameRate: o.fps || 15 } } });
+      else await sdk.announce({ streamID: o.room });
       state('live');
       clearTimeout(h.probeT); h.probeT = setTimeout(probe, RL_PROBE_FIRST);
     } catch (e) { again(e && e.message ? e.message : String(e)); }
@@ -228,6 +232,9 @@ function rlJoin(o) {
         if (m && typeof m === 'object' && typeof m.t === 'string') o.onMsg(m);
       });
       for (const ev of ['peerDisconnected', 'dataChannelClose']) sdk.addEventListener(ev, e => { if (e.detail && e.detail.uuid === r.host) closed(); });
+      // the host's preview picture, when the caller wants one (o.video) and the host sends one
+      sdk.addEventListener('track', e => { const t = e.detail && e.detail.track; if (t && t.kind === 'video' && o.onTrack && !r.stopped) o.onTrack(t); });
+      const what = o.video ? { audio: false, video: true } : { dataOnly: true };
       await sdk.connect();
       if (r.stopped) return rlSdkEnd(sdk);
       state('looking');
@@ -239,7 +246,7 @@ function rlJoin(o) {
         if (r.stopped || r.host) return;
         if (under()) { since = since || Date.now(); if (Date.now() - since < 12000) { r.ask = setTimeout(ask, 500); return; } }
         since = 0;
-        try { const p = sdk.view(o.room, { dataOnly: true }); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+        try { const p = sdk.view(o.room, what); if (p && p.catch) p.catch(() => {}); } catch (e) {}
         r.ask = setTimeout(ask, 3000);
       };
       ask();

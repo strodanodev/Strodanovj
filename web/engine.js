@@ -444,6 +444,28 @@ function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) t
 function newUid() { return Math.random().toString(36).slice(2, 10); }
 const keepUid = (o, u) => { if (typeof u === 'string' && u) o.uid = u; };
 function mkEffect(name) { const d = DEFS.fx.get(name); return d ? { uid: newUid(), def: name, params: d.params.map(x => x.def), mix: 1, bypass: false } : null; }
+// Hold-to-apply effects (the phone's FX pads; a remote control): one of PAD_FX sits on the composition while it is held.
+// `who` names the holder ('pad' = this page's own pads), so two holders never release each other's. padHeld keeps
+// them out of saves (compToJSON) and out of what a remote mirrors.
+const PAD_FX = ['Strobe', 'Invert', 'RGB Shift', 'Kaleidoscope', 'Pixelate', 'Mirror', 'Wave Warp', 'Edge Detect'];
+const padsHeld = new Map();   // who|name -> the effect
+const padIsOn = (name, who = 'pad') => padsHeld.has(who + '|' + name);
+function padOn(name, who = 'pad') {
+  const k = who + '|' + name;
+  if (padsHeld.has(k) || !PAD_FX.includes(name)) return;
+  const e = mkEffect(name);
+  if (!e) return;
+  e.padHeld = true;
+  comp.fx.push(e); padsHeld.set(k, e);
+}
+function padOff(name, who = 'pad') {
+  const k = who + '|' + name, e = padsHeld.get(k);
+  if (!e) return;
+  const i = comp.fx.indexOf(e);
+  if (i >= 0) comp.fx.splice(i, 1);
+  padsHeld.delete(k);
+}
+function padsRelease(who = 'pad') { for (const k of [...padsHeld.keys()]) if (k.startsWith(who + '|')) padOff(k.slice(who.length + 1), who); }
 
 function applyChain(chain, rt) {
   for (const e of chain) {

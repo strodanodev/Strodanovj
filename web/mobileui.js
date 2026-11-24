@@ -21,7 +21,7 @@ const holding = () => false;
 
 const PREFS_KEY = 'strodano-vj-mobile-prefs';
 const M = {
-  tab: 'perform', dirty: true, sheet: null, latch: false, held: new Map(), listen: 'mic', lastEvent: '', sig: '',
+  tab: 'perform', dirty: true, sheet: null, latch: false, listen: 'mic', lastEvent: '', sig: '',
   statusAt: 0, statusShown: '', install: null, mon: $('mon').getContext('2d', { alpha: false }),
   tiles: [], snapBtns: [], meters: [], levels: [], scenes: [], layerCards: [], goBtn: null, badge: null, beatSeen: -1,
   prefs: { fpsCap: 60, welcomeDone: false, slowDismissed: false, monSmall: false }, slow: 0, slowFps: 0,
@@ -132,21 +132,7 @@ function refreshSheet() { if (M.sheet) { const { title, build } = M.sheet, top =
 $('scrim').addEventListener('click', closeSheet);
 
 // ---------- Perform ----------
-const PAD_FX = ['Strobe', 'Invert', 'RGB Shift', 'Kaleidoscope', 'Pixelate', 'Mirror', 'Wave Warp', 'Edge Detect'];
-function padOn(name) {
-  if (M.held.has(name)) return;
-  const e = mkEffect(name);
-  if (!e) return;
-  e.padHeld = true;   // engine.js leaves it out of saves
-  comp.fx.push(e); M.held.set(name, e);
-}
-function padOff(name) {
-  const e = M.held.get(name);
-  if (!e) return;
-  const i = comp.fx.indexOf(e);
-  if (i >= 0) comp.fx.splice(i, 1);
-  M.held.delete(name);
-}
+// the FX pads' effects (PAD_FX, padOn / padOff / padIsOn / padsRelease) are in engine.js: a remote control uses them too
 // the column's picture: the top-most clip in it that has a thumbnail
 const columnThumb = ci => { for (let li = comp.layers.length - 1; li >= 0; li--) { const c = comp.layers[li].clips[ci]; if (c && c.thumb) return c.thumb; } return ''; };
 // ---------- first-run tour (replaces the old welcome card; welcomeDone = seen or skipped) ----------
@@ -375,18 +361,18 @@ function renderPerform(v) {
     const b = el('button', { textContent: name, className: name === 'Strobe' ? 'strobe' : '' });
     b.addEventListener('pointerdown', e => {
       buzz(6);
-      if (M.latch) { if (M.held.has(name)) padOff(name); else padOn(name); }
+      if (M.latch) { if (padIsOn(name)) padOff(name); else padOn(name); }
       else { padOn(name); b.setPointerCapture(e.pointerId); }
-      b.classList.toggle('held', M.held.has(name));
+      b.classList.toggle('held', padIsOn(name));
     });
     const up = () => { if (!M.latch) { padOff(name); b.classList.remove('held'); } };
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
     b.addEventListener('contextmenu', e => e.preventDefault());
-    if (M.held.has(name)) b.classList.add('held');
+    if (padIsOn(name)) b.classList.add('held');
     pads.append(b);
   }
   v.append(h3('Effects', el('label', { className: 'x', style: { display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--dim)' } }, 'Latch',
-    toggle(() => M.latch, x => { M.latch = x; if (!x) [...M.held.keys()].forEach(padOff); M.dirty = true; }))),
+    toggle(() => M.latch, x => { M.latch = x; if (!x) padsRelease(); M.dirty = true; }))),
   hint(M.latch ? 'Tap an effect to turn it on or off.' : 'Hold an effect: it is on while your finger is down.'), pads);
   const snapsRow = el('div', { className: 'snaps' });
   for (let i = 0; i < 8; i++) {
