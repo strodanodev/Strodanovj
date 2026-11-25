@@ -428,26 +428,6 @@ function parkTick(now) {
   for (const c of parkQ) if (c.video && c.video.paused) { c.restAt = now; posterClip(c); }
   parkQ.clear();
 }
-// Keep parked clips ready: a paused player that is left alone is put to sleep by the browser after a while (Chromium
-// suspends idle paused players and lets their decoder go), and waking it costs a decoder start, which is the likely
-// reason a clip that was not used for a while starts late on a Mac while one used a moment ago starts at once. So every
-// second the clips that rested longest get a seek to the in point they already stand on (same frame, so the poster
-// texture stays right). Only the WARM_MAX clips used last are kept this way: an awake player holds decoded frames in
-// memory. Not confirmed on a Mac: the video log (swLog) says whether slow starts still follow long rests.
-const WARM_AFTER_MS = 8000, WARM_MAX = 16;
-let warmAt = 0;
-function warmTick(now) {
-  if (window.VJ_MOBILE || now - warmAt < 1000 || now - lastStart.at < 600) return;   // the phone page keeps its players as the browser manages them
-  warmAt = now;
-  const idle = [];
-  for (const L of comp.layers) L.clips.forEach((c, ci) => {
-    if (!c || c.type !== 'video' || !c.video || c.error || c.missing || ci === L.active || ci === L.pendingCol || ci === L.from || parkQ.has(c)) return;
-    if (c.video.paused && !c.video.seeking && c.video.readyState >= 2) idle.push(c);
-  });
-  idle.sort((x, y) => (y.usedAt || 0) - (x.usedAt || 0));   // the ones used last first
-  const due = idle.slice(0, WARM_MAX).filter(c => now - (c.restAt || 0) > WARM_AFTER_MS).sort((x, y) => (x.restAt || 0) - (y.restAt || 0));
-  for (const c of due.slice(0, 2)) { c.restAt = now; try { c.video.currentTime = typeof clipStart === 'function' ? clipStart(c) : 0; } catch (e) {} }
-}
 // Video log: how long each triggered video clip took to get on screen and to start moving, with what state it was in
 // (Settings > General > Video starts > Copy log). Kept in memory only.
 const swLog = [], swOpen = [];
@@ -586,7 +566,7 @@ function update(dt, beatDt = dt) {
     }
   }
   const now = performance.now();
-  parkTick(now); warmTick(now); swTick(now);
+  parkTick(now); swTick(now);
 }
 // Clip settings (clipopts.js): c.tr = { s, w, h, x, y, cl, cr, ct, cb } - size (s times w / h), position and crop of this
 // one clip - and c.fx, the clip's own effects. Order: crop, effects, then size and position, then the layer's own scale and
