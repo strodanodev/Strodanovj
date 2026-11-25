@@ -582,7 +582,7 @@ async function setMidiLearn(on) {
   const devs = midi.access ? midi.access.inputs.size : 0;
   const gest = typeof handState !== 'undefined' && handState.on;
   setStatus(!on ? 'Map mode off' : 'Map: click a fader, clip or button, then ' + [devs ? 'move a knob or press a pad' : '', gest ? 'make a hand gesture' : ''].filter(Boolean).join(', or ')
-    + (devs || gest ? '. Esc to finish.' : 'connect a MIDI device or turn on Track hands (Sources tab). Esc to finish.'));
+    + (devs || gest ? '. Esc to finish.' : 'connect a MIDI device or turn on Track hands (Camera tab). Esc to finish.'));
 }
 function initMidi() {
   // In learn mode a click on a mappable control picks it as the target instead of using it.

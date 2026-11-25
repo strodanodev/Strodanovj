@@ -250,8 +250,9 @@ const BLENDS = ['Alpha', 'Add', 'Subtract', 'Multiply', 'Screen', 'Lighten', 'Da
 // ---------- media pool and clips ----------
 // Extra clip types (camera.js, text.js, lowerthird.js, smart3d.js) register here instead of editing the engine:
 //   CLIP_TYPES[type] = { toJSON(c), fromJSON(j), free(c), props(c, panel, layer) }; such clips draw themselves through c.draw(fbo, layer).
-// SOURCE_PANELS holds functions that return extra elements for the Sources tab.
-const CLIP_TYPES = {}, SOURCE_PANELS = [];
+// SOURCE_PANELS holds functions that return extra elements for the Sources tab (each h4 they return starts a folding section);
+// CAMERA_PANELS the same for the Camera tab (webcam, hand tracking, phone web link input).
+const CLIP_TYPES = {}, SOURCE_PANELS = [], CAMERA_PANELS = [];
 const media = [];   // {id, name, url, kind, size}: size in bytes (0 for built-in stock), saved on clips as fileSize so a renamed file can be recognised (workspace.js)
 let mediaSeq = 1;
 const isVideoName = n => /\.(mp4|mov|m4v|webm|mkv|avi|ogv)$/i.test(n);

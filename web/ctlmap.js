@@ -16,7 +16,7 @@ function ctlActionGroups() {
     ['Show', ['blackout', 'fullscreen', ...n(SNAP_COUNT, i => 'snap:' + i)]],
     ['Knobs follow the selection', [...n(8, i => 'focus:' + i), 'focus:prev', 'focus:next', 'focus:page-', 'focus:page+', 'focus:bypass', 'focus:reset']],
     ['Controller pad window', ['win:up', 'win:down', 'win:left', 'win:right']],
-    ['Layers', comp.layers.flatMap((L, i) => ['opacity', 'bypass', 'solo', 'eject'].map(k => 'layer:' + i + ':' + k))],
+    ['Layers', comp.layers.flatMap((L, i) => ['opacity', 'bypass', 'solo', 'eject', 'nudge-', 'nudge+', 'nudge'].map(k => 'layer:' + i + ':' + k))],
     ['Columns', n(comp.columns, i => 'column:' + i)],
   ];
   if (typeof agentMidiTarget === 'function') g.splice(5, 0, ['Agent', ['agent:on', 'agent:next', 'agent:hold', 'agent:drop', 'agent:rec']]);

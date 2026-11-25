@@ -145,7 +145,7 @@ function camTick() {
  return vec4(mix(c.rgb, mix(s, k, p.y), p.x), c.a); }` },
 ].forEach(d => { BUILTIN_FX.push(d); registerDef('fx', d); });
 
-// ---------- Sources tab ----------
+// ---------- Camera tab ----------
 function camBar(label, get) {
   const i = el('i');
   camMeters.push({ i, get });
@@ -153,7 +153,7 @@ function camBar(label, get) {
 }
 const camMeters = [];
 function tickCamMeters() { for (const m of camMeters) m.i.style.width = (m.get() * 100).toFixed(0) + '%'; }
-SOURCE_PANELS.push(() => {
+CAMERA_PANELS.push(() => {
   camMeters.length = 0;
   const box = el('div', { className: 'cam-box' }, el('h4', { textContent: 'Camera' }));
   if (!canCamera) { box.append(el('div', { className: 'hint', textContent: 'This browser cannot open a camera.' })); return [box]; }

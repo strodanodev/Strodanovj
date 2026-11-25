@@ -14,7 +14,7 @@
 :root{
   --bg:#0a0a0a;--surface:#141414;--surface-hover:#1e1e1e;--card:#0d0d0d;--card-line:#1a1a1a;--line:#222;--ctl:#1a1a1a;--ctl-line:#333;
   --side:#000;--top:#050505;--field:#000;
-  --acc:#cc6688;--acc-muted:rgba(204,102,136,.2);--acc-btn:rgba(204,102,136,.15);--acc-soft:rgba(204,102,136,.1);
+  --acc:#2a6cff;--acc-muted:rgba(42,108,255,.2);--acc-btn:rgba(42,108,255,.15);--acc-soft:rgba(42,108,255,.1);
   --txt:#fff;--dim:#888;--term:#a8a8a8;
   --ctl-focus:#ff6a3d;--ok:#2ea44f;--ok-muted:rgba(46,164,79,.2);--ok-soft:rgba(46,164,79,.1);--warn:#d29922;--bad:#cb2431;
   --sans:Inter,system-ui,sans-serif;--mono:Consolas,ui-monospace,monospace;
@@ -86,7 +86,9 @@ input[type=checkbox]{accent-color:var(--acc)}
 .row{display:grid;grid-template-columns:260px 112px repeat(var(--cols,8),minmax(96px,170px));gap:6px;margin-bottom:6px;align-items:stretch}
 .lctl{min-width:0;display:flex;flex-direction:column;gap:6px;justify-content:center;padding:6px 8px;border-radius:var(--r-card);background:var(--card);border:1px solid var(--card-line)}
 .row.sel .lctl{background:var(--acc-soft);border-color:var(--acc-muted)} .lctl .r{display:flex;gap:4px;align-items:center}
-.lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;font-weight:500}
+.lctl .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 4px;font-weight:600;font-size:13px;color:var(--txt)} .lctl .nm:hover{color:var(--acc)}
+.lctl .lno{flex:0 0 auto;min-width:18px;padding:0 4px;border-radius:3px;background:var(--ctl);color:var(--dim);font:11px/16px var(--mono);text-align:center}
+.lctl .r>select.blend{flex:1;width:auto;min-width:0;margin-left:2px}
 .lctl button{padding:2px 6px;min-width:24px;font-size:12px} .lctl input[type=range]{flex:1;min-width:60px} .lctl select{width:92px;padding:2px 6px;font-size:12px}
 .colbtn,.cell{min-width:0}
 .lctl input[type=range]{width:0}   /* a range's built-in 129px width must not widen the box */
@@ -112,6 +114,12 @@ button.armed,.lctl button.del.armed,#sidebar button.armed{background:rgba(203,36
 .lmon.live{border-color:var(--acc-muted)}
 .lmon:not(.live)::after{content:"OFF";position:absolute;font:11px var(--mono);letter-spacing:.08em;color:#444}
 .lmon.sp{visibility:hidden}
+/* nudge over the layer picture (preview.js layerMon): two hold buttons, lit while anything pushes the layer */
+.lnudge{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:3px;gap:3px;opacity:.55;transition:opacity .12s;z-index:1}
+.lmon:hover .lnudge,.lmon.nudge-up .lnudge,.lmon.nudge-down .lnudge,.lnudge:focus-within{opacity:1}
+.lnudge .nudge-btn{flex:0 0 auto;min-width:30px;height:20px;padding:0 6px;font-size:11px;line-height:1;background:rgba(0,0,0,.6);border-color:rgba(255,255,255,.18);touch-action:none;user-select:none}
+.lnudge .nudge-btn:hover{background:rgba(0,0,0,.8);border-color:var(--ctl-line)}
+.lmon.nudge-down .nudge-btn:first-child,.lmon.nudge-up .nudge-btn:last-child,.lnudge .nudge-btn.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 /* hover playback (preview.js) */
 .cell .hovvid{position:absolute;left:3px;top:3px;width:calc(100% - 6px);height:calc(100% - 22px);object-fit:cover;border-radius:4px;background:#000;z-index:1}
 .cell span,.cell .prog,.cell .miss{z-index:2} .cell.hovering{border-color:var(--acc)}
@@ -300,9 +308,14 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 .fld .lfo-btn{flex:0 0 auto;padding:0 6px;min-width:22px;font:12px var(--mono)}
 .fld.lfo{margin:0 0 6px 102px;gap:4px} .fld.lfo select{flex:0 1 auto;min-width:0;padding:2px 4px} .fld.lfo input[type=range]{flex:1;min-width:30px}
 .lfo-meter{flex:0 0 40px;height:4px;background:var(--line);border-radius:2px;overflow:hidden} .lfo-meter i{display:block;height:100%;width:0;background:var(--acc)}
-/* camera, text and 3D sources (camera.js, text.js, smart3d.js) */
+/* Camera tab (camera.js, hands.js, vdoin.js) and Sources tab (ui.js renderSources, text.js, lowerthird.js, smart3d.js) */
 .cam-meter{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden} .cam-meter i{display:block;height:100%;width:0;background:var(--acc)}
 .src-item{padding:3px 6px;border-radius:var(--r-ctl,3px);cursor:grab} .src-item:hover{background:var(--surface-hover,#222)} .src-item.locked{color:var(--dim);cursor:pointer} .pro-tag{margin-left:8px;padding:0 5px;border:1px solid currentColor;border-radius:3px;font-size:10px;letter-spacing:.06em;opacity:.75}
+.src-filter{flex:1;min-width:0}
+.src-head{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none} .src-head:hover,.src-head:focus-visible{color:var(--txt);outline:none}
+.src-caret{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid currentColor;transition:transform .12s}
+.src-sec.folded:not(.filtering) .src-caret{transform:rotate(-90deg)} .src-sec.folded:not(.filtering) .src-body{display:none}
+.src-count{font:11px var(--mono,monospace);opacity:.7}
 .text-edit{width:100%;min-height:72px;resize:vertical;font:13px var(--mono,monospace);user-select:text;margin:4px 0}
 .fld label.chk{flex:0 0 auto;color:var(--txt)}
 /* input chips and the input picker (inputs.js), hand preview (hands.js) */

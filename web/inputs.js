@@ -137,7 +137,7 @@ function tickPicker() {
       let best = null, range = 0.15;
       for (const s of d.list) if (d.max[s] - d.min[s] > range) { range = d.max[s] - d.min[s]; best = s; }
       if (best) { p.owner.mod = p.owner.mod || {}; const m = p.owner.mod[p.k] || (p.owner.mod[p.k] = { shape: 0, rate: 4, depth: 0.6 }); m.src = best; m.follow = FOLLOW_BY_DEFAULT.has(best); if (m.follow) m.depth = 1; setStatus(p.name + ' now follows ' + srcName(best)); }
-      else setStatus('Nothing moved enough. Turn on the camera input or Track hands (Sources tab), or play a track, then try again.');
+      else setStatus('Nothing moved enough. Turn on the camera input or Track hands (Camera tab), or play a track, then try again.');
       p.redraw();
     }
   }

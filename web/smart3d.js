@@ -1149,7 +1149,7 @@ CLIP_TYPES['3d'] = {
   fromJSON: j => { if (SCENES3D_OLD[j.scene] && j.mod) for (const k in j.mod) if (+k > 1) delete j.mod[k]; return clip3d(j.scene, j); },
   free: c => { if (c.tr3) { freeRT(c.tr3); c.tr3 = null; } if (c.inst && c.inst.dispose) c.inst.dispose(); if (c.inst) c.inst.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); c.inst = null; },
   props: (c, p) => {
-    p.append(el('div', { className: 'hint', textContent: '3D generator (three.js). Follows the beat and the music; camera sliders work once the camera input is on (Sources tab).' }));
+    p.append(el('div', { className: 'hint', textContent: '3D generator (three.js). Follows the beat and the music; camera sliders work once the camera input is on (Camera tab).' }));
     const d = SCENES3D[c.scene];
     if (!d) { p.append(el('div', { className: 'hint', textContent: c.name + ' is a Pro visualizer. It plays again, with the settings saved here, once this app is on Pro or Festival.' }),
       el('button', { textContent: 'See Pro', onclick: () => proGate('viz3d') })); return; }

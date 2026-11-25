@@ -502,7 +502,7 @@ function renderBuild(v) {
 function settingsSheet() {
   openSheet('Settings', s => {
     const sw = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: 'Colour theme' }, ...THEMES.map(t => {
-      const b = el('button', { className: THEME.id === t.id ? 'on' : '', title: t.name, ariaLabel: t.name + ' theme', onclick: () => { applyTheme(t.id); refreshSheet(); } });
+      const b = el('button', { className: THEME.id === t.id ? 'on' : '', title: t.name, ariaLabel: t.name + ' theme', onclick: () => { applyTheme(t.id, true); refreshSheet(); } });
       b.style.setProperty('--sw', `rgb(${t.rgb.join(',')})`);
       return b;
     }));
@@ -746,7 +746,7 @@ function renderBroadcast(v) {
   const more = (title, ...kids) => el('details', { className: 'more' }, el('summary', { textContent: title }), ...kids);
   v.append(more('More than 3 viewers, OBS or NDI', hint('Every viewer pulls the picture from your phone. For a bigger audience, send it to one computer and share from there.'), el('div', { className: 'card' }, el('ol', { className: 'steps' },
     el('li', null, el('b', { textContent: 'OBS: ' }), 'add a Browser Source with the link (or open it in any browser, full screen).'),
-    el('li', null, el('b', { textContent: 'NDI: ' }), 'in Strodano VJ desktop, Sources > Web link input, paste the link, Show on a layer.'),
+    el('li', null, el('b', { textContent: 'NDI: ' }), 'in Strodano VJ desktop, Camera > Phone camera (web link), paste the link, Show on a layer.'),
     el('li', null, 'Then in Advanced Output set a screen\'s display to NDI: every NDI app on that network sees your phone.')))));
   const name = el('input', { type: 'text', value: s.vdoId, spellcheck: false, autocapitalize: 'off', placeholder: 'e.g. strodano_ade' });
   const rename = () => { const err = vdoRename(VDO_SCREEN, name.value); setStatus(err || 'Your link is now ' + vdoLink(s)); M.dirty = true; };

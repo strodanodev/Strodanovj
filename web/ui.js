@@ -53,21 +53,24 @@ function renderGrid() {
   for (let li = comp.layers.length - 1; li >= 0; li--) {
     const L = comp.layers[li];
     const tog = (label, title, on, cls, fn, mid) => el('button', { textContent: label, title, className: (on ? 'on ' : '') + cls, dataset: mid ? { midi: mid } : {}, onclick: () => { fn(); ui.gridDirty = true; } });
+    // three lines: the name on its own (readable at full width), the switches and blend mode, then opacity
     const ctl = el('div', { className: 'lctl' },
+      el('div', { className: 'r nmrow' },
+        el('span', { className: 'lno', textContent: String(li + 1), title: 'Layer ' + (li + 1) }),
+        el('span', { className: 'nm', textContent: L.name, title: L.name + ' (click for the Layer tab)', onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } }),
+        el('button', { className: 'lockbtn' + (L.locked ? ' on' : ''), innerHTML: LOCK_SVG, ariaLabel: 'Lock ' + L.name,
+          title: L.locked ? 'Locked: the Agent, auto-score and track scores leave this layer alone. Click to unlock.' : 'Lock this layer: the Agent, auto-score and track scores leave it alone',
+          onclick: () => toggleLayerLock(li) }),
+        el('button', { className: 'del', title: 'Delete layer (click twice)', ariaLabel: 'Delete ' + L.name, innerHTML: TRASH_SVG, onclick: e => armThen(e.currentTarget, 'delete ' + L.name, () => deleteLayer(li)) })),
       el('div', { className: 'r' },
         el('button', { textContent: 'X', title: 'Eject clip', dataset: { midi: 'layer:' + li + ':eject' }, onclick: () => eject(li) }),
         tog('B', 'Bypass layer', L.bypass, 'red', () => { L.bypass = !L.bypass; }, 'layer:' + li + ':bypass'),
         tog('S', 'Solo layer', L.solo, 'yel', () => { L.solo = !L.solo; }, 'layer:' + li + ':solo'),
         tog('A', 'Crossfader side A', L.xfade === 1, '', () => { L.xfade = L.xfade === 1 ? 0 : 1; }),
         tog('B', 'Crossfader side B', L.xfade === 2, '', () => { L.xfade = L.xfade === 2 ? 0 : 2; }),
-        el('button', { className: 'lockbtn' + (L.locked ? ' on' : ''), innerHTML: LOCK_SVG, ariaLabel: 'Lock ' + L.name,
-          title: L.locked ? 'Locked: the Agent, auto-score and track scores leave this layer alone. Click to unlock.' : 'Lock this layer: the Agent, auto-score and track scores leave it alone',
-          onclick: () => toggleLayerLock(li) }),
-        el('span', { className: 'nm', textContent: L.name, onclick: () => { sel.l = li; sel.c = -1; propTab = 'layer'; ui.gridDirty = ui.propsDirty = true; } }),
-        el('button', { className: 'del', title: 'Delete layer (click twice)', ariaLabel: 'Delete ' + L.name, innerHTML: TRASH_SVG, onclick: e => armThen(e.currentTarget, 'delete ' + L.name, () => deleteLayer(li)) })),
+        el('select', { className: 'blend', title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))),
       el('div', { className: 'r' },
-        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; reflectMidi('layer:' + li + ':opacity', L.opacity); } }),
-        el('select', { title: 'Blend mode', onchange: e => { L.blend = +e.target.value; } }, ...BLENDS.map((b, i) => el('option', { value: i, textContent: b, selected: i === L.blend })))));
+        el('input', { type: 'range', min: 0, max: 1, step: 0.001, value: L.opacity, title: 'Opacity', dataset: { midi: 'layer:' + li + ':opacity' }, oninput: e => { L.opacity = +e.target.value; reflectMidi('layer:' + li + ':opacity', L.opacity); } })));
     dropTarget(ctl, () => drag && drag.kind === 'fx', () => { const e = mkEffect(drag.name); if (e) { L.fx.push(e); sel.l = li; ui.propsDirty = true; } });
     const row = el('div', { className: 'row' + (sel.l === li ? ' sel' : '') + (L.locked ? ' locked' : '') }, ctl, layerMon(li));
     cellEls[li] = [];
@@ -177,9 +180,10 @@ function renderProps() {
 // ---------- browser ----------
 function firstFree(li) { const i = comp.layers[li].clips.findIndex(c => !c); return i; }
 function renderBrowser() {
-  const b = $('browser');
+  const b = $('browser'), fa = document.activeElement;
+  const caret = fa && fa.classList.contains('src-filter') && b.contains(fa) ? fa.selectionStart : -1;   // the Sources filter keeps focus through a rebuild
   b.textContent = '';
-  b.append(tabs([['files', 'Files'], ['fx', 'Effects'], ['src', 'Sources']], browserTab, t => { browserTab = t; ui.browserDirty = true; }));
+  b.append(tabs([['files', 'Files'], ['fx', 'Effects'], ['src', 'Sources'], ['cam', 'Camera']], browserTab, t => { browserTab = t; ui.browserDirty = true; }));
   const list = el('div', { className: 'list' });
   if (browserTab === 'files') {
     b.append(el('div', { className: 'fld' }, el('button', { textContent: 'Add media...', onclick: addMediaPicker }),
@@ -217,17 +221,72 @@ function renderBrowser() {
       draggable(n, { kind: 'fx', name: d.name });
       list.append(n);
     }
-  } else {
-    b.append(el('div', { className: 'hint', textContent: 'Drag onto a clip slot, or double-click to fill the selected slot.' }));
-    for (const panel of SOURCE_PANELS) b.append(...panel());
-    b.append(el('h4', { textContent: 'Generators' }));
-    for (const d of DEFS.gen.values()) {
-      const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), ondblclick: () => { const ci = sel.c >= 0 ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, genClip(d.name)); } });
-      draggable(n, { kind: 'gen', name: d.name });
-      list.append(n);
-    }
-  }
+  } else if (browserTab === 'cam') {
+    b.append(el('div', { className: 'hint', textContent: 'Live pictures from a webcam or a phone, and the camera and hands as inputs that sliders and effects can follow.' }));
+    for (const panel of CAMERA_PANELS) b.append(...panel());
+    return;
+  } else return renderSources(b, caret);
   b.append(list);
+}
+
+// The Sources tab: generated content (generators, text, lower thirds, 3D). Every h4 starts a section that folds;
+// the filter box hides rows in place, so typing never rebuilds the tab.
+let srcFilter = '';
+const srcFold = new Set(JSON.parse(localStorage.getItem('svj-src-fold') || '[]'));
+function renderSources(b, caret = -1) {
+  const gens = el('div', { className: 'list' });
+  for (const d of DEFS.gen.values()) {
+    const n = el('div', { textContent: d.name + (d.custom ? (d.isf ? '  (ISF)' : '  (custom)') : ''), title: 'Drag onto a clip slot, or double-click to fill the selected slot', ondblclick: () => { const ci = sel.c >= 0 ? sel.c : firstFree(sel.l); if (ci >= 0) setClip(sel.l, ci, genClip(d.name)); } });
+    draggable(n, { kind: 'gen', name: d.name });
+    gens.append(n);
+  }
+  const parts = [el('h4', { textContent: 'Generators' }), gens];
+  for (const panel of SOURCE_PANELS) parts.push(...panel());
+  // group into sections: an h4 and everything up to the next one
+  const secs = [];
+  for (const p of parts) {
+    if (p.tagName === 'H4' || !secs.length) secs.push({ name: p.tagName === 'H4' ? p.textContent : '', head: p.tagName === 'H4' ? p : null, body: [] });
+    if (p.tagName !== 'H4') secs[secs.length - 1].body.push(p);
+  }
+  const rows = sec => sec.body.flatMap(n => n.classList.contains('list') ? [...n.children] : []).filter(r => !r.classList.contains('hint'));
+  const boxes = secs.map(sec => {
+    const n = rows(sec).length, folded = () => srcFold.has(sec.name);
+    const count = el('span', { className: 'src-count', textContent: n ? String(n) : '' });
+    const head = el('h4', { className: 'src-head', tabIndex: 0, role: 'button', title: 'Show or hide this section' },
+      el('span', { className: 'src-caret' }), el('span', { style: { flex: '1' }, textContent: sec.name }), count);
+    const body = el('div', { className: 'src-body' }, ...sec.body);
+    const box = el('section', { className: 'src-sec' + (folded() ? ' folded' : '') }, head, body);
+    const toggle = () => {
+      if (srcFilter) return;   // everything that matches is shown while filtering
+      if (folded()) srcFold.delete(sec.name); else srcFold.add(sec.name);
+      localStorage.setItem('svj-src-fold', JSON.stringify([...srcFold]));
+      box.classList.toggle('folded', folded());
+    };
+    head.onclick = toggle;
+    head.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+    return { box, rows: rows(sec), count, n };
+  });
+  const none = el('div', { className: 'hint', textContent: 'Nothing matches.', style: { display: 'none' } });
+  const apply = () => {
+    const q = srcFilter.trim().toLowerCase();
+    let any = false;
+    for (const s of boxes) {
+      let shown = 0;
+      for (const r of s.rows) { const hit = !q || r.textContent.toLowerCase().includes(q); r.style.display = hit ? '' : 'none'; if (hit) shown++; }
+      s.box.style.display = q && !shown ? 'none' : '';
+      s.box.classList.toggle('filtering', !!q);
+      s.count.textContent = !s.n ? '' : q ? shown + ' / ' + s.n : String(s.n);
+      if (!q || shown) any = true;
+    }
+    none.style.display = any ? 'none' : '';
+  };
+  const filter = el('input', { type: 'search', className: 'src-filter', placeholder: 'Filter sources', value: srcFilter, spellcheck: false,
+    oninput: e => { srcFilter = e.target.value; apply(); }, onkeydown: e => { if (e.key === 'Escape' && srcFilter) { e.stopPropagation(); srcFilter = e.target.value = ''; apply(); } } });
+  b.append(el('div', { className: 'fld' }, filter),
+    el('div', { className: 'hint', textContent: 'Drag onto a clip slot, or double-click to fill the selected slot. Click a heading to fold it.' }),
+    ...boxes.map(s => s.box), none);
+  apply();
+  if (caret >= 0) { filter.focus(); filter.setSelectionRange(caret, caret); }
 }
 
 // ---------- advanced output ----------

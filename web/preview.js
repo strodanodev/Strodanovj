@@ -14,7 +14,10 @@ function layerMon(li) {
   cv.width = LMON_W; cv.height = 90;
   const box = document.createElement('div');
   box.className = 'lmon'; box.title = 'Layer ' + (li + 1) + ' output';
-  box.append(cv);
+  // nudge over the layer's picture: hold to push whatever video plays on this layer ahead or hold it back (clipopts.js).
+  // data-midi makes each one mappable: Map mode, click it, press a pad (layer:L:nudge- / nudge+, held while the pad is down).
+  const nb = (text, sign, k, tip) => nudgeButton(text, li, -1, sign, { className: 'nudge-btn', title: tip + ' (hold). Map mode: click it, then press a pad', ariaLabel: tip, dataset: { midi: 'layer:' + li + ':' + k } });
+  box.append(cv, el('div', { className: 'lnudge' }, nb('◀', -1, 'nudge-', 'Nudge slower'), nb('▶', 1, 'nudge+', 'Nudge faster')));
   layerMons[li] = { box, cv, ctx: cv.getContext('2d', { alpha: false }) };
   return box;
 }
@@ -31,6 +34,8 @@ function drawLayerMons() {
     if (m.cv.height !== ph) m.cv.height = ph;
     const live = !!L.outTex;
     if (m.box.classList.contains('live') !== live) m.box.classList.toggle('live', live);
+    const nu = typeof nudgeAmt === 'function' ? nudgeAmt(li) : 0, dir = nu > 0 ? 'up' : nu < 0 ? 'down' : '';   // lit while any input pushes (button, pad, key, stick)
+    if ((m.nudged || '') !== dir) { m.nudged = dir; m.box.classList.toggle('nudge-up', dir === 'up'); m.box.classList.toggle('nudge-down', dir === 'down'); }
     if (!live) { if (m.drawn) { m.ctx.fillStyle = '#000'; m.ctx.fillRect(0, 0, LMON_W, ph); m.drawn = false; } return; }
     present(L.outTex, LMON_W, ph); grab(m.ctx, LMON_W, ph);
     m.drawn = true;

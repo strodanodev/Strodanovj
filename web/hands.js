@@ -177,7 +177,7 @@ function handsResult(res) {
   if (name === handState.cand) handState.candN++; else { handState.cand = name; handState.candN = 1; }
   if (handState.candN >= 2) handGesture(name);
 }
-// The live preview in the Sources tab: the camera picture with the tracked points and the recognised gesture.
+// The live preview in the Camera tab: the camera picture with the tracked points and the recognised gesture.
 const HAND_BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 function drawHandPreview() {
   const cv = handState.preview;
@@ -200,7 +200,7 @@ function drawHandPreview() {
   x.fillText(handFeat.hands ? (HAND_GESTURES[handFeat.gesture] || 'Hand') + (handFeat.hands > 1 ? '  +  2nd hand' : '') : 'No hand', 8, H - 7);
 }
 
-// ---------- Sources tab ----------
+// ---------- Camera tab ----------
 const handMeters = [];
 function tickHandMeters() {
   for (const m of handMeters) m.i.style.width = (m.get() * 100).toFixed(0) + '%';
@@ -212,7 +212,7 @@ function tickHandMeters() {
     st.classList.toggle('bad', rate > 0 && rate < 6);
   }
 }
-SOURCE_PANELS.push(() => {
+CAMERA_PANELS.push(() => {
   handMeters.length = 0;
   const box = el('div', { className: 'cam-box' }, el('h4', { textContent: 'Hands' }));
   if (!canCamera) return [box];

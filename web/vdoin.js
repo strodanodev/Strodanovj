@@ -120,8 +120,8 @@ function vdoInToLayer(link) {
   ui.gridDirty = ui.propsDirty = true;
   setStatus('The web link plays on the new top layer "Phone". For NDI, set a screen to NDI in Advanced Output.');
 }
-SOURCE_PANELS.push(() => {
-  const box = el('div', { className: 'cam-box' }, el('h4', { textContent: 'Web link input (phone)' }));
+CAMERA_PANELS.push(() => {
+  const box = el('div', { className: 'cam-box' }, el('h4', { textContent: 'Phone camera (web link)' }));
   const inp = el('input', { type: 'text', placeholder: 'Paste the phone\'s web link', spellcheck: false, style: { flex: '1', minWidth: '0' } });
   const item = el('div', { className: 'src-item', textContent: 'Web link clip', title: 'Paste a link above, then drag onto a clip slot (or double-click to fill the selected slot)',
     ondblclick: () => { const c = vdoInClip(inp.value); if (!c) { setStatus('Paste the phone\'s web link first'); return; } const ci = sel.c >= 0 ? sel.c : comp.layers[sel.l].clips.findIndex(x => !x); if (ci >= 0) setClip(sel.l, ci, c); else CLIP_TYPES.vdoin.free(c); } });
