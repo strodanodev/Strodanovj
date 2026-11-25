@@ -67,6 +67,12 @@ function prefsUI() {
     ...(typeof quantHold === 'function' && typeof mixer !== 'undefined' ? [row('Clip launches', text('Clips wait for the beat while a deck plays'),
       el('select', { onchange: e => { mixer.quant = +e.target.value; if (typeof saveMixer === 'function') saveMixer(); } },
         ...[[0, 'Instant'], [1, 'On the beat'], [4, 'On the bar']].map(([v, t]) => el('option', { value: v, textContent: t, selected: +mixer.quant === v }))))] : []),
+    el('h4', { textContent: 'Video' }),
+    row('Video starts', text(typeof swLog === 'undefined' || !swLog.length ? 'Nothing logged yet: trigger some video clips' : swText().split('\n')[0].replace('Strodano VJ video starts: ', '')),
+      el('button', { textContent: 'Copy log', title: 'How long each video clip took to get on screen and to start playing since the app started: copy it into a bug report', onclick: () => {
+        const t = swText();
+        (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => setStatus('Video log copied (' + swLog.length + ' starts)'), () => { console.log(t); setStatus('Could not copy: the log is in the developer console'); });
+      } })),
     el('h4', { textContent: 'Window' }),
     row('Panels', text('Sizes and minimised panels'), el('button', { textContent: 'Reset layout', title: 'Every panel back to its automatic size, none minimised', onclick: () => { pnl.sizes = {}; pnl.min = {}; panelSave(); panelSync(); setStatus('Panels are back to their automatic sizes'); } })),
     row('Full screen', text('Hides the menu bar for more room (F11)'), el('button', { textContent: 'Full screen', onclick: () => appFullscreen() })),

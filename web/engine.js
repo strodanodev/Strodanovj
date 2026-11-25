@@ -289,7 +289,7 @@ function mediaClip(m) {
   if (m.kind === 'video') {
     const v = document.createElement('video');
     Object.assign(v, { muted: true, loop: true, playsInline: true, preload: 'auto' });
-    v.addEventListener('loadeddata', () => { c.w = v.videoWidth; c.h = v.videoHeight; c.thumb = thumbOf(v, c.w, c.h); ui.gridDirty = true; posterClip(c); }, { once: true });
+    v.addEventListener('loadeddata', () => { c.w = v.videoWidth; c.h = v.videoHeight; c.thumb = thumbOf(v, c.w, c.h); ui.gridDirty = true; c.restAt = performance.now(); posterClip(c); }, { once: true });
     v.addEventListener('error', () => { c.error = true; setStatus('This browser cannot play ' + m.name); ui.gridDirty = true; });
     v.src = m.url;
     c.video = v;
@@ -310,6 +310,7 @@ function freeClip(c) {
   if (!c) return;
   if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].free) CLIP_TYPES[c.type].free(c);
   if (typeof twinFree === 'function') twinFree(c);   // clipopts.js: the stand-by player of a looping video
+  parkQ.delete(c);
   if (c.video) { c.video.pause(); c.video.removeAttribute('src'); c.video.load(); }
   if (c.tex) gl.deleteTexture(c.tex);
 }
@@ -364,7 +365,7 @@ const posterReady = (c, start) => !!(c.ready && c.texAt !== undefined && Math.ab
 const comp = { w: 1920, h: 1080, columns: 8, layers: [], fx: [], master: 1, crossfade: 0.5, bpm: 120, beats: 0, time: 0, frame: 0, rt: null, outTex: null };
 function newLayer() {
   return { name: 'Layer ' + (comp.layers.length + 1), clips: new Array(comp.columns).fill(null), active: -1, pendingCol: -1, opacity: 1, blend: 0, bypass: false, solo: false,
-    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null, pendAt: 0,
+    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null,
     trans: 0, transType: 0, from: -1, transT0: 0, transDur: 0, tf: null };   // trans: transition length in beats (0 = cut), transType: TRANSITION_TYPES index; from: clip going out
 }
 function addLayer() { comp.layers.push(newLayer()); ui.gridDirty = true; }
@@ -407,13 +408,81 @@ function setClip(li, ci, clip) {
 }
 // A video switched away from is paused and parked at its in point at once, with that frame in its texture (posterClip),
 // so triggering it again needs no seek (~0.5 s in long-GOP footage) and shows at once.
-const pauseClip = c => { if (c && c.video) { if (typeof twinFree === 'function') twinFree(c); c.video.pause(); posterClip(c); } };
-// With a transition set and something on screen, a video only takes over once its picture is moving (or after
-// TRANS_WAIT_MS): the fade used to start on its frozen in-point frame while the decoder was still starting, which
-// showed as a stutter in the middle of the transition. A cut still switches at once on the in-point frame.
-const TRANS_WAIT_MS = 400;
-const transWaits = (L, c) => L.trans > 0 && L.active >= 0 && !!L.outTex && c.type === 'video' && c.speed > 0;
+// Parking is put off for a moment (parkQ, done in update()): the seek back to the in point used to be issued in the same
+// instant as the next clip's play(), so the two decoders started work together on every switch. The outgoing clip is
+// only paused now, and parked once the incoming one is moving (or PARK_WAIT_MS later).
+const PARK_WAIT_MS = 350;
+const parkQ = new Set();
+let lastStart = { c: null, at: 0 };   // the video clip triggered last, and when
+const pauseClip = c => {
+  if (!c || !c.video) return;
+  if (typeof twinFree === 'function') twinFree(c);
+  c.video.pause();
+  if (c.type === 'video') { c.restAt = performance.now(); parkQ.add(c); }
+};
 const videoMoving = c => { const v = c.video; return !v.paused && v.readyState >= 2 && v.currentTime > (typeof clipStart === 'function' ? clipStart(c) : 0) + 0.01; };
+function parkTick(now) {
+  if (!parkQ.size) return;
+  const s = lastStart.c;
+  if (s && s.video && now - lastStart.at < PARK_WAIT_MS && !s.video.paused && !videoMoving(s)) return;   // the new clip is still starting
+  for (const c of parkQ) if (c.video && c.video.paused) { c.restAt = now; posterClip(c); }
+  parkQ.clear();
+}
+// Keep parked clips ready: a paused player that is left alone is put to sleep by the browser after a while (Chromium
+// suspends idle paused players and lets their decoder go), and waking it costs a decoder start, which is the likely
+// reason a clip that was not used for a while starts late on a Mac while one used a moment ago starts at once. So every
+// second the clips that rested longest get a seek to the in point they already stand on (same frame, so the poster
+// texture stays right). Only the WARM_MAX clips used last are kept this way: an awake player holds decoded frames in
+// memory. Not confirmed on a Mac: the video log (swLog) says whether slow starts still follow long rests.
+const WARM_AFTER_MS = 8000, WARM_MAX = 16;
+let warmAt = 0;
+function warmTick(now) {
+  if (window.VJ_MOBILE || now - warmAt < 1000 || now - lastStart.at < 600) return;   // the phone page keeps its players as the browser manages them
+  warmAt = now;
+  const idle = [];
+  for (const L of comp.layers) L.clips.forEach((c, ci) => {
+    if (!c || c.type !== 'video' || !c.video || c.error || c.missing || ci === L.active || ci === L.pendingCol || ci === L.from || parkQ.has(c)) return;
+    if (c.video.paused && !c.video.seeking && c.video.readyState >= 2) idle.push(c);
+  });
+  idle.sort((x, y) => (y.usedAt || 0) - (x.usedAt || 0));   // the ones used last first
+  const due = idle.slice(0, WARM_MAX).filter(c => now - (c.restAt || 0) > WARM_AFTER_MS).sort((x, y) => (x.restAt || 0) - (y.restAt || 0));
+  for (const c of due.slice(0, 2)) { c.restAt = now; try { c.video.currentTime = typeof clipStart === 'function' ? clipStart(c) : 0; } catch (e) {} }
+}
+// Video log: how long each triggered video clip took to get on screen and to start moving, with what state it was in
+// (Settings > General > Video starts > Copy log). Kept in memory only.
+const swLog = [], swOpen = [];
+const SW_SLOW_MS = 250;
+function swNote(L, ci, c, path, now) {
+  const v = c.video;
+  const r = { at: new Date().toISOString().slice(11, 23), clip: c.name, size: (v.videoWidth || 0) + 'x' + (v.videoHeight || 0), path, rest: c.restAt ? Math.round((now - c.restAt) / 100) / 10 : -1,
+    unused: c.usedAt ? Math.round((now - c.usedAt) / 1000) : -1, ready: v.readyState, seeking: v.seeking, trans: L.trans || 0, shown: -1, moving: -1, frame: -1 };
+  swLog.push(r); if (swLog.length > 80) swLog.shift();
+  const ct0 = v.currentTime;
+  swOpen.push({ r, L, ci, c, t0: now, ct0 });
+  // the first new picture the player itself hands over (not counted while this window is not being drawn)
+  if (v.requestVideoFrameCallback) { const cb = (t, m) => { if (m && m.mediaTime > ct0 + 0.001) r.frame = Math.round(performance.now() - now); else if (performance.now() - now < 4000) v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+}
+function swTick(now) {
+  for (let i = swOpen.length - 1; i >= 0; i--) {
+    const o = swOpen[i], r = o.r;
+    if (r.shown < 0 && o.L.active === o.ci) r.shown = Math.round(now - o.t0);
+    if (r.moving < 0 && o.c.video && !o.c.video.paused && o.c.video.currentTime > o.ct0 + 0.02) r.moving = Math.round(now - o.t0);
+    const gone = o.L.clips[o.ci] !== o.c || (o.L.active !== o.ci && o.L.pendingCol !== o.ci);
+    if ((r.shown >= 0 && r.moving >= 0) || gone || now - o.t0 > 4000) {
+      swOpen.splice(i, 1);
+      if (gone && r.moving < 0) r.note = 'left before it played';
+      else if (r.moving < 0) r.note = 'not playing after 4 s';
+      if (r.moving > SW_SLOW_MS || r.shown > SW_SLOW_MS) setStatus('Slow start: "' + r.clip + '" was on screen after ' + r.shown + ' ms and playing after ' + r.moving + ' ms (rested ' + r.rest + ' s). Settings > General > Video starts has the log.');
+    }
+  }
+}
+function swText() {
+  const done = swLog.filter(r => r.moving >= 0), ms = done.map(r => r.moving).sort((x, y) => x - y);
+  const head = 'Strodano VJ video starts: ' + swLog.length + ' logged' + (ms.length ? ', playing after median ' + ms[ms.length >> 1] + ' ms, slowest ' + ms[ms.length - 1] + ' ms, ' + ms.filter(x => x > SW_SLOW_MS).length + ' over ' + SW_SLOW_MS + ' ms' : '');
+  const env = navigator.userAgent + ' | ' + comp.w + 'x' + comp.h + ' | video clips ' + comp.layers.reduce((n, L) => n + L.clips.filter(c => c && c.type === 'video').length, 0) + ' | fps ' + Math.round(window.__fps || 0);
+  return [head, env, 'time | clip | size | path | rested s | unused s | readyState | seeking | transition beats | shown ms | playing ms | first new frame ms | note']
+    .concat(swLog.map(r => [r.at, r.clip, r.size, r.path, r.rest, r.unused, r.ready, r.seeking, r.trans, r.shown, r.moving, r.frame, r.note || ''].join(' | '))).join('\n');
+}
 function eject(li) {
   const L = comp.layers[li];
   if (!L) return;
@@ -438,13 +507,16 @@ function trigger(li, ci) {
   if (c.onTrigger) c.onTrigger();   // the clip's own start (lowerthird.js: the title comes in again)
   if (c.video) {
     const start = typeof clipStart === 'function' ? clipStart(c) : 0;   // clipopts.js: the clip's in point
+    const now = performance.now(), isFile = c.type === 'video';
+    if (isFile) { parkQ.delete(c); lastStart = { c, at: now }; }
     const poster = L.active !== ci && posterReady(c, start);   // its in-point frame is already on the GPU
     if (L.active === ci || Math.abs(c.video.currentTime - start) > 0.05) { try { c.video.currentTime = start; } catch (e) {} }   // already at its start (agent.js preroll): no seek, so it shows at once
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
     if (c.speed > 0) c.video.play().catch(() => {});
+    if (isFile) { swNote(L, ci, c, L.active === ci ? 'retrigger' : poster ? 'poster' : 'wait', now); c.usedAt = now; }
     if (L.active === ci) return;
-    if (poster && !transWaits(L, c)) switchActive(L, ci);   // on screen now, showing the in-point frame until the video's own frames arrive
-    else { L.pendingCol = ci; L.pendAt = performance.now(); }   // no frame yet (or a transition waiting for a moving one): the old clip keeps playing
+    if (poster) switchActive(L, ci);   // on screen now, showing the in-point frame until the video's own frames arrive
+    else L.pendingCol = ci;   // no frame yet: the old clip keeps playing until this one has one
   } else switchActive(L, ci);
 }
 function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) trigger(li, ci); }); }
@@ -503,9 +575,11 @@ function update(dt, beatDt = dt) {
     if (L.pendingCol >= 0) {
       const c = L.clips[L.pendingCol];
       if (!c || c.error) L.pendingCol = -1;
-      else if (c.video.readyState >= 2 && (!transWaits(L, c) || videoMoving(c) || performance.now() - (L.pendAt || 0) > TRANS_WAIT_MS)) switchActive(L, L.pendingCol);
+      else if (c.video.readyState >= 2) switchActive(L, L.pendingCol);
     }
   }
+  const now = performance.now();
+  parkTick(now); warmTick(now); swTick(now);
 }
 // Clip settings (clipopts.js): c.tr = { s, w, h, x, y, cl, cr, ct, cb } - size (s times w / h), position and crop of this
 // one clip - and c.fx, the clip's own effects. Order: crop, effects, then size and position, then the layer's own scale and
