@@ -95,6 +95,21 @@ function renderGrid() {
 }
 
 // ---------- properties ----------
+// Reset: back to the shader's defaults. A slider that follows the beat or an input (owner.mod) and a snapshot glide still
+// running on it (looks.js lookGlide.tweens) are dropped as well, or the value would move straight away again and the
+// reset would look as if it did nothing.
+function paramReset(owner, k, def) {
+  if (k === 'mix') owner.mix = def; else owner.params[k] = def;
+  if (k !== 'mix' && owner.mod && owner.mod[k]) { delete owner.mod[k]; if (!Object.keys(owner.mod).length) owner.mod = undefined; }
+  if (typeof lookGlide !== 'undefined' && lookGlide.tweens) lookGlide.tweens = lookGlide.tweens.filter(t => !(k === 'mix' ? t.obj === owner && t.key === 'mix' : t.obj === owner.params && +t.key === +k));
+  ui.propsDirty = true;
+}
+function fxReset(e) {
+  const d = DEFS.fx.get(e.def);
+  if (!d) return;
+  d.params.forEach((pd, k) => paramReset(e, k, pd.def));
+  paramReset(e, 'mix', 1);
+}
 function chainUI(chain, title = 'Effects') {
   const box = el('div', null, el('h4', { textContent: title }));
   chain.forEach((e, i) => {
@@ -103,11 +118,12 @@ function chainUI(chain, title = 'Effects') {
     const fx = el('div', { className: 'fx' }, el('div', { className: 'hd' },
       el('input', { type: 'checkbox', checked: !e.bypass, title: 'Enabled', dataset: { midi: 'fx:' + e.uid + ':bypass' }, onchange: ev => { e.bypass = !ev.target.checked; } }),
       el('b', { textContent: e.def + (d ? (d.custom ? '  (custom)' : '') : '  (missing)') }),
+      d ? el('button', { textContent: '↺', title: 'Reset this effect: every slider back to its default, Mix to full, nothing following the beat or an input (double-click one slider to reset just that one)', ariaLabel: 'Reset ' + e.def, onclick: () => { fxReset(e); setStatus(e.def + ' reset to its defaults'); } }) : null,
       el('button', { textContent: '↑', title: 'Move up', onclick: () => move(-1) }), el('button', { textContent: '↓', title: 'Move down', onclick: () => move(1) }),
       el('button', { textContent: '×', title: 'Remove', onclick: () => { chain.splice(i, 1); ui.propsDirty = true; } })));
     if (d) {
       if (d.err) fx.append(el('div', { className: 'hint', style: { color: 'var(--bad)' }, textContent: 'Shader error - open the Shader Editor' }));
-      const tagged = (f, id) => { f.slider.dataset.midi = 'fx:' + e.uid + ':' + id; return f; };
+      const tagged = (f, id) => { f.slider.dataset.midi = 'fx:' + e.uid + ':' + id; f.slider.title = 'Double-click to reset'; f.slider.addEventListener('dblclick', () => paramReset(e, id, id === 'mix' ? 1 : d.params[id].def)); return f; };
       d.params.forEach((pd, k) => fx.append(...lfoControls(e, k, tagged(fld(pd.name, 0, 1, 0.001, () => e.params[k] ?? pd.def, v => { e.params[k] = v; }), k))));
       if (!d.isf) fx.append(tagged(fld('Mix', 0, 1, 0.001, () => e.mix, v => { e.mix = v; }), 'mix'));
     }
@@ -150,14 +166,13 @@ function renderProps() {
       el('button', { className: 'on', textContent: 'Find missing files...', title: 'Pick this file (and any other missing ones): they relink by name and are remembered for next start', onclick: findMissingFiles }));
     else if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].props) CLIP_TYPES[c.type].props(c, p, L);
     else if (c.type === 'video') {
-      const v = c.video;
-      p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}, ${(v.duration || 0).toFixed(2)} s` }),
-        fld('Speed', 0, 4, 0.01, () => c.speed, s => { c.speed = s; if (s <= 0) v.pause(); else { v.playbackRate = Math.max(0.0625, s); if (L.active === sel.c && v.paused) v.play().catch(() => {}); } }, s => s.toFixed(2) + 'x'));
-      const pos = fld('Position', 0, 1, 0.0005, () => (v.duration ? v.currentTime / v.duration : 0), f => { if (v.duration) v.currentTime = f * v.duration; }, f => (f * (v.duration || 0)).toFixed(1) + 's');
-      posSlider = { input: pos.slider, video: v };
+      p.append(el('div', { className: 'hint', textContent: `${c.fileName}  -  ${c.w} x ${c.h}, ${(c.video.duration || 0).toFixed(2)} s` }),
+        fld('Speed', 0, 4, 0.01, () => c.speed, s => { c.speed = s; if (s <= 0) c.video.pause(); else { c.video.playbackRate = Math.max(0.0625, s); if (L.active === sel.c && c.video.paused) c.video.play().catch(() => {}); } }, s => s.toFixed(2) + 'x'));
+      const pos = fld('Position', 0, 1, 0.0005, () => (c.video.duration ? c.video.currentTime / c.video.duration : 0), f => { if (c.video.duration) c.video.currentTime = f * c.video.duration; }, f => (f * (c.video.duration || 0)).toFixed(1) + 's');
+      posSlider = { input: pos.slider, clip: c };
       p.append(pos, el('div', { className: 'fld' },
-        el('button', { textContent: 'Play / Pause', onclick: () => { if (v.paused) v.play().catch(() => {}); else v.pause(); } }),
-        el('button', { textContent: 'Restart', onclick: () => { v.currentTime = clipStart(c); c.sync0 = comp.beats; c.done = false; } }),
+        el('button', { textContent: 'Play / Pause', onclick: () => { if (c.video.paused) c.video.play().catch(() => {}); else c.video.pause(); } }),
+        el('button', { textContent: 'Restart', onclick: () => { c.video.currentTime = clipStart(c); c.sync0 = comp.beats; c.done = false; } }),
         el('button', { textContent: '1x', title: 'Speed back to 1x', dataset: { midi: 'clip:' + sel.l + ':' + sel.c + ':speed1' }, onclick: () => clipSpeedReset(c) })),
       // nudge (held, while this clip plays) and a fine speed trim: clipopts.js. Map mode maps each button to a pad.
       el('div', { className: 'fld', title: 'Hold to push the playing clip ahead or hold it back (like a DJ nudge), to bring it back in time. Keys: , and . (Shift: harder); [ and ] trim the speed.' },
@@ -171,7 +186,7 @@ function renderProps() {
     else if (c.type === 'gen') {
       const d = DEFS.gen.get(c.gen);
       if (!d) p.append(el('div', { className: 'hint', textContent: 'Generator "' + c.gen + '" is not available.' }));
-      else d.params.forEach((pd, k) => { const f = fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; }); f.slider.dataset.midi = 'gen:' + c.uid + ':' + k; p.append(...lfoControls(c, k, f)); });
+      else d.params.forEach((pd, k) => { const f = fld(pd.name, 0, 1, 0.001, () => c.params[k] ?? pd.def, v => { c.params[k] = v; }); f.slider.dataset.midi = 'gen:' + c.uid + ':' + k; f.slider.title = 'Double-click to reset'; f.slider.addEventListener('dblclick', () => paramReset(c, k, pd.def)); p.append(...lfoControls(c, k, f)); });
     }
     if (!c.missing) p.append(clipLookUI(c), chainUI(c.fx || (c.fx = []), 'Effects on this clip'));   // clipopts.js
   }
@@ -545,12 +560,10 @@ function syncOutBtn() {
 let menuAct = () => {};   // run a menu action by name from another module (the Project menu, workspace.js)
 function initMenu() {
   const acts = {
-    new: () => { stockComp(); sel.l = 0; sel.c = -1; },
-    open: () => $('compInput').click(),
-    save: () => {
-      const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(compToJSON(), null, 1)], { type: 'application/json' })), download: 'composition.svj' });
-      document.body.append(a); a.click(); a.remove(); setStatus('Saved composition.svj to your downloads');
-    },
+    new: () => { stockComp(); sel.l = 0; sel.c = -1; ws.cloud = { id: '', name: '' }; pjDetach(); },   // the starter show in this tab, no longer its old file
+    open: () => pjOpen(),          // projects.js: a project file, in a new tab
+    save: () => pjSave(false),     // over the tab's own file (asks where the first time)
+    saveAs: () => pjSave(true),
     media: addMediaPicker,
     addLayer: () => { addLayer(); sel.l = comp.layers.length - 1; sel.c = -1; ui.propsDirty = true; },
     addCol: () => setColumns(comp.columns + 1), delCol: () => setColumns(comp.columns - 1),
@@ -573,9 +586,8 @@ function initMenu() {
   $('compInput').addEventListener('change', async e => {
     const f = e.target.files[0];
     if (!f) return;
-    try { setStatus(loadComp(JSON.parse(await f.text())) ? 'Opened ' + f.name : 'That file is not a Strodano VJ composition'); } catch (err) { setStatus('Could not read that file'); }
-    syncTransport(); e.target.value = '';
-    if (display.autoOut) syncDisplays(display.list.map(d => d.key));   // the new composition's screens go to their displays
+    e.target.value = '';
+    pjOpenFile(f, null);   // projects.js: in a new tab (this input is the fallback for browsers without the file picker API)
   });
   // Files dropped anywhere outside a clip slot go to the media pool (and relink missing clips).
   window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
@@ -705,7 +717,7 @@ function tickUI() {
   if (typeof tickDJ === 'function') tickDJ();
   if (typeof tickAgentUI === 'function') tickAgentUI();
   [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === beat));
-  if (posSlider && document.activeElement !== posSlider.input && posSlider.video.duration) posSlider.input.value = posSlider.video.currentTime / posSlider.video.duration;
+  if (posSlider && document.activeElement !== posSlider.input && posSlider.clip.video.duration) posSlider.input.value = posSlider.clip.video.currentTime / posSlider.clip.video.duration;   // the clip's player changes at every loop (clipopts.js twinStep)
   $('monPrevT').textContent = 'PREVIEW: ' + comp.layers[Math.min(sel.l, comp.layers.length - 1)].name;
 }
 
@@ -716,6 +728,7 @@ function tickUI() {
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) stockComp(); else stockRelink();   // the STRODANO stock show (stock.js) is the default
+  pjInit();   // composition tabs (projects.js): the one restored above is the current tab
   initNdi();
   $('bcBtn').addEventListener('click', toggleBroadcastMenu);
   syncTransport();

@@ -198,6 +198,8 @@ async function wsOpenFolder() {
     await loadMediaFolder();
     wsApplyPlaylist(j.workspace && j.workspace.playlist);
     wsAfterLoad();
+    ws.cloud = { id: '', name: '' };
+    if (typeof pjDetach === 'function') pjDetach(dir.name);
     const left = wsWanted().length;
     setStatus('Opened the workspace "' + dir.name + '"' + (left ? ': ' + left + ' clip file(s) are not in it (Project > Find missing files)' : ': every clip found its file') + '. It is now your Media folder.');
   } finally { ws.busy = false; }
@@ -224,7 +226,7 @@ async function wsCloud(note) {
   };
   const save = async (name, id) => {
     const j = await act('/api/app/projects/save', { name, data: Object.assign(compToJSON(), { workspace: { playlist: wsPlaylist() } }), ...(id && { id }) }, 'Saved "' + name + '" to the cloud (the project only: its media files stay on this device)');
-    if (j) { ws.cloud = { id: j.id, name: j.name }; wsCloud('Saved "' + j.name + '".'); }
+    if (j) { ws.cloud = { id: j.id, name: j.name }; if (typeof pjPersist === 'function') { pjTab().cloud = { ...ws.cloud }; pjPersist(); } wsCloud('Saved "' + j.name + '".'); }
   };
   const open = async p => {
     const j = await act('/api/app/projects/load', { id: p.id });
@@ -233,6 +235,7 @@ async function wsCloud(note) {
     ws.cloud = { id: p.id, name: p.name };
     wsApplyPlaylist(j.data.workspace && j.data.workspace.playlist);
     wsAfterLoad(); entClose();
+    if (typeof pjDetach === 'function') pjDetach(p.name);   // this tab is the cloud project now, not the file it was saved to
     if (typeof stockRelink === 'function') stockRelink();
     const left = wsWanted().length;
     setStatus('Opened "' + p.name + '" from the cloud' + (left ? ': ' + left + (typeof M !== 'undefined' ? ' clip file(s) are not on this phone yet: import them in Library.' : ' clip file(s) are not on this computer yet. Use Project > Open a workspace folder, or Find missing files.') : ''));
@@ -258,6 +261,17 @@ async function wsCloud(note) {
   if (!full) nameIn.focus();
 }
 
+// Save over the cloud project this tab was opened from or last saved to (Project menu), without the list.
+async function wsCloudOverwrite() {
+  const c = ws.cloud;
+  if (!ent.token || !c.id) return wsCloud();
+  setStatus('Saving "' + c.name + '" to the cloud...');
+  let a = null;
+  try { a = await entFetch('/api/app/projects/save', { name: c.name, id: c.id, data: Object.assign(compToJSON(), { workspace: { playlist: wsPlaylist() } }) }, ent.token); } catch (e) {}
+  if (a && a.ok) setStatus('Saved "' + c.name + '" to the cloud, over the earlier copy (the project only: its media files stay on this device)');
+  else wsCloud(a ? (a.json.error || 'That did not work. Try again.') : 'No connection to strodano.live');
+}
+
 // ---------- the Workspace menu (header) ----------
 function wsCloseMenu() { if (ws.menu) { ws.menu.remove(); ws.menu = null; const b = document.getElementById('wsBtn'); if (b) b.setAttribute('aria-expanded', 'false'); } }
 function wsToggleMenu() {
@@ -269,10 +283,15 @@ function wsToggleMenu() {
   ws.menu = el('div', { role: 'menu', style: { position: 'fixed', left: Math.max(8, Math.min(r.left, innerWidth - 328)) + 'px', top: r.bottom + 4 + 'px', zIndex: '20', width: '320px', boxSizing: 'border-box', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '4px', boxShadow: '0 12px 40px rgba(0,0,0,.7)' } },
     item('New project', 'Start again from the starter show', () => entDialog('PROJECT', 'Start a new project?', 'It replaces the project on screen. Save it first if you want to keep it.',
       [entBtn('Cancel', entClose), entBtn('New project', () => { entClose(); menuAct('new'); }, true)])),
-    item('Open a project file...', 'Load a .svj file from this computer', () => menuAct('open')),
-    item('Save as a file', 'Download composition.svj (the Save button)', () => menuAct('save')),
+    item('Open a project file...', 'Load a .svj file from this computer in a new tab', () => menuAct('open')),
+    ...(typeof pjSave === 'function' ? [
+      item('Save', pjTab().file ? 'Write over ' + pjTab().file.name + ' (Ctrl / Cmd + S)' : canSaveFile ? 'Choose where to keep this project; Save then writes over that file (Ctrl / Cmd + S)' : 'Download ' + pjTab().name + '.svj', () => menuAct('save')),
+      canSaveFile ? item('Save as...', 'Save this tab to another file and keep working in that one (Ctrl / Cmd + Shift + S)', () => menuAct('saveAs')) : null,
+      canSaveFile ? item('Autosave to the file: ' + (pj.auto ? 'On' : 'Off'), pj.auto ? 'Changes are written to the project file as you work. Click to turn off.' : 'Only Save writes the project file. Click to turn on.', () => pjSetAuto(!pj.auto)) : null,
+    ] : [item('Save as a file', 'Download composition.svj', () => menuAct('save'))]).filter(Boolean),
     el('div', { style: { height: '1px', background: 'var(--line)', margin: '4px 8px' } }),
     item('Cloud projects...', 'Save this project to your account, or open one you saved', () => wsCloud()),
+    ws.cloud.id ? item('Save to the cloud: ' + ws.cloud.name, 'Write this tab over its copy in your account', wsCloudOverwrite) : null,
     item('Collect files into a folder...', 'Copy the project and every file it uses into one folder, for a USB stick', wsCollect, !canPickFolder),
     item('Open a workspace folder...', 'Load a collected folder: the project and all its files', wsOpenFolder, !canPickFolder),
     item('Find missing files in a folder...', miss ? miss + ' clip file(s) missing: search a folder and its subfolders, renamed files too' : 'No clip is missing its file', wsFindInFolder, !miss || !canPickFolder));

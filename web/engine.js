@@ -309,6 +309,7 @@ function genClip(name) {
 function freeClip(c) {
   if (!c) return;
   if (CLIP_TYPES[c.type] && CLIP_TYPES[c.type].free) CLIP_TYPES[c.type].free(c);
+  if (typeof twinFree === 'function') twinFree(c);   // clipopts.js: the stand-by player of a looping video
   if (c.video) { c.video.pause(); c.video.removeAttribute('src'); c.video.load(); }
   if (c.tex) gl.deleteTexture(c.tex);
 }
@@ -363,7 +364,7 @@ const posterReady = (c, start) => !!(c.ready && c.texAt !== undefined && Math.ab
 const comp = { w: 1920, h: 1080, columns: 8, layers: [], fx: [], master: 1, crossfade: 0.5, bpm: 120, beats: 0, time: 0, frame: 0, rt: null, outTex: null };
 function newLayer() {
   return { name: 'Layer ' + (comp.layers.length + 1), clips: new Array(comp.columns).fill(null), active: -1, pendingCol: -1, opacity: 1, blend: 0, bypass: false, solo: false,
-    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null,
+    xfade: 0, scale: 1, x: 0, y: 0, fit: 0, fx: [], rt: mkRT(comp.w, comp.h), outTex: null, pendAt: 0,
     trans: 0, transType: 0, from: -1, transT0: 0, transDur: 0, tf: null };   // trans: transition length in beats (0 = cut), transType: TRANSITION_TYPES index; from: clip going out
 }
 function addLayer() { comp.layers.push(newLayer()); ui.gridDirty = true; }
@@ -406,7 +407,13 @@ function setClip(li, ci, clip) {
 }
 // A video switched away from is paused and parked at its in point at once, with that frame in its texture (posterClip),
 // so triggering it again needs no seek (~0.5 s in long-GOP footage) and shows at once.
-const pauseClip = c => { if (c && c.video) { c.video.pause(); posterClip(c); } };
+const pauseClip = c => { if (c && c.video) { if (typeof twinFree === 'function') twinFree(c); c.video.pause(); posterClip(c); } };
+// With a transition set and something on screen, a video only takes over once its picture is moving (or after
+// TRANS_WAIT_MS): the fade used to start on its frozen in-point frame while the decoder was still starting, which
+// showed as a stutter in the middle of the transition. A cut still switches at once on the in-point frame.
+const TRANS_WAIT_MS = 400;
+const transWaits = (L, c) => L.trans > 0 && L.active >= 0 && !!L.outTex && c.type === 'video' && c.speed > 0;
+const videoMoving = c => { const v = c.video; return !v.paused && v.readyState >= 2 && v.currentTime > (typeof clipStart === 'function' ? clipStart(c) : 0) + 0.01; };
 function eject(li) {
   const L = comp.layers[li];
   if (!L) return;
@@ -436,8 +443,8 @@ function trigger(li, ci) {
     c.video.playbackRate = Math.min(16, Math.max(0.0625, c.speed || 1));
     if (c.speed > 0) c.video.play().catch(() => {});
     if (L.active === ci) return;
-    if (poster) switchActive(L, ci);   // on screen now, showing the in-point frame until the video's own frames arrive
-    else L.pendingCol = ci;   // no frame yet: the old clip keeps playing until this one has one
+    if (poster && !transWaits(L, c)) switchActive(L, ci);   // on screen now, showing the in-point frame until the video's own frames arrive
+    else { L.pendingCol = ci; L.pendAt = performance.now(); }   // no frame yet (or a transition waiting for a moving one): the old clip keeps playing
   } else switchActive(L, ci);
 }
 function triggerColumn(ci) { comp.layers.forEach((L, li) => { if (L.clips[ci]) trigger(li, ci); }); }
@@ -496,7 +503,7 @@ function update(dt, beatDt = dt) {
     if (L.pendingCol >= 0) {
       const c = L.clips[L.pendingCol];
       if (!c || c.error) L.pendingCol = -1;
-      else if (c.video.readyState >= 2) switchActive(L, L.pendingCol);
+      else if (c.video.readyState >= 2 && (!transWaits(L, c) || videoMoving(c) || performance.now() - (L.pendAt || 0) > TRANS_WAIT_MS)) switchActive(L, L.pendingCol);
     }
   }
 }

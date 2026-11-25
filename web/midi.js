@@ -415,7 +415,14 @@ function focusTarget(b) {
   if (b === 'prev') return step(() => { ctlFocus.i--; ctlFocus.page = 0; });
   if (b === 'page+') return step(() => { ctlFocus.page++; });
   if (b === 'page-') return step(() => { ctlFocus.page--; });
-  if (b === 'reset') return step(() => { for (const id of focusNow().onPage) { const v = paramDefault(id), t = v === null ? null : midiTarget(id); if (t && t.set) { t.set(v); reflectMidi(id, v); } } });
+  // Reset: the whole focused effect or clip, not only the 8 parameters on the knobs now, and whatever a slider follows
+  // (beat, music, camera...) is dropped with it: a followed slider moved on at once, so the reset looked as if it did nothing.
+  if (b === 'reset') return step(() => {
+    const f = focusNow(), owner = f.dv && (f.dv.e || f.dv.c);
+    for (const id of f.ids) { const v = paramDefault(id), t = v === null ? null : midiTarget(id); if (t && t.set) { t.set(v); reflectMidi(id, v); } }
+    if (owner && owner.mod) owner.mod = undefined;
+    ui.propsDirty = true;
+  });
   if (b === 'bypass') { const f = focusNow(); return f.dv && f.dv.e ? { fire: () => { f.dv.e.bypass = !f.dv.e.bypass; ui.propsDirty = true; } } : null; }
   return null;
 }

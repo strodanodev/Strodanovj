@@ -162,13 +162,70 @@ function nudgeButton(text, li, ci, sign, extra = {}) {
   return b;
 }
 
+// ---------- gapless loop ----------
+// A clip with an in / out point or beat sync loops by seeking back to its in point, which flushes the decoder and starts
+// again from the keyframe before it: the picture stood still for ~0.45 s at every loop (measured 2026-11-26, 1080p H.264
+// at 16 Mbit/s, in point a third of the way in). So such a clip, while it is on screen, gets a second player of the same
+// file (c.twin), parked on the in point with that frame decoded. Shortly before the out point it is started, and as soon
+// as its picture moves the two swap: c.video is the new one and the old one is parked for the next loop (0.05 - 0.08 s
+// measured). Only clips that are playing have one (pauseClip and freeClip in engine.js let it go), so it costs one extra
+// decoder per playing trimmed video. A whole clip keeps the browser's own loop, which measured the same with or without
+// (0.06 - 0.09 s). Not on the phone page.
+const TWIN_LEAD = 0.1;    // seconds before the end at which the stand-by player is started
+const TWIN_MIN = 1;       // clips shorter than this keep the plain loop
+function twinFree(c) {
+  const t = c && c.twin;
+  if (!t) return;
+  c.twin = null; c.twinGo = 0;
+  t.pause(); t.removeAttribute('src'); t.load();
+}
+function twinMake(c) {
+  const src = c.video.currentSrc || c.video.src;
+  if (!src || c.twinBad) return;
+  const t = document.createElement('video');
+  Object.assign(t, { muted: true, loop: false, playsInline: true, preload: 'auto' });
+  t.addEventListener('loadeddata', () => { if (c.twin === t) { try { t.currentTime = clipStart(c); } catch (e) {} } }, { once: true });
+  t.addEventListener('error', () => { if (c.twin === t) { c.twin = null; c.twinGo = 0; c.twinBad = true; } });   // plain loop from now on
+  t.src = src;
+  c.twin = t; c.twinGo = 0;
+}
+// One step for a playing clip. Returns 0 = no stand-by player ready (loop the old way), 1 = ready, 2 = taking over now.
+function twinStep(c) {
+  if (window.VJ_MOBILE || c.twinBad || !clipCustom(c) || (c.loopMode || 'loop') !== 'loop' || !(c.speed > 0) || c.done || clipEnd(c) - clipStart(c) < TWIN_MIN) { twinFree(c); return 0; }
+  if (!c.twin) { twinMake(c); return 0; }
+  const v = c.video, t = c.twin, a = clipStart(c);
+  if (c.twinGo) {
+    if (!t.paused && t.readyState >= 2 && t.currentTime > a + 0.001) {   // its picture moves: swap
+      c.video = t; c.twin = v; c.twinGo = 0;
+      v.pause(); try { v.currentTime = a; } catch (e) {}
+      return 1;
+    }
+    if (performance.now() - c.twinGo > 1500) { c.twinGo = 0; t.pause(); try { t.currentTime = a; } catch (e) {} return 0; }   // it never started: loop the old way this time
+    return 2;
+  }
+  if (t.readyState < 2 || t.seeking) return 0;
+  if (Math.abs(t.currentTime - a) > 0.05) { try { t.currentTime = a; } catch (e) {} return 0; }   // the in point moved
+  if (v.ended || (clipEnd(c) - v.currentTime) / Math.max(0.0625, v.playbackRate) <= TWIN_LEAD) {
+    t.playbackRate = v.playbackRate;
+    t.play().catch(() => {});
+    c.twinGo = performance.now();
+    return 2;
+  }
+  return 1;
+}
+
 // Called every frame (vjTick): keeps the playing video clips inside their in / out points, and in time when beat-synced.
 function clipOptsTick(dt = 1 / 60) {
   comp.layers.forEach((L, li) => {
-    const c = L.clips[L.active], v = c && c.video;
-    if (!v || c.type !== 'video' || !c.ready) return;
+    // the clip fading out in a transition keeps looping without a stall too
+    const fc = L.from >= 0 && L.from !== L.active ? L.clips[L.from] : null;
+    if (fc && fc.video && fc.type === 'video' && fc.ready) { const tw = twinStep(fc); fc.video.loop = !clipCustom(fc) && !tw; }
+    const c = L.clips[L.active];
+    if (!c || !c.video || c.type !== 'video' || !c.ready) return;
+    const tw = twinStep(c), v = c.video;   // twinStep may have swapped c.video
     const custom = clipCustom(c), nf = nudgeFactor(li);
-    v.loop = !custom;   // the browser's own loop is the smoothest when nothing is set
+    v.loop = !custom && !tw;   // without a stand-by player the browser's own loop is the smoothest when nothing is set
+    if (!tw && !custom && v.ended && c.speed > 0 && !c.done) { try { v.currentTime = 0; } catch (e) {} v.play().catch(() => {}); }   // it ended while a stand-by player was expected
     // speed (with any nudge) for clips that are not beat-synced; the beat-sync branch below sets its own rate
     if (!(c.syncBeats > 0 && comp.bpm > 0) && c.speed > 0 && !c.done) {
       const r = Math.min(16, Math.max(0.0625, clipBaseRate(c) * nf));
@@ -179,6 +236,7 @@ function clipOptsTick(dt = 1 / 60) {
     const mode = c.loopMode || 'loop';
     if (t < a - 0.1) { v.currentTime = a; return; }
     if (t >= b - 0.02 || v.ended) {
+      if (tw && mode === 'loop') return;   // the stand-by player takes over (twinStep)
       if (mode === 'loop') { v.currentTime = a; if (v.paused && c.speed > 0) v.play().catch(() => {}); }
       else if (mode === 'hold') { if (!v.paused) v.pause(); c.done = true; }
       else if (mode === 'eject' && !c.done) { c.done = true; eject(li); ui.gridDirty = true; }
@@ -203,20 +261,20 @@ function clipOptsTick(dt = 1 / 60) {
 
 // ---------- Clip tab (ui.js renderProps, video clips) ----------
 function videoClipOpts(c, L) {
-  const v = c.video, d = () => clipDur(c), sec = f => (f * (d() || 0)).toFixed(2) + 's';
+  const d = () => clipDur(c), sec = f => (f * (d() || 0)).toFixed(2) + 's';
   const box = el('div', null, el('h4', { textContent: 'Clip playback' }));
   const inF = fld('In', 0, 1, 0.001, () => c.inP || 0, f => { c.inP = Math.min(f, (c.outP ?? 1) - 0.01); posterClip(c); }, sec);
   const outF = fld('Out', 0, 1, 0.001, () => c.outP ?? 1, f => { c.outP = Math.max(f, (c.inP || 0) + 0.01); }, sec);
-  const here = () => (d() ? v.currentTime / d() : 0);
+  const here = () => (d() ? c.video.currentTime / d() : 0);
   box.append(inF, outF,
     el('div', { className: 'fld' },
       el('button', { textContent: 'In = here', title: 'Set the in point to the current position', onclick: () => { c.inP = Math.min(here(), (c.outP ?? 1) - 0.01); posterClip(c); ui.propsDirty = true; } }),
       el('button', { textContent: 'Out = here', title: 'Set the out point to the current position', onclick: () => { c.outP = Math.max(here(), (c.inP || 0) + 0.01); ui.propsDirty = true; } }),
-      el('button', { textContent: 'Reset', title: 'Whole clip, loop, no beat-sync', onclick: () => { delete c.inP; delete c.outP; delete c.loopMode; delete c.syncBeats; v.playbackRate = Math.max(0.0625, c.speed || 1); posterClip(c); ui.propsDirty = true; } })),
+      el('button', { textContent: 'Reset', title: 'Whole clip, loop, no beat-sync', onclick: () => { delete c.inP; delete c.outP; delete c.loopMode; delete c.syncBeats; c.video.playbackRate = Math.max(0.0625, c.speed || 1); posterClip(c); ui.propsDirty = true; } })),
     el('div', { className: 'fld' }, el('label', { textContent: 'When it ends' }),
       el('select', { onchange: e => { c.loopMode = e.target.value; c.done = false; } }, ...LOOP_MODES.map(([k, n]) => el('option', { value: k, textContent: n, selected: k === (c.loopMode || 'loop') })))),
     el('div', { className: 'fld' }, el('label', { textContent: 'Beat sync', title: 'Stretch the clip (in to out) to last exactly this long at the current tempo' }),
-      el('select', { onchange: e => { c.syncBeats = +e.target.value; c.sync0 = comp.beats; if (!c.syncBeats) v.playbackRate = Math.max(0.0625, c.speed || 1); ui.propsDirty = true; } },
+      el('select', { onchange: e => { c.syncBeats = +e.target.value; c.sync0 = comp.beats; if (!c.syncBeats) c.video.playbackRate = Math.max(0.0625, c.speed || 1); ui.propsDirty = true; } },
         ...SYNC_LENGTHS.map(([k, n]) => el('option', { value: k, textContent: n, selected: k === (c.syncBeats || 0) })))));
   if (c.syncBeats) {
     const len = (clipEnd(c) - clipStart(c)) || 0, rate = len / (c.syncBeats * 60 / comp.bpm);

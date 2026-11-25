@@ -49,7 +49,11 @@ const LOCK_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height=
 const AUTOSAVE = window.VJ_AUTOSAVE_KEY || 'strodano-vj-autosave';
 let lastSaved = '';
 function autosave() {
-  try { const s = JSON.stringify(compToJSON()); if (s !== lastSaved) { localStorage.setItem(AUTOSAVE, s); lastSaved = s; } } catch (e) {}
+  try {
+    const s = JSON.stringify(compToJSON());
+    if (s !== lastSaved) { localStorage.setItem(AUTOSAVE, s); lastSaved = s; }
+    if (typeof pjAutosave === 'function') pjAutosave(s);   // projects.js (desktop page): the tab's own file
+  } catch (e) {}
 }
 
 // ---------- one frame of the show, shared by every front end ----------

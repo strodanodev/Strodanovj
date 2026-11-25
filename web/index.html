@@ -54,6 +54,14 @@ input[type=checkbox]{accent-color:var(--acc)}
 #sidebar hr{width:24px;border:0;border-top:1px solid var(--line);margin:4px 0}
 #sidebar .end{margin-top:auto}
 #main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#pjTabs{flex:0 0 auto;display:flex;align-items:flex-end;gap:2px;padding:6px var(--m) 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.pjtab{display:flex;align-items:center;gap:6px;max-width:240px;padding:5px 6px 6px 12px;margin-bottom:-1px;border:1px solid transparent;border-bottom:0;border-radius:7px 7px 0 0;color:var(--dim);cursor:pointer;white-space:nowrap;user-select:none}
+.pjtab:hover{color:var(--txt)} .pjtab.on{color:var(--txt);background:var(--surface);border-color:var(--line);box-shadow:inset 0 2px 0 var(--acc)}
+.pjtab:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.pjname{overflow:hidden;text-overflow:ellipsis} .pjedit{width:150px;padding:1px 4px;font:inherit}
+.pjdot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--dim);opacity:.6} .pjdot.dirty{background:var(--acc);opacity:1}
+.pjx,.pjadd{flex:0 0 auto;border:0;background:none;color:var(--dim);padding:0 5px;font-size:15px;line-height:20px} .pjx:hover,.pjadd:hover{color:var(--txt);background:var(--surface-hover)}
+.pjadd{margin:0 0 4px 4px;padding:1px 9px}
 #menubar{flex:0 0 48px;display:flex;gap:12px;align-items:center;padding:0 var(--m);background:var(--top);border-bottom:1px solid var(--line);overflow:hidden}
 /* header groups: project | live outputs | status (takes the room left) | update + account. Every control is 28px tall. */
 #menubar>*{flex-shrink:0} #menubar .grp{display:flex;gap:6px;align-items:center} #menubar .grp.end{margin-left:var(--s)} #status:empty+.grp.end{margin-left:auto}
@@ -354,7 +362,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
     <h1 class="brand"><img src="logo.png" alt="Strodano" width="71" height="40" draggable="false"><span>VJ</span></h1>
     <div class="grp">
       <button id="wsBtn" class="menu" aria-haspopup="menu" title="Project: new, open, save as a file, cloud projects, collect the project and its files into a folder, find missing files">Project</button>
-      <button data-act="save" title="Save the project as a file (composition.svj)">Save</button>
+      <button data-act="save" title="Save this tab to its project file, writing over it (Ctrl / Cmd + S). The first time it asks where. Autosave keeps the file up to date after that (Project menu).">Save</button>
     </div>
     <span class="sep"></span>
     <div class="grp">
@@ -367,6 +375,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
       <button id="acctBtn" title="Your Strodano account and plan">Sign in</button>
     </div>
   </div>
+  <div id="pjTabs" role="tablist" aria-label="Compositions"></div>
   <div id="agent" hidden></div>
   <div id="dj" hidden></div>
   <div id="grid"></div>
@@ -458,6 +467,7 @@ body.midi-learn [data-midi].midi-target{outline:2px solid var(--acc);box-shadow:
 <script src="clipopts.js"></script>
 <script src="snapshots.js"></script>
 <script src="preview.js"></script>
+<script src="projects.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>
