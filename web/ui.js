@@ -21,7 +21,8 @@ function dropOnCell(li, ci, e) {
     const c = comp.layers[li].clips[ci], e = c && mkEffect(drag.name);
     if (e) { (c.fx || (c.fx = [])).push(e); sel.l = li; sel.c = ci; propTab = 'clip'; ui.gridDirty = ui.propsDirty = true; }
   }
-  else if (drag.kind === 'clip' && (drag.l !== li || drag.c !== ci)) {
+  else if (drag.kind === 'clip' && drag.l === li && drag.c === ci) cellPress(li, ci);   // picked up and let go on itself: that was a click (see initGridPress)
+  else if (drag.kind === 'clip') {
     const A = comp.layers[drag.l], B = comp.layers[li];
     if (A.active === drag.c || A.pendingCol === drag.c) eject(drag.l);
     if (B.active === ci || B.pendingCol === ci) eject(li);
@@ -37,6 +38,41 @@ function deleteLayer(li) {
   if (sel.l > li || sel.l >= comp.layers.length) sel.l = Math.max(0, sel.l - 1);
   sel.c = -1; ui.gridDirty = ui.propsDirty = true;
   setStatus('Deleted ' + name);
+}
+// A press on a clip slot: select it and, when it holds a clip, play it.
+function cellPress(li, ci) {
+  const L = comp.layers[li], c = L && L.clips[ci];
+  if (!L || ci < 0 || ci >= comp.columns) return;
+  sel.l = li; sel.c = ci;
+  if (c) { if (viz3dLocked(c)) proGate('viz3d'); else trigger(li, ci); propTab = 'clip'; }
+  ui.gridDirty = ui.propsDirty = true;
+}
+// Clip slots used to play on the browser's click event, which is lost in two everyday cases (reported from a MacBook
+// trackpad as "the thumbnail is clicked but nothing plays", one press in five): a slot holding a clip is draggable, so a
+// press with the slightest movement becomes a drag and no click follows; and the grid is rebuilt whenever something
+// changes, so a press whose slot was replaced before the release has no element left to click. So #grid itself listens:
+// press and release over the same slot (by layer and column, not by element) plays it, and a clip dropped on its own slot
+// counts as a click (dropOnCell). A click that arrives without a press (a script, the keyboard) still works.
+// The case that actually caused the report (found 2026-11-26, while columns and snapshots were instant): hovering a video
+// clip puts the hover preview (preview.js .hovvid) on top of the thumbnail, the press landed on it, preview.js removed it
+// on that same press, and the browser sends no click for a target that left the page (pointerdown on .hovvid, pointerup
+// on the img, no click). The hover video no longer takes the pointer (index.html .hovvid), and the press is read in the
+// capture phase, before it is removed.
+function initGridPress() {
+  const g = $('grid');
+  let down = null, pressedAt = 0;
+  const at = e => { const n = e.target.closest && e.target.closest('.cell'), m = n && /^clip:(\d+):(\d+)$/.exec(n.dataset.midi || ''); return m ? { li: +m[1], ci: +m[2] } : null; };
+  // capture phase: before preview.js takes the hover video out of the slot (a target that left the page has no slot)
+  g.addEventListener('pointerdown', e => { down = e.button === 0 ? at(e) : null; }, true);
+  g.addEventListener('pointerup', e => {
+    const a = at(e), d = down;
+    down = null;
+    if (!d || !a || a.li !== d.li || a.ci !== d.ci) return;
+    pressedAt = performance.now();
+    cellPress(a.li, a.ci);
+  });
+  g.addEventListener('pointercancel', () => { down = null; });   // a drag began: dropOnCell decides
+  g.addEventListener('click', e => { if (performance.now() - pressedAt < 700) return; const a = at(e); if (a) cellPress(a.li, a.ci); });
 }
 function renderGrid() {
   const g = $('grid');
@@ -84,7 +120,6 @@ function renderGrid() {
         if (viz3dLocked(c)) { cell.classList.add('prolocked'); cell.append(el('div', { className: 'prolock', textContent: 'PRO', title: c.name + ' is a Pro visualizer: click to see Pro' })); }
         draggable(cell, { kind: 'clip', l: li, c: ci });
       }
-      cell.addEventListener('click', () => { sel.l = li; sel.c = ci; if (c) { if (viz3dLocked(c)) proGate('viz3d'); else trigger(li, ci); propTab = 'clip'; } ui.gridDirty = ui.propsDirty = true; });
       cell.addEventListener('contextmenu', e => { e.preventDefault(); if (c) setClip(li, ci, null); });
       dropTarget(cell, e => hasFiles(e) || (drag && (drag.kind !== 'fx' || c)), e => dropOnCell(li, ci, e));
       cellEls[li][ci] = cell;
@@ -724,7 +759,7 @@ function tickUI() {
 // ---------- start ----------
 (function start() {
   if (!gl) { document.body.innerHTML = '<p style="padding:30px;font-size:15px">This browser does not support WebGL 2. Use a current version of Chrome or Edge.</p>'; return; }
-  initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); if (typeof initDJ === 'function') initDJ(); if (typeof buildAgentPanel === 'function') buildAgentPanel(); initKeys();
+  initGridPress(); initMenu(); initTransport(); initOutput(); initDisplays(); initShaderEditor(); initMidi(); if (typeof initDJ === 'function') initDJ(); if (typeof buildAgentPanel === 'function') buildAgentPanel(); initKeys();
   let restored = false;
   try { const s = localStorage.getItem(AUTOSAVE); if (s) restored = loadComp(JSON.parse(s)); } catch (e) {}
   if (!restored) stockComp(); else stockRelink();   // the STRODANO stock show (stock.js) is the default

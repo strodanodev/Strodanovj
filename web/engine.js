@@ -455,7 +455,8 @@ const SW_SLOW_MS = 250;
 function swNote(L, ci, c, path, now) {
   const v = c.video;
   const r = { at: new Date().toISOString().slice(11, 23), clip: c.name, size: (v.videoWidth || 0) + 'x' + (v.videoHeight || 0), path, rest: c.restAt ? Math.round((now - c.restAt) / 100) / 10 : -1,
-    unused: c.usedAt ? Math.round((now - c.usedAt) / 1000) : -1, ready: v.readyState, seeking: v.seeking, trans: L.trans || 0, shown: -1, moving: -1, frame: -1 };
+    unused: c.usedAt ? Math.round((now - c.usedAt) / 1000) : -1, ready: v.readyState, seeking: v.seeking, trans: L.trans || 0, shown: -1, moving: -1, frame: -1, held: c.heldAt && now - c.heldAt < 20000 ? Math.round(now - c.heldAt) : 0 };
+  c.heldAt = 0;
   swLog.push(r); if (swLog.length > 80) swLog.shift();
   const ct0 = v.currentTime;
   swOpen.push({ r, L, ci, c, t0: now, ct0 });
@@ -480,8 +481,8 @@ function swText() {
   const done = swLog.filter(r => r.moving >= 0), ms = done.map(r => r.moving).sort((x, y) => x - y);
   const head = 'Strodano VJ video starts: ' + swLog.length + ' logged' + (ms.length ? ', playing after median ' + ms[ms.length >> 1] + ' ms, slowest ' + ms[ms.length - 1] + ' ms, ' + ms.filter(x => x > SW_SLOW_MS).length + ' over ' + SW_SLOW_MS + ' ms' : '');
   const env = navigator.userAgent + ' | ' + comp.w + 'x' + comp.h + ' | video clips ' + comp.layers.reduce((n, L) => n + L.clips.filter(c => c && c.type === 'video').length, 0) + ' | fps ' + Math.round(window.__fps || 0);
-  return [head, env, 'time | clip | size | path | rested s | unused s | readyState | seeking | transition beats | shown ms | playing ms | first new frame ms | note']
-    .concat(swLog.map(r => [r.at, r.clip, r.size, r.path, r.rest, r.unused, r.ready, r.seeking, r.trans, r.shown, r.moving, r.frame, r.note || ''].join(' | '))).join('\n');
+  return [head, env, 'time | clip | size | path | rested s | unused s | readyState | seeking | transition beats | shown ms | playing ms | first new frame ms | waited for the beat ms | note']
+    .concat(swLog.map(r => [r.at, r.clip, r.size, r.path, r.rest, r.unused, r.ready, r.seeking, r.trans, r.shown, r.moving, r.frame, r.held, r.note || ''].join(' | '))).join('\n');
 }
 function eject(li) {
   const L = comp.layers[li];
@@ -502,7 +503,13 @@ function trigger(li, ci) {
   const L = comp.layers[li], c = L && L.clips[ci];
   if (!c || c.missing || c.error) return;
   if (typeof viz3dLocked === 'function' && viz3dLocked(c)) return;   // smart3d.js: a Pro visualizer on a plan without them
-  if (typeof quantHold === 'function' && quantHold(li, ci)) return;   // mix.js: wait for the next beat or bar while music plays
+  if (typeof quantHold === 'function' && quantHold(li, ci)) {   // mix.js: wait for the next beat or bar while music plays
+    const bar = typeof mixer !== 'undefined' && mixer.quant >= 4;
+    c.heldAt = performance.now();
+    swLog.push({ at: new Date().toISOString().slice(11, 23), clip: c.name, size: '', path: 'held for the ' + (bar ? 'bar' : 'beat'), rest: '', unused: '', ready: '', seeking: '', trans: '', shown: '', moving: '', frame: '', held: '' }); if (swLog.length > 80) swLog.shift();
+    setStatus('"' + c.name + '" starts on the next ' + (bar ? 'bar' : 'beat') + ': clips wait for the music while a deck plays. Settings > General > Timing > Clip launches > Instant plays them at once.');
+    return;
+  }
   if (typeof clipTriggered === 'function') clipTriggered(c);   // clipopts.js: beat-sync phase starts now
   if (c.onTrigger) c.onTrigger();   // the clip's own start (lowerthird.js: the title comes in again)
   if (c.video) {

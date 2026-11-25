@@ -129,7 +129,7 @@ button.armed,.lctl button.del.armed,#sidebar button.armed{background:rgba(203,36
 .lnudge .nudge-btn:hover{background:rgba(0,0,0,.8);border-color:var(--ctl-line)}
 .lmon.nudge-down .nudge-btn:first-child,.lmon.nudge-up .nudge-btn:last-child,.lnudge .nudge-btn.held{background:var(--acc);color:#0a0a0a;border-color:var(--acc)}
 /* hover playback (preview.js) */
-.cell .hovvid{position:absolute;left:3px;top:3px;width:calc(100% - 6px);height:calc(100% - 22px);object-fit:cover;border-radius:4px;background:#000;z-index:1}
+.cell .hovvid{pointer-events:none;position:absolute;left:3px;top:3px;width:calc(100% - 6px);height:calc(100% - 22px);object-fit:cover;border-radius:4px;background:#000;z-index:1}
 .cell span,.cell .prog,.cell .miss{z-index:2} .cell.hovering{border-color:var(--acc)}
 #hoverPop{position:fixed;z-index:20;width:280px;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:0 12px 40px rgba(0,0,0,.7);pointer-events:none}
 #hoverPop[hidden]{display:none}
