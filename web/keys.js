@@ -17,6 +17,7 @@ const KEYS_HELP = [
   ['\\', 'Speed of that clip back to 1x'],
   ['Space', 'Tap tempo'],
   ['R', 'Resync the beat'],
+  ['G', 'DJ panel: switch between the playlist and the clip grid (Pro)'],
   ['?', 'Show or hide this list (Settings > Shortcuts)'],
 ];
 function typingIn(t) {
@@ -128,6 +129,7 @@ function onShortcut(e) {
       return true;
     case 'BracketLeft': case 'BracketRight': if (L) clipSpeedStep(L.clips[L.active], (e.code === 'BracketRight' ? 1 : -1) * (e.shiftKey ? 0.1 : 0.01)); return true;
     case 'Backslash': if (!e.repeat && L) clipSpeedReset(L.clips[L.active]); return true;
+    case 'KeyG': if (e.repeat || typeof plSetView !== 'function' || !djUI.open) return false; plSetView(pl.view === 'playlist' ? 'layers' : 'playlist'); return true;
     case 'KeyN': if (!e.repeat && L) { textNextLine(L.clips[L.active], e.shiftKey ? -1 : 1); l3Next(L.clips[L.active], e.shiftKey ? -1 : 1); } return true;
   }
   return false;

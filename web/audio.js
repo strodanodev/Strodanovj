@@ -248,12 +248,13 @@ function djMidiTarget(id, what) {
   if (id === 'look') return typeof lookMidiTarget === 'function' ? lookMidiTarget(what) : null;
   const d = audio.decks.find(x => x.id === id);
   if (!d) return null;
-  if (what === 'play') return { fire: () => deckToggle(d) };
-  if (what === 'cue') return { fire: () => deckCue(d) };
-  if (what === 'sync') return { fire: () => deckSyncToggle(d) };
+  const touch = () => { if (typeof djTouch === 'function') djTouch(what); };   // Pro: taking a deck over mid-show pauses the auto-mix
+  if (what === 'play') return { fire: () => { touch(); deckToggle(d); } };
+  if (what === 'cue') return { fire: () => { touch(); deckCue(d); } };
+  if (what === 'sync') return { fire: () => { touch(); deckSyncToggle(d); } };
   if (what === 'volume') return { set: v => { d.volume = v; } };
-  if (what === 'tempo') return { set: v => deckTempo(d, v) };
+  if (what === 'tempo') return { set: v => { touch(); deckTempo(d, v); } };
   if (what === 'bass') return { set: v => { d.bass = v; } };
-  if (what === 'load') return { fire: () => { if (typeof crateLoadNext === 'function') crateLoadNext(d); } };
+  if (what === 'load') return { fire: () => { touch(); if (typeof crateLoadNext === 'function') crateLoadNext(d); } };
   return null;
 }

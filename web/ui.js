@@ -558,7 +558,7 @@ function initMenu() {
     shaders: () => { $('shModal').hidden = false; renderShaderEditor(); },
     midi: () => setMidiLearn(!midi.learn),
     dj: () => { if (typeof toggleDJ === 'function') toggleDJ(!djUI.open); else proGate('dj'); },
-    agent: () => { if (typeof toggleAgentPanel === 'function') toggleAgentPanel(!agUI.open); else proGate('agent'); },
+    agent: () => { if (typeof toggleDJ === 'function') toggleDJ(!djUI.open); else proGate('agent'); },   // one DJ panel since 2026-11-25
     settings: () => toggleKeysHelp(undefined, 'prefs'),
     fullscreen: () => appFullscreen(),
     // header Output button: open every screen's output (not the web link: only its own Start puts it on the internet), or close them all when any is live

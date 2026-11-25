@@ -211,10 +211,10 @@ function midiLabel(id) {
   if (a === 'column') return 'Column ' + (+b + 1);
   const nk = k => (typeof NUDGE_KINDS !== 'undefined' && NUDGE_KINDS[k]) || k;
   if (a === 'clip') return ln(b) + ', clip ' + (+c + 1) + (d ? ' ' + nk(d) : '');
-  if (a === 'deck') return 'Deck ' + b + ' ' + c;
+  if (a === 'deck') return b === 'mix' && c === 'auto' ? 'Start / stop the show' : 'Deck ' + b + ' ' + c;
   if (a === 'blackout') return 'Blackout';
   if (a === 'snap') return 'Snapshot ' + (+b + 1);
-  if (a === 'agent') return { on: 'Agent on/off', next: 'Agent next look', hold: 'Agent hold', drop: 'Agent drop', rec: 'Record' }[b] || 'Agent ' + b;
+  if (a === 'agent') return { on: 'Start / stop the show', next: 'Agent new scene', hold: 'Agent hold', drop: 'Agent drop', rec: 'Record' }[b] || 'Agent ' + b;
   if (a === 'layer') return ln(b) + ' ' + nk(c);
   return id;
 }

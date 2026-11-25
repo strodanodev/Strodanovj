@@ -1,13 +1,13 @@
 'use strict';
-// Resizable, minimisable panels in the main column: DJ decks, Agent, More options, Playlist, the Composition
+// Resizable, minimisable panels in the main column: DJ, Decks, More options, Playlist, the Composition
 // (clip grid) and the bottom row (properties, monitors, Files / Effects / Sources). Without this they all shrink
 // together and each one cuts off part way through a row of controls. Each panel gets a slim title bar (click to minimise, ↺ to reset its size)
 // and a drag handle on its bottom edge. Sizes and minimised panels are remembered on this computer.
 
 const PANEL_KEY = 'strodano-vj-panels';
 const PANEL_DEFS = [
-  { id: 'dj', name: 'DJ decks' },
-  { id: 'agent', name: 'Agent' },
+  { id: 'agent', name: 'DJ' },     // Pro: Start, Vibe, Order, Source (one DJ panel with the decks since 2026-11-25)
+  { id: 'dj', name: 'Decks' },     // Pro: the decks drawer; its title shows a summary while minimised (dj.js tickDecksBar)
   { id: 'more', name: 'More options', sel: '.amore' },   // a <details>: its summary is the title bar
   { id: 'playlist', name: 'Playlist' },                  // its own header row holds the minimise button
   { id: 'grid', name: 'Composition' },
@@ -155,8 +155,8 @@ function initPanels() {
     if (!e || pnl.items.some(p => p.id === d.id)) continue;
     const p = { id: d.id, name: d.name, el: e };
     if (d.id === 'more') {
-      // More options sits under the Agent panel as its own panel, so it scrolls and resizes on its own
-      const a = $('agent'); if (a && e.parentNode === a) a.after(e);
+      // More options sits under the DJ panel and its Decks drawer as its own panel, so it scrolls and resizes on its own
+      const a = $('agent'), at = $('dj') || a; if (a && e.parentNode === a) at.after(e);
       e.addEventListener('toggle', panelSync);
     } else if (d.id !== 'playlist') {
       p.bar = panelBar(p);
