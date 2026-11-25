@@ -182,12 +182,18 @@ function runSelftest() {
   const wc = win.webContents, report = {}, wait = ms => new Promise(r => setTimeout(r, ms));
   const js = code => wc.executeJavaScript(code, true);
   let loads = 0;
+  // Reports once: on the GitHub Windows runner (software GL, 1 frame a second) a run that had passed every check at ~88 s was
+  // still closing its windows when the watchdog fired, printed a second report with "timed out" and exited 1 (v0.4.12, 2026-11-26).
+  // The whole test takes 60 - 90 s there, so the watchdog is 180 s (the workflow step allows 5 minutes).
+  let finished = false;
   const finish = (ok, why) => {
+    if (finished) return;
+    finished = true;
     report.ok = ok; if (why) report.reason = why;
     console.log('SELFTEST ' + JSON.stringify(report));
     app.exit(ok ? 0 : 1);
   };
-  setTimeout(() => finish(false, 'timed out'), 90000);
+  setTimeout(() => finish(false, 'timed out'), 180000);
   wc.on('console-message', e => { if (e.level === 'error') (report.consoleErrors = report.consoleErrors || []).push(String(e.message).slice(0, 200)); });
   wc.on('did-finish-load', async () => {
     loads++;
