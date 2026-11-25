@@ -29,22 +29,39 @@ function lpUnit(shape) {   // a unit shape (1 wide, 1 high, centred) as a flat l
   }
   return (LP_UNIT[shape] = v);
 }
-// Parts -> one geometry: position, a flat normal per face (turned to point away from its part's middle, so the corner
-// order of the unit shapes does not matter) and aCol = colour, each face a touch lighter or darker, + glow in alpha.
+// Parts -> one geometry: position, a normal per corner and aCol = colour, each face a touch lighter or darker, + glow in
+// alpha. Boxes keep one flat normal per face (turned to point away from its part's middle, so the corner order of the unit
+// shapes does not matter); round shapes (spheres, cylinders, cones) blend it with the true curved normal of the shape
+// (LP_SOFT: how much), so a 6-sided trunk or a 20-face bush shades round while its outline stays low-poly.
 // fit: centre the model and scale it so its longest side is that long (the objects; world props keep their own size).
+const LP_SOFT = { s: 0.55, S: 0.85, c: 0.8, t: 0.8, k: 0.7 };
 function lpGeo(parts, fit) {
   const pos = [], nor = [], col = [], m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion(), s = new THREE.Vector3(), o = new THREE.Vector3();
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), t = new THREE.Vector3(), D = Math.PI / 180;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), t = new THREE.Vector3(), r = new THREE.Vector3(), D = Math.PI / 180;
   let rnd = 7;
   for (const p of parts) {
-    const u = lpUnit(p[0]), hex = p[1] & 0xffffff, em = p[1] > 0xffffff ? 1 : 0;
+    const u = lpUnit(p[0]), hex = p[1] & 0xffffff, em = p[1] > 0xffffff ? 1 : 0, k = p[0][0], soft = LP_SOFT[k] || 0;
+    const slope = k === 'c' ? 0 : k === 't' ? 0.25 : 0.5;   // how much a side leans in: the unit radius drops by this over its height
     o.set(p[5] || 0, p[6] || 0, p[7] || 0); e.set((p[8] || 0) * D, (p[9] || 0) * D, (p[10] || 0) * D); m.compose(o, q.setFromEuler(e), s.set(p[2], p[3], p[4]));
     for (let i = 0; i < u.length; i += 9) {
       a.set(u[i], u[i + 1], u[i + 2]).applyMatrix4(m); b.set(u[i + 3], u[i + 4], u[i + 5]).applyMatrix4(m); c.set(u[i + 6], u[i + 7], u[i + 8]).applyMatrix4(m);
       n.copy(b).sub(a).cross(t.copy(c).sub(a)).normalize();
       if (n.dot(t.copy(a).add(b).add(c).divideScalar(3).sub(o)) < 0) n.negate();
-      rnd = (rnd * 16807) % 2147483647; const sh = em ? 1 : 0.84 + 0.3 * (rnd % 1000) / 1000;
-      for (const w of [a, b, c]) { pos.push(w.x, w.y, w.z); nor.push(n.x, n.y, n.z); col.push((hex >> 16 & 255) / 255 * sh, (hex >> 8 & 255) / 255 * sh, (hex & 255) / 255 * sh, em); }
+      rnd = (rnd * 16807) % 2147483647; const sh = em ? 1 : 0.93 + 0.14 * (rnd % 1000) / 1000;
+      const cap = k !== 's' && k !== 'S' && u[i + 1] === u[i + 4] && u[i + 1] === u[i + 7];   // the flat top or bottom of a cylinder / cone
+      const fx = (u[i] + u[i + 3] + u[i + 6]) / 3, fz = (u[i + 2] + u[i + 5] + u[i + 8]) / 3;
+      for (let j = 0; j < 3; j++) {
+        const w = j === 0 ? a : j === 1 ? b : c, x = u[i + j * 3], y = u[i + j * 3 + 1], z = u[i + j * 3 + 2];
+        let nx = n.x, ny = n.y, nz = n.z;
+        if (soft && !cap) {
+          if (k === 's' || k === 'S') r.set(x, y, z);
+          else { let rx = x, rz = z, l = Math.hypot(rx, rz); if (l < 1e-4) { rx = fx; rz = fz; l = Math.hypot(rx, rz) || 1; } r.set(rx / l, slope, rz / l); }
+          r.divide(s).applyQuaternion(q).normalize();   // the shape's own normal, through the part's size and turn
+          nx = n.x * (1 - soft) + r.x * soft; ny = n.y * (1 - soft) + r.y * soft; nz = n.z * (1 - soft) + r.z * soft;
+          const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+        }
+        pos.push(w.x, w.y, w.z); nor.push(nx, ny, nz); col.push((hex >> 16 & 255) / 255 * sh, (hex >> 8 & 255) / 255 * sh, (hex & 255) / 255 * sh, em);
+      }
     }
   }
   if (fit) {
@@ -89,33 +106,112 @@ function lpModelGeo(name, fit, ground) {
 // A model by name when models3d.js has it, else the parts given (the built-in stand-in): [name, size, parts].
 const lpPick = (x, fit, ground) => (!Array.isArray(x[0]) && typeof x[0] === 'string' && x.length === 3 && Array.isArray(x[2])
   ? (lpHas(x[0]) ? lpModelGeo(x[0], x[1], ground) : lpGeo(x[2], fit)) : lpGeo(x, fit));
-// The uniforms every material of one scene shares (one object, so a value is set once a frame for all of them).
-const lpShared = o => Object.assign({ uT: { value: 0 }, uTravel: { value: 0 }, uDepth: { value: 96 }, uWrap: { value: 0 }, uCurve: { value: 0 }, uDens: { value: 2 }, uPulse: { value: 0 },
-  uKick: { value: 0 }, uAmb: { value: new THREE.Color(0x404050) }, uKey: { value: new THREE.Color(0xffffff) }, uRim: { value: new THREE.Color(0xffffff) }, uRimK: { value: 0 },
-  uFog: { value: new THREE.Color(0) }, uFogD: { value: 0 }, uTint: { value: new THREE.Color(0xffffff) }, uTintK: { value: 0 }, uDis: { value: 0 }, uSpin: { value: 0 }, uSpec: { value: 0 } }, o);
-const LP_END = `c = mix(uFog, c, exp(-length(vP) * uFogD)); c = mix(c, c * uTint * 1.8, uTintK);`;   // distance haze, then the colour wash
-// Flat-shaded, lit by one key light and the sky. aI = an instance's place (x, y, z) and its own random number; aJ = its
-// size, turn, how much it sways in the wind and how far it bobs. uWrap: its z runs round the loop with the travel.
+// The surface texture every low-poly scene shares: 256 x 256 (128 on a phone), tiles both ways, made here once (no file) and uploaded with
+// mipmaps on the engine's context, handed to three.js like the engine's other textures (see Picture Particles in
+// smart3d.js). r = soft blotches, g = fine grain, b = streaks (long along v: bark, strata, wood), a = cell borders
+// (0 on a border: cracks, pebbles, caustics). The page reloads on a lost context, so it is never made twice.
+let LP_NOISE = null;
+function lpNoise() {
+  if (LP_NOISE) return LP_NOISE;
+  const N = window.VJ_MOBILE ? 128 : 256;   // ~50 ms once on a desktop; a quarter of that on a phone
+  const out = new Uint8Array(N * N * 4), ch = [new Float32Array(N * N), new Float32Array(N * N), new Float32Array(N * N), new Float32Array(N * N)];
+  let seed = 9001; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // tileable value noise, px x py cells over the texture, added into dst with weight a (where each column and row
+  // falls in the lattice is worked out once, so the loop over the pixels only looks things up)
+  const layer = (dst, px, py, a) => {
+    const g = Float32Array.from({ length: px * py }, rnd), cut = (n, p) => {
+      const i0 = new Int32Array(n), i1 = new Int32Array(n), s = new Float32Array(n);
+      for (let x = 0; x < n; x++) { const f = x / n * p, i = Math.floor(f), t = f - i; i0[x] = i % p; i1[x] = (i + 1) % p; s[x] = t * t * (3 - 2 * t); }
+      return [i0, i1, s];
+    };
+    const [x0, x1, sx] = cut(N, px), [y0, y1, sy] = cut(N, py);
+    for (let y = 0; y < N; y++) {
+      const r0 = y0[y] * px, r1 = y1[y] * px, ty = sy[y];
+      for (let x = 0; x < N; x++) {
+        const tx = sx[x], top = g[r0 + x0[x]] + (g[r0 + x1[x]] - g[r0 + x0[x]]) * tx, bot = g[r1 + x0[x]] + (g[r1 + x1[x]] - g[r1 + x0[x]]) * tx;
+        dst[y * N + x] += (top + (bot - top) * ty) * a;
+      }
+    }
+  };
+  const fbm = (dst, px, py, oct) => { for (let o = 0, a = 1; o < oct; o++, a *= 0.5) layer(dst, px << o, py << o, a); };
+  fbm(ch[0], 4, 4, 5); fbm(ch[1], 16, 16, 3); fbm(ch[2], 24, 3, 3);
+  const C = 10, pts = Float32Array.from({ length: C * C * 2 }, rnd);   // one jittered point per cell; border = second nearest - nearest
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N * C, v = y / N * C, cx = Math.floor(u), cy = Math.floor(v); let d1 = 99, d2 = 99;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const gx = cx + i, gy = cy + j, k = (((gy + C) % C) * C + (gx + C) % C) * 2, dx = gx + pts[k] - u, dy = gy + pts[k + 1] - v, d = dx * dx + dy * dy;
+      if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    ch[3][y * N + x] = Math.sqrt(d2) - Math.sqrt(d1);
+  }
+  for (let k = 0; k < 4; k++) {   // stretch each channel to the full 0..255
+    let lo = 1e9, hi = -1e9; for (const v of ch[k]) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    for (let i = 0; i < N * N; i++) out[i * 4 + k] = Math.round((ch[k][i] - lo) / (hi - lo || 1) * 255);
+  }
+  const tex = gl.createTexture(), prev = gl.getParameter(gl.TEXTURE_BINDING_2D), fy = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL), pm = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  const an = gl.getExtension('EXT_texture_filter_anisotropic');   // the ground is seen at a grazing angle
+  if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(window.VJ_MOBILE ? 4 : 8, gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+  gl.bindTexture(gl.TEXTURE_2D, prev); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, fy); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pm);
+  return (LP_NOISE = { isExternalTexture: true, sourceTexture: tex, version: 0 });
+}
+// The uniforms every material of one scene shares (one object, so a value is set once a frame for all of them). The
+// defaults are the object scenes' studio: no texture, no ground shade, plain key light; lpWorld turns those on.
+const lpShared = o => {
+  const s = Object.assign({ uT: { value: 0 }, uTravel: { value: 0 }, uDepth: { value: 96 }, uWrap: { value: 0 }, uCurve: { value: 0 }, uDens: { value: 2 }, uPulse: { value: 0 },
+    uKick: { value: 0 }, uAmb: { value: new THREE.Color(0x404050) }, uKey: { value: new THREE.Color(0xffffff) }, uRim: { value: new THREE.Color(0xffffff) }, uRimK: { value: 0 },
+    uFog: { value: new THREE.Color(0) }, uFogD: { value: 0 }, uTint: { value: new THREE.Color(0xffffff) }, uTintK: { value: 0 }, uDis: { value: 0 }, uSpin: { value: 0 }, uSpec: { value: 0 },
+    uL: { value: new THREE.Vector3(0.35, 0.8, 0.5).normalize() }, uWrapL: { value: 0 }, uTexK: { value: 0 }, uAO: { value: 0 }, uJit: { value: 0 },
+    uSunC: { value: new THREE.Color(0) }, uSunV: { value: new THREE.Vector3(0, 0, -1) }, uNoise: { value: lpNoise() } }, o);
+  if (!s.uGnd) s.uGnd = { value: s.uAmb.value.clone().multiplyScalar(0.3) };   // light from below: what the old 0.65 + 0.35 N.y gave
+  return s;
+};
+// Distance haze (lit by the sun where the view looks towards it, as the sky is), then the colour wash.
+const LP_FOG = `uniform vec3 uSunC, uSunV;`;
+const LP_END = `c = mix(uFog + uSunC * pow(max(dot(normalize(vP), uSunV), 0.0), 12.0) * 0.45, c, exp(-length(vP) * uFogD)); c = mix(c, c * uTint * 1.8, uTintK);`;
+// Lit by a key light (wrapped round in the worlds, so the shade side is not flat black), light from the sky above and
+// bounced off the ground below, a rim light and a back-light from the sun. The worlds also get the shared texture
+// (uTexK; projected three ways in the model's own space, so it moves with the model), a darkening near the ground
+// (uAO: things stand on it instead of floating over it) and a small colour difference per instance (uJit).
+// aI = an instance's place (x, y, z) and its own random number; aJ = its size, turn, how much it sways in the wind and
+// how far it bobs. uWrap: its z runs round the loop with the travel.
 function lpMat(sh) {
   return new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: sh,
-    vertexShader: `attribute vec4 aCol, aI, aJ; uniform float uT, uTravel, uDepth, uWrap, uCurve, uDens, uPulse, uSpin; varying vec4 vCol; varying vec3 vN, vP, vL;
+    vertexShader: `attribute vec4 aCol, aI, aJ; uniform float uT, uTravel, uDepth, uWrap, uCurve, uDens, uPulse, uSpin, uJit; varying vec4 vCol; varying vec3 vN, vP, vL, vQ, vM; varying float vH;
       void main() {
         float s = aJ.x * step(aI.w, uDens) * (1.0 + uPulse * fract(aI.w * 7.7)), c = cos(aJ.y + uSpin), sn = sin(aJ.y + uSpin);
         vec3 p = position * s; p.x += sin(uT * 1.3 + aI.w * 40.0) * aJ.z * position.y * s;
         p = vec3(p.x * c + p.z * sn, p.y, p.z * c - p.x * sn);
         vec3 o = aI.xyz; if (uWrap > 0.5) o.z = mod(o.z + uTravel, uDepth) - uDepth + 8.0;
         o.y += sin(uT * (0.6 + fract(aI.w * 5.1)) + aI.w * 20.0) * aJ.w;
-        p += o; p.y -= uCurve * p.z * p.z;   // the world falls away with distance, so things rise over a horizon
+        p += o; vH = p.y; p.y -= uCurve * p.z * p.z;   // the world falls away with distance, so things rise over a horizon
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        vCol = aCol; vN = normalMatrix * vec3(normal.x * c + normal.z * sn, normal.y, normal.z * c - normal.x * sn); vP = mv.xyz; vL = position;
+        float j = (fract(aI.w * 13.7) - 0.5) * uJit, b = 1.0 + (fract(aI.w * 3.3) - 0.5) * 0.16 * uJit * (1.0 - aCol.a);
+        vCol = vec4(aCol.rgb * vec3(1.0 + j * 0.14, 1.0 + j * 0.04, 1.0 - j * 0.12) * b, aCol.a);   // warmer / cooler, lighter / darker
+        vN = normalMatrix * vec3(normal.x * c + normal.z * sn, normal.y, normal.z * c - normal.x * sn); vP = mv.xyz; vL = position;
+        vQ = position * s + aI.w * 17.0; vM = normal;
         gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform float uKick, uRimK, uFogD, uTintK, uDis, uSpec; uniform vec3 uAmb, uKey, uRim, uFog, uTint; varying vec4 vCol; varying vec3 vN, vP, vL;
+    fragmentShader: `uniform float uKick, uRimK, uFogD, uTintK, uDis, uSpec, uWrapL, uTexK, uAO; uniform vec3 uAmb, uGnd, uKey, uRim, uFog, uTint, uL; uniform sampler2D uNoise; ${LP_FOG}
+      varying vec4 vCol; varying vec3 vN, vP, vL, vQ, vM; varying float vH;
       float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       void main() {
         if (uDis > 0.0 && hash2(floor(vL.xy * 30.0) + floor(vL.z * 30.0) * 7.0) < uDis) discard;   // Dissolve: the model goes in small squares
-        vec3 N = normalize(vN), V = normalize(-vP), L = normalize(vec3(0.35, 0.8, 0.5));
-        if (dot(N, V) < 0.0) N = -N;   // a thin part seen from behind
-        vec3 c = vCol.rgb * (uAmb * (0.65 + 0.35 * N.y) + uKey * max(dot(N, L), 0.0)) + uRim * pow(1.0 - abs(dot(N, V)), 3.0) * uRimK;
+        vec3 N = normalize(vN), V = normalize(-vP), L = uL, F = cross(dFdx(vP), dFdy(vP));   // F: the face as drawn, always towards the camera
+        if (dot(N, F) < 0.0) N = -N;   // a thin part seen from behind
+        vec3 alb = vCol.rgb;
+        if (uTexK > 0.0) {
+          vec3 w = pow(abs(normalize(vM)), vec3(4.0)); w /= w.x + w.y + w.z;
+          vec4 t = texture(uNoise, vQ.zy * 0.45) * w.x + texture(uNoise, vQ.xz * 0.45) * w.y + texture(uNoise, vQ.xy * 0.45) * w.z;
+          float g = (0.8 + 0.4 * (t.r * 0.6 + t.g * 0.4)) * mix(1.0, 0.86 + 0.28 * t.b, 1.0 - w.y);   // blotches and grain; streaks up the sides
+          alb *= mix(1.0, g, uTexK * (1.0 - vCol.a));
+        }
+        float ao = mix(1.0, 0.5 + 0.5 * smoothstep(0.0, 1.3, vH), uAO), d = max((dot(N, L) + uWrapL) / (1.0 + uWrapL), 0.0), fr = pow(1.0 - abs(dot(N, V)), 3.0);
+        vec3 c = alb * (mix(uGnd, uAmb, N.y * 0.5 + 0.5) * ao + uKey * d * (0.5 + 0.5 * ao)) + uRim * fr * uRimK + uSunC * fr * max(dot(N, uSunV), 0.0) * 0.7;
         c += uKey * pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * uSpec;   // a highlight (the objects; the worlds stay matt)
         c = mix(c, vCol.rgb * (1.4 + uKick * 1.6), vCol.a);
         ${LP_END}
@@ -205,12 +301,19 @@ const LP_WORLD_PARAMS = [P('Speed', 0.35), P('Hue', 0.5), P('Colour wash', 0), P
 // A theme: top = sky overhead, fog = the horizon and the haze, amb / key = the light, ground = [colour, colour, kind
 // (0 tiles, 1 lava, 2 water, 3 neon grid), glow colour] or none, lane = [colour, half width] down the middle,
 // props = [parts, how many, nearest |x|, furthest |x|, smallest, largest, sway, [lowest, highest] if it floats, bob],
-// fx = [kind, colour, how many], sun = [colour, height on the sky 0..1, radius], stars, camY = flying height.
+// fx = [kind, colour, how many], sun = [colour, height on the sky 0..1, radius], stars, camY = flying height, clouds = [how many,
+// how light] (default: by how bright the sky is; [0] = none).
 function lpWorld(T) {
   return function () {
     const mob = !!window.VJ_MOBILE, DEPTH = 96, R = Math.random, scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 260);
-    const sh = lpShared({ uWrap: { value: 1 }, uCurve: { value: 0.0012 }, uAmb: { value: new THREE.Color(T.amb) }, uKey: { value: new THREE.Color(T.key) }, uFog: { value: new THREE.Color(T.fog) },
-      uRim: { value: new THREE.Color(T.fog) }, uRimK: { value: 0.3 } });
+    // light: the key from up and to the right, a little towards us (side light shows the shapes); the sky's light from
+    // above and the ground's own colour bounced from below; the sun's colour as a back-light and in the haze
+    const amb = new THREE.Color(T.amb), fogL = new THREE.Color(T.fog), sunCol = T.sun ? new THREE.Color(T.sun[0]).multiplyScalar(0.45 * (1 - 0.75 * (fogL.r * 0.3 + fogL.g * 0.59 + fogL.b * 0.11))) : new THREE.Color(0);   // less on a haze that is already bright
+    const gnd = amb.clone().multiplyScalar(0.42).add(T.ground ? new THREE.Color(T.ground[0]).multiplyScalar(0.3) : amb.clone().multiplyScalar(0.1));
+    const sh = lpShared({ uWrap: { value: 1 }, uCurve: { value: 0.0012 }, uAmb: { value: amb.clone().multiplyScalar(1.08) }, uGnd: { value: gnd }, uKey: { value: new THREE.Color(T.key) },
+      uFog: { value: new THREE.Color(T.fog) }, uRim: { value: new THREE.Color(T.fog) }, uRimK: { value: 0.18 }, uL: { value: new THREE.Vector3(0.5, 0.78, 0.2).normalize() }, uWrapL: { value: 0.35 },
+      uTexK: { value: 1 }, uAO: { value: T.ground ? 1 : 0 }, uJit: { value: 1 }, uSunC: { value: sunCol } });
+    const sunW = new THREE.Vector3(0, (T.sun ? T.sun[1] : 0.5) * 160 - 50, -(DEPTH + 10)), qInv = new THREE.Quaternion();   // where the sky draws the sun
     const mat = lpMat(sh);
     for (const [parts, count, x0, x1, s0, s1, sway = 0, yr, bob = 0] of T.props) {
       const n = mob ? Math.ceil(count / 2) : count, geo = lpPick(parts, 0, true), I = new Float32Array(n * 4), J = new Float32Array(n * 4);
@@ -227,31 +330,57 @@ function lpWorld(T) {
         uLane: { value: new THREE.Color(lane[0]) }, uLaneW: { value: lane[1] } },
         vertexShader: `uniform float uCurve; varying vec2 vW; varying vec3 vP;
           void main() { float z = position.y - 44.0; vec4 mv = modelViewMatrix * vec4(position.x, -uCurve * z * z, z, 1.0); vW = vec2(position.x, z); vP = mv.xyz; gl_Position = projectionMatrix * mv; }`,
-        fragmentShader: `uniform float uT, uTravel, uKick, uFogD, uTintK, uG, uLaneW; uniform vec3 uGA, uGB, uGE, uLane, uFog, uTint; varying vec2 vW; varying vec3 vP;
+        fragmentShader: `uniform float uT, uTravel, uKick, uFogD, uTintK, uG, uLaneW; uniform vec3 uGA, uGB, uGE, uLane, uFog, uTint, uL; uniform sampler2D uNoise; ${LP_FOG}
+          varying vec2 vW; varying vec3 vP;
           ${COL_GLSL}
           void main() {
-            vec2 w = vec2(vW.x, vW.y - uTravel), cell = floor(w * 0.5), f = fract(w * 0.5);   // the ground moves with the props
-            vec3 c = mix(uGA, uGB, hash2(cell + step(f.x + f.y, 1.0) * 17.0));   // tiles cut corner to corner: flat triangles
-            if (uG > 0.5 && uG < 1.5) c = mix(c, uGE * (1.5 + uKick * 2.0), 1.0 - smoothstep(0.0, 0.07, abs(vnoise(w * 0.3) - 0.5)));   // lava in the cracks
-            else if (uG > 1.5 && uG < 2.5) c = mix(uGA, uGB, 0.5 + 0.5 * sin(w.x * 1.3 + uT * 1.5) * sin(w.y * 0.9 - uT))
-              + uGE * pow(max(0.0, sin(w.x * 3.0 + sin(w.y * 2.0 + uT) * 2.0) * sin(w.y * 3.0 - uT * 1.3)), 6.0) * 0.6;   // water, with light on it
-            else if (uG > 2.5) { vec2 gw = fwidth(w * 0.5), gd = abs(fract(w * 0.5 - 0.5) - 0.5);
-              c = uGA + uGE * (1.0 - smoothstep(0.0, 1.5, min(gd.x / gw.x, gd.y / gw.y))) * (1.0 + uKick * 2.0) * (1.0 - smoothstep(0.3, 0.9, max(gw.x, gw.y))); }
-            c = mix(c, uLane, (1.0 - smoothstep(uLaneW, uLaneW + 0.4, abs(vW.x))) * step(0.01, uLaneW));
+            vec2 w = vec2(vW.x, vW.y - uTravel);   // the ground moves with the props
+            vec4 big = texture(uNoise, w * 0.017), mid = texture(uNoise, w * 0.07), fine = texture(uNoise, w * 0.31);
+            float m = big.r * 0.6 + mid.r * 0.4;
+            vec3 c = mix(uGA, uGB, smoothstep(0.3, 0.72, m)) * (0.84 + 0.32 * fine.g);   // patches of the two colours, grain on top
+            float hx = texture(uNoise, (w + vec2(0.4, 0.0)) * 0.07).r - mid.r, hz = texture(uNoise, (w + vec2(0.0, 0.4)) * 0.07).r - mid.r;
+            float relief = clamp(1.0 - (hx * uL.x + hz * uL.z) * 3.0, 0.75, 1.25);   // gentle bumps, lit from the key's side
+            if (uG > 0.5 && uG < 1.5) {   // lava: glowing cracks, the rock between them cracked too
+              float k = 1.0 - smoothstep(0.0, 0.07, abs(vnoise(w * 0.3 + (big.r - 0.5) * 0.8) - 0.5)), k2 = 1.0 - smoothstep(0.0, 0.05, mid.a);
+              c = mix(c * relief * (0.75 + 0.5 * smoothstep(0.0, 0.25, mid.a)), uGE * (1.5 + uKick * 2.0), max(k, k2 * 0.35 * (0.6 + 0.4 * sin(uT * 2.0 + big.r * 12.0))));
+              c += uGE * 0.25 * (1.0 - smoothstep(0.0, 0.25, abs(vnoise(w * 0.3 + (big.r - 0.5) * 0.8) - 0.5)));   // heat around them
+            } else if (uG > 1.5 && uG < 2.5) {   // sea floor: sand in light ripples, caustics crawling over it
+              float a1 = texture(uNoise, w * 0.11 + vec2(uT * 0.021, uT * 0.013)).a, a2 = texture(uNoise, w * 0.15 - vec2(uT * 0.017, -uT * 0.011)).a;
+              c = mix(uGA, uGB, smoothstep(0.2, 0.8, m)) * relief * (0.85 + 0.3 * fine.g)
+                + uGE * (pow(1.0 - smoothstep(0.0, 0.16, a1), 2.0) + pow(1.0 - smoothstep(0.0, 0.16, a2), 2.0)) * 0.45;
+            } else if (uG > 2.5) {   // neon grid over a wet, dark floor
+              vec2 gw = fwidth(w * 0.5), gd = abs(fract(w * 0.5 - 0.5) - 0.5);
+              c = uGA * (0.7 + 0.6 * big.r) + uGE * (1.0 - smoothstep(0.0, 1.5, min(gd.x / gw.x, gd.y / gw.y))) * (1.0 + uKick * 2.0) * (1.0 - smoothstep(0.3, 0.9, max(gw.x, gw.y)))
+                + uGE * 0.06 * smoothstep(0.55, 0.9, mid.r);
+            } else c *= relief;
+            float edge = uLaneW + (mid.r - 0.5) * 0.9 + (fine.g - 0.5) * 0.25;   // the path: ragged edges, worn in the middle
+            c = mix(c, uLane * (0.82 + 0.3 * fine.g) * (0.9 + 0.2 * big.r) * relief, (1.0 - smoothstep(edge, edge + 0.35, abs(vW.x))) * step(0.01, uLaneW));
             ${LP_END}
             gl_FragColor = vec4(c, 1.0); }` });
       const g = new THREE.Mesh(new THREE.PlaneGeometry(220, 128, 1, 40), gm); g.frustumCulled = false; scene.add(g);
     }
     const sun = T.sun || [0, 0.5, 0];
-    const sky = new THREE.ShaderMaterial({ depthWrite: false, uniforms: { ...sh, uTop: { value: new THREE.Color(T.top) }, uSun: { value: new THREE.Color(sun[0]) }, uSunY: { value: sun[1] }, uSunR: { value: sun[2] * 1.4 },
-      uStars: { value: T.stars ? 1 : 0 } },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float uT, uKick, uTintK, uSunY, uSunR, uStars; uniform vec3 uTop, uSun, uFog, uTint; varying vec2 vUv;
+    // clouds = [how many, how light]: by default bright ones by day and a few dark wisps under a night sky
+    const top = new THREE.Color(T.top), dayK = top.r * 0.3 + top.g * 0.59 + top.b * 0.11 > 0.25, cl = T.clouds ?? (dayK ? [0.55, 0.5] : [0.3, 0.06]);
+    const sky = new THREE.ShaderMaterial({ depthWrite: false, uniforms: { ...sh, uTop: { value: top }, uSun: { value: new THREE.Color(sun[0]) }, uSunY: { value: sun[1] }, uSunR: { value: sun[2] * 1.4 },
+      uStars: { value: T.stars ? 1 : 0 }, uCloud: { value: new THREE.Vector2(cl[0] || 0, cl[1] || 0) } },
+      vertexShader: `varying vec2 vUv; varying vec3 vP; void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform float uT, uKick, uTintK, uSunY, uSunR, uStars; uniform vec2 uCloud; uniform vec3 uTop, uSun, uFog, uTint; uniform sampler2D uNoise; ${LP_FOG}
+        varying vec2 vUv; varying vec3 vP;
         ${COL_GLSL}
         void main() {
-          float yw = vUv.y * 400.0 - 170.0, h = smoothstep(-15.0, 85.0, yw), d = length(vec2((vUv.x - 0.5) * 2.5, (yw + 50.0) / 160.0 - uSunY));   // yw: height in the world
-          vec3 c = mix(uFog, uTop, pow(h, 0.7));
-          c = mix(c, uSun * (1.0 + uKick * 0.3), (1.0 - smoothstep(uSunR * 0.94, uSunR, d)) * step(0.001, uSunR)) + uSun * exp(-max(d - uSunR, 0.0) * 14.0) * 0.35 * step(0.001, uSunR);
+          float yw = vUv.y * 400.0 - 170.0, h = smoothstep(-15.0, 85.0, yw), d = length(vec2((vUv.x - 0.5) * 2.5, (yw + 50.0) / 160.0 - uSunY)), has = step(0.001, uSunR);   // yw: height in the world
+          vec3 c = mix(uFog, uTop, pow(h, 0.7)) + uFog * 0.12 * exp(-abs(yw + 2.0) / 9.0);   // a brighter band of haze on the horizon
+          float glow = pow(max(dot(normalize(vP), uSunV), 0.0), 12.0);
+          c += uSunC * glow * 0.45;   // the same glow the haze over the ground gets, so the two meet without a seam
+          c = mix(c, uSun * (1.0 + uKick * 0.3), (1.0 - smoothstep(uSunR * 0.9, uSunR, d)) * has) + uSun * (exp(-max(d - uSunR, 0.0) * 14.0) * 0.35 + exp(-d * 3.5) * 0.07) * has;
+          if (uCloud.x > 0.0) {   // long soft clouds drifting across, lit from the sun's side
+            vec2 cu = vec2(vUv.x * 2.6 + uT * 0.0035, vUv.y * 8.0);
+            float n = texture(uNoise, cu * 0.5).r * 0.65 + texture(uNoise, cu * 1.7 + vec2(0.31, 0.17) - vec2(uT * 0.002, 0.0)).g * 0.35;
+            float band = smoothstep(4.0, 22.0, yw) * (1.0 - smoothstep(55.0, 130.0, yw)), cm = smoothstep(0.48, 0.78, n) * band * uCloud.x;
+            vec3 cc = mix(mix(uFog, uTop, 0.35), vec3(1.0), uCloud.y) * (0.78 + 0.35 * smoothstep(0.55, 0.9, n)) + uSun * glow * 0.6 * has;
+            c = mix(c, cc, cm);
+          }
           vec2 sc = floor(vUv * vec2(260.0, 260.0));
           c += vec3(step(0.985, hash2(sc)) * (0.5 + 0.5 * sin(uT * 2.0 + hash2(sc + 3.0) * 40.0)) * h * uStars);
           c = mix(c, c * uTint * 1.8, uTintK);
@@ -281,6 +410,7 @@ function lpWorld(T) {
       sx += (aimX() * 4 * p[6] + Math.sin(t * 0.19) * 0.5 - sx) * 0.05; sy += (aimY() * 3 * p[6] - sy) * 0.05;
       const y = Math.max(0.6, camY + sy + Math.sin(t * 0.27) * 0.25 + kick * 0.08);
       camera.position.set(sx, y, 8); camera.lookAt(sx * 0.5, y * 0.8 + 0.3, -30); camera.rotation.z = -sx * 0.03;
+      sh.uSunV.value.copy(sunW).sub(camera.position).normalize().applyQuaternion(qInv.copy(camera.quaternion).invert());   // towards the sun, as the camera sees it
     } };
   };
 }
@@ -308,7 +438,7 @@ const LP_WORLDS = {
   w_winter: { name: 'Winter Pines', top: 0x16284f, fog: 0xc9d9f2, amb: 0x7f8fb0, key: 0xffffff, ground: [0xe6eefc, 0xf4f8ff, 0], lane: [0xd5e0f5, 1.2], stars: 1, sun: [0xf2f6ff, 0.5, 0.03],
     props: [[LPM.pine(0xe9f2ff, 0x4a3526), 110, 2.4, 30, 0.8, 1.9, 0.02], [LPM.pine(0x2f6d5a), 70, 2.6, 30, 0.8, 1.9, 0.02], [LPM.snowman(), 14, 2, 8, 0.8, 1.2], [LPM.rock(0xd0d8ea), 30, 2, 20, 0.5, 1.2]],
     fx: ['snow', 0xffffff, 1400] },
-  w_sea: { name: 'Deep Sea', top: 0x02142e, fog: 0x0f5a7a, amb: 0x1f5a7a, key: 0x9fe8ff, ground: [0x0a3a4a, 0x1a6a6a, 2, 0x7ffff0], camY: 2.4,
+  w_sea: { name: 'Deep Sea', top: 0x02142e, fog: 0x0f5a7a, amb: 0x1f5a7a, key: 0x9fe8ff, ground: [0x0a3a4a, 0x1a6a6a, 2, 0x7ffff0], camY: 2.4, clouds: [0],
     props: [[LPM.coral(0xff7a8a), 90, 1.8, 26, 0.6, 1.8, 0.03], [LPM.coral(0xffb347), 70, 1.8, 26, 0.6, 1.6, 0.03], [LPM.weed(), 160, 1.4, 26, 0.7, 2, 0.16], [LPM.fish(0xffb347), 50, 0.5, 14, 0.4, 0.9, 0, [1, 8], 0.5],
       [LPM.fish(0x5ad0ff), 50, 0.5, 16, 0.3, 0.8, 0, [1, 9], 0.5], [LPM.rock(0x2f5a66), 30, 2, 22, 0.6, 1.8]], fx: ['bubble', 0xbff4ff, 500] },
   w_alien: { name: 'Alien Planet', top: 0x10052a, fog: 0x6a2a8f, amb: 0x4a3a7a, key: 0xb0ffe0, ground: [0x2a1a55, 0x3a2470, 0], stars: 1, sun: [0x7dffd0, 0.6, 0.07],
@@ -317,7 +447,7 @@ const LP_WORLDS = {
   w_dino: { name: 'Dino Valley', top: 0x2a5ab0, fog: 0xf2c890, amb: 0x7a6a55, key: 0xfff0d0, ground: [0x4a7a34, 0x5f8f3f, 0], lane: [0x7a6a44, 1.4], sun: [0xffe6a0, 0.4, 0.05],
     props: [[['trex', 3.4, LPM.trex()], 22, 2.8, 16, 0.9, 1.8], [['trike', 3.2, LPM.trex(0x8f6a3a, 0x7a5a2e)], 14, 2.8, 20, 0.8, 1.4], [['raptor', 2.2, LPM.trex()], 16, 2.4, 14, 0.8, 1.2], [LPM.palm(), 80, 2.6, 28, 1, 2, 0.04], [LPM.volcano(), 6, 20, 46, 1, 1.8], [LPM.bush(0x3f8f3a), 80, 1.8, 24, 0.6, 1.6, 0.05],
       [LPM.rock(0x8a7a66), 40, 2, 22, 0.5, 1.8]], fx: ['ember', 0xffc070, 250] },
-  w_space: { name: 'Asteroid Run', top: 0x02030a, fog: 0x0a0a22, amb: 0x2a2a44, key: 0xffffff, stars: 1, sun: [0x9fb8ff, 0.7, 0.02], camY: 0.6,
+  w_space: { name: 'Asteroid Run', top: 0x02030a, fog: 0x0a0a22, amb: 0x2a2a44, key: 0xffffff, stars: 1, sun: [0x9fb8ff, 0.7, 0.02], camY: 0.6, clouds: [0],
     props: [[LPM.asteroid(), 150, 1.6, 26, 0.3, 2.2, 0, [-9, 10], 0.3], [['fighter', 3, LPM.fighter()], 14, 1.5, 10, 0.5, 0.9, 0, [-3, 5], 0.5], [['ufo', 3, LPM.ufo()], 6, 4, 16, 0.6, 1, 0, [-2, 7], 0.6], [['rocket', 3, LPM.rocket()], 6, 3, 14, 0.5, 0.9, 0, [-4, 6], 0.4],
       [LPM.crystal(0xff3df0), 30, 3, 20, 0.5, 1.2, 0, [-8, 8], 0.4]], fx: ['star', 0xffffff, 900], fxY: -5 },
   w_war: { name: 'Battlefield', top: 0x1a1e22, fog: 0x8a7a66, amb: 0x5a5548, key: 0xffe0b0, ground: [0x4a4a3a, 0x56543f, 0], lane: [0x3f3d30, 1.6], sun: [0xff9a5a, 0.34, 0.045],
